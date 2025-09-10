@@ -279,8 +279,6 @@ int main(int argc, char** argv) {
   static char bg_path_buf[512] = {0};
   float solid_color[3] = {0.0f, 0.0f, 0.0f}; // RGB 0..1
   cv::Mat last_mask_u8;  // cache latest mask to avoid blocking
-  cv::Mat last_mask_f32; // temporal-smoothed mask (0..1)
-  int mask_empty_streak = 0; // require a couple of empty masks before accepting clear
   cv::Mat last_display_rgb;
   // Beauty controls
   bool fx_skin = false; float fx_skin_strength = 0.4f;
@@ -533,27 +531,7 @@ int main(int argc, char** argv) {
     int drain = 0;
     while (mask_poller.QueueSize() > 0 && mask_poller.Next(&pkt)) {
       const auto& mask = pkt.Get<mp::ImageFrame>();
-      cv::Mat new_u8 = DecodeMaskToU8(mask, &first_mask_info);
-      // Convert to 0..1 float for temporal smoothing
-      cv::Mat new_f; new_u8.convertTo(new_f, CV_32F, 1.0/255.0);
-      bool is_empty = (cv::countNonZero(new_u8) < 64); // stricter empty check
-      if (is_empty && !last_mask_f32.empty()) {
-        // require two consecutive empty frames before accepting clear
-        mask_empty_streak++;
-        if (mask_empty_streak >= 2) {
-          const float alpha = 0.20f; // decay toward empty slowly
-          cv::addWeighted(last_mask_f32, 1.0f - alpha, new_f, alpha, 0.0, last_mask_f32);
-          last_mask_f32.convertTo(last_mask_u8, CV_8U, 255.0);
-        } // else keep previous to avoid blink
-      } else {
-        mask_empty_streak = 0;
-        if (last_mask_f32.empty()) last_mask_f32 = new_f.clone();
-        else {
-          const float alpha = 0.30f; // tempered EMA
-          cv::addWeighted(last_mask_f32, 1.0f - alpha, new_f, alpha, 0.0, last_mask_f32);
-        }
-        last_mask_f32.convertTo(last_mask_u8, CV_8U, 255.0);
-      }
+      last_mask_u8 = DecodeMaskToU8(mask, &first_mask_info);
       drain++;
       if (!first_mask_log) { std::cout << "Received first mask packet" << std::endl; first_mask_log = true; }
     }
