@@ -1173,9 +1173,6 @@ int main(int argc, char** argv) {
             ImGui::Checkbox("Apply rotation", &lm_apply_rot);
             ImGui::Checkbox("Show grid", &show_mesh); ImGui::SameLine();
             ImGui::Checkbox("Dense", &show_mesh_dense);
-            ImGui::Checkbox("Flip X", &lm_flip_x); ImGui::SameLine();
-            ImGui::Checkbox("Flip Y", &lm_flip_y); ImGui::SameLine();
-            ImGui::Checkbox("Swap XY", &lm_swap_xy);
           }
         }
 
