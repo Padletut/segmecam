@@ -285,6 +285,7 @@ int main(int argc, char** argv) {
   bool fx_skin_adv = true; float fx_skin_amount = 0.5f; float fx_skin_radius = 6.0f; float fx_skin_tex = 0.35f; float fx_skin_edge = 12.0f;
   // Advanced processing scale (downscale ROI before processing to save CPU). 1.0 = full res.
   float fx_adv_scale = 1.0f; // 0.5..1.0
+  float fx_adv_detail_preserve = 0.18f; // 0..0.5, re-inject hi-freq after upsample
   bool fx_skin_wrinkle = true; float fx_skin_smile_boost = 0.6f; float fx_skin_squint_boost = 0.5f; float fx_skin_forehead_boost = 0.8f; float fx_skin_wrinkle_gain = 1.5f;
   bool dbg_wrinkle_mask = false; // visualize wrinkle mask overlay
   bool dbg_wrinkle_stats = true; // show wrinkle stats text when visualizing
@@ -367,7 +368,7 @@ int main(int argc, char** argv) {
         << "lm_flip_x" << (int)lm_flip_x << "lm_flip_y" << (int)lm_flip_y << "lm_swap_xy" << (int)lm_swap_xy;
     fsw << "fx_skin" << (int)fx_skin << "fx_skin_adv" << (int)fx_skin_adv << "fx_skin_strength" << fx_skin_strength
         << "fx_skin_amount" << fx_skin_amount << "fx_skin_radius" << fx_skin_radius << "fx_skin_tex" << fx_skin_tex << "fx_skin_edge" << fx_skin_edge
-        << "fx_adv_scale" << fx_adv_scale;
+        << "fx_adv_scale" << fx_adv_scale << "fx_adv_detail_preserve" << fx_adv_detail_preserve;
     fsw << "fx_skin_wrinkle" << (int)fx_skin_wrinkle << "fx_skin_smile_boost" << fx_skin_smile_boost << "fx_skin_squint_boost" << fx_skin_squint_boost
         << "fx_skin_forehead_boost" << fx_skin_forehead_boost << "fx_skin_wrinkle_gain" << fx_skin_wrinkle_gain
         << "dbg_wrinkle_mask" << (int)dbg_wrinkle_mask << "dbg_wrinkle_stats" << (int)dbg_wrinkle_stats
@@ -466,6 +467,7 @@ int main(int argc, char** argv) {
     fx_skin_tex = read_float(root["fx_skin_tex"], fx_skin_tex);
     fx_skin_edge = read_float(root["fx_skin_edge"], fx_skin_edge);
     fx_adv_scale = read_float(root["fx_adv_scale"], fx_adv_scale);
+    fx_adv_detail_preserve = read_float(root["fx_adv_detail_preserve"], fx_adv_detail_preserve);
     fx_skin_wrinkle = read_int(root["fx_skin_wrinkle"], fx_skin_wrinkle?1:0)!=0;
     fx_skin_smile_boost = read_float(root["fx_skin_smile_boost"], fx_skin_smile_boost);
     fx_skin_squint_boost = read_float(root["fx_skin_squint_boost"], fx_skin_squint_boost);
@@ -639,7 +641,8 @@ int main(int argc, char** argv) {
                 }
                 // Resize ROI to small, process, then upsample back and paste
                 cv::Mat roi_bgr = frame_bgr(roi);
-                cv::Mat small; cv::resize(roi_bgr, small, cv::Size(), sc, sc, cv::INTER_AREA);
+                int down_interp = (sc >= 0.85f) ? cv::INTER_LINEAR : cv::INTER_AREA;
+                cv::Mat small; cv::resize(roi_bgr, small, cv::Size(), sc, sc, down_interp);
                 const mediapipe::NormalizedLandmarkList* lmsp_small = lmsp ? &lms_roi : nullptr;
                 ApplySkinSmoothingAdvBGR(small, fr_small, fx_skin_amount, fx_skin_radius*sc, fx_skin_tex, fx_skin_edge*sc, lmsp_small,
                                          sboost, qboost, fx_skin_forehead_boost, fx_skin_wrinkle_gain,
@@ -653,7 +656,33 @@ int main(int argc, char** argv) {
                                          fx_wrinkle_use_skin_gate,
                                          fx_wrinkle_mask_gain,
                                          fx_wrinkle_neg_cap);
-                cv::Mat up; cv::resize(small, up, roi.size(), 0, 0, cv::INTER_LINEAR);
+                cv::Mat up; cv::resize(small, up, roi.size(), 0, 0, cv::INTER_CUBIC);
+                // Optional detail re-injection to counter down/up sampling softness
+                float dp = std::clamp(fx_adv_detail_preserve, 0.0f, 0.5f);
+                if (dp > 1e-3f) {
+                  // Build feathered face mask in ROI
+                  cv::Mat mask_roi_u8(roi.size(), CV_8U, cv::Scalar(0));
+                  if (!fr_roi.face_oval.empty()) cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{fr_roi.face_oval}, cv::Scalar(255));
+                  if (!fr_roi.lips_outer.empty()) cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{fr_roi.lips_outer}, cv::Scalar(0));
+                  if (!fr_roi.left_eye.empty())   cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{fr_roi.left_eye},   cv::Scalar(0));
+                  if (!fr_roi.right_eye.empty())  cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{fr_roi.right_eye},  cv::Scalar(0));
+                  int fk = std::max(3, (int)std::round(fx_skin_edge) | 1);
+                  cv::GaussianBlur(mask_roi_u8, mask_roi_u8, cv::Size(fk, fk), 0);
+                  cv::Mat mask_f; mask_roi_u8.convertTo(mask_f, CV_32F, 1.0/255.0);
+                  // Unsharp: add fraction of high-frequency detail from original ROI
+                  cv::Mat base; cv::GaussianBlur(roi_bgr, base, cv::Size(0,0), 0.8);
+                  cv::Mat hi; cv::Mat roi32, base32; roi_bgr.convertTo(roi32, CV_32F, 1.0/255.0); base.convertTo(base32, CV_32F, 1.0/255.0);
+                  hi = roi32 - base32; // -1..1 roughly
+                  std::vector<cv::Mat> uch(3), mch(3), och(3); cv::split(up, uch);
+                  std::vector<cv::Mat> hi_ch(3); cv::split(hi, hi_ch);
+                  for (int i=0;i<3;++i) {
+                    cv::Mat u32; uch[i].convertTo(u32, CV_32F, 1.0/255.0);
+                    cv::Mat out32 = u32 + hi_ch[i].mul(mask_f * dp);
+                    out32 = cv::min(cv::max(out32, 0.0f), 1.0f);
+                    out32.convertTo(uch[i], CV_8U, 255.0);
+                  }
+                  cv::merge(uch, up);
+                }
                 up.copyTo(roi_bgr);
               } else {
                 // Fallback to full-res processing if ROI tiny
@@ -1179,6 +1208,9 @@ int main(int argc, char** argv) {
               ImGui::SliderFloat("Texture keep (0..1)", &fx_skin_tex, 0.05f, 1.0f);
               ImGui::SliderFloat("Edge feather (px)", &fx_skin_edge, 2.0f, 40.0f);
               ImGui::SliderFloat("Processing scale", &fx_adv_scale, 0.5f, 1.0f);
+              if (fx_adv_scale < 0.999f) {
+                ImGui::SliderFloat("Detail preserve", &fx_adv_detail_preserve, 0.0f, 0.5f);
+              }
 
               ImGui::Separator();
               ImGui::Checkbox("Wrinkle-aware", &fx_skin_wrinkle);
