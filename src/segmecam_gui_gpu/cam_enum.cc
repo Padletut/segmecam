@@ -162,3 +162,30 @@ bool SetCtrl(const std::string& cam_path, uint32_t id, int32_t value) {
   ::close(fd);
   return ok;
 }
+
+std::vector<LoopbackDesc> EnumerateLoopbackDevices() {
+  std::vector<LoopbackDesc> out;
+  std::error_code ec;
+  for (const auto& entry : fs::directory_iterator("/dev", ec)) {
+    if (ec) break;
+    const auto p = entry.path();
+    if (!fs::is_character_file(p, ec)) continue;
+    const std::string sp = p.string();
+    if (sp.find("/dev/video") == std::string::npos) continue;
+    int fd = ::open(sp.c_str(), O_RDWR | O_NONBLOCK);
+    if (fd < 0) continue;
+    v4l2_capability cap{};
+    if (ioctl(fd, VIDIOC_QUERYCAP, &cap) == 0) {
+      uint32_t caps = (cap.device_caps != 0) ? cap.device_caps : cap.capabilities;
+      bool is_output = (caps & V4L2_CAP_VIDEO_OUTPUT) || (caps & V4L2_CAP_VIDEO_OUTPUT_MPLANE);
+      if (is_output) {
+        LoopbackDesc d; d.path = sp; d.index = parse_index(sp);
+        d.name = reinterpret_cast<const char*>(cap.card);
+        out.push_back(std::move(d));
+      }
+    }
+    ::close(fd);
+  }
+  std::sort(out.begin(), out.end(), [](const LoopbackDesc& a, const LoopbackDesc& b){ return a.index < b.index; });
+  return out;
+}

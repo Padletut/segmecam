@@ -26,6 +26,9 @@
 #include "cam_enum.h"
 #include <linux/videodev2.h>
 #include "mediapipe/tasks/cc/vision/face_landmarker/face_landmarks_connections.h"
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
 
 namespace mp = mediapipe;
 ABSL_DECLARE_FLAG(std::string, resource_root_dir);
@@ -113,6 +116,9 @@ int main(int argc, char** argv) {
     init_w = wh.first; init_h = wh.second;
   }
   cv::VideoCapture cap = open_capture(cam_index, init_w, init_h);
+  // Enumerate v4l2loopback outputs (virtual cams)
+  std::vector<LoopbackDesc> vcam_list = EnumerateLoopbackDevices();
+  int ui_vcam_idx = 0; bool vcam_running = false; int vcam_fd = -1; int vcam_w = 0, vcam_h = 0;
   std::vector<int> ui_fps_opts; int ui_fps_idx = 0;
   std::string current_cam_path = (!cam_list.empty()?cam_list[ui_cam_idx].path:std::string());
   if (!current_cam_path.empty() && init_w>0 && init_h>0) {
@@ -264,6 +270,39 @@ int main(int argc, char** argv) {
 
   bool first_frame_log = false, first_mask_log = false, first_mask_info = false;
   bool running = true;
+
+  auto close_vcam = [&](){ if (vcam_fd >= 0) { ::close(vcam_fd); vcam_fd = -1; vcam_running=false; } };
+  auto open_vcam = [&](const std::string& path, int W, int H){
+    close_vcam();
+    int fd = ::open(path.c_str(), O_RDWR);
+    if (fd < 0) { std::perror("open vcam"); return false; }
+    v4l2_format fmt{}; fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT; fmt.fmt.pix.width = W; fmt.fmt.pix.height = H;
+    fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV; fmt.fmt.pix.field = V4L2_FIELD_NONE;
+    fmt.fmt.pix.bytesperline = W * 2; fmt.fmt.pix.sizeimage = W * H * 2;
+    if (ioctl(fd, VIDIOC_S_FMT, &fmt) != 0) { std::perror("VIDIOC_S_FMT vcam"); ::close(fd); return false; }
+    vcam_fd = fd; vcam_w = W; vcam_h = H; vcam_running = true; return true;
+  };
+  auto bgr_to_yuyv = [&](const cv::Mat& bgr, std::vector<uint8_t>& out){
+    int W = bgr.cols, H = bgr.rows; out.resize(W*H*2);
+    const uint8_t* p = bgr.data; int s = (int)bgr.step; uint8_t* o = out.data();
+    auto clamp = [](int v){ return (uint8_t)std::min(255,std::max(0,v)); };
+    for (int y=0;y<H;++y){
+      const uint8_t* row = p + y*s;
+      for (int x=0;x<W; x+=2){
+        int b0=row[x*3+0], g0=row[x*3+1], r0=row[x*3+2];
+        int b1=row[(x+1)*3+0], g1=row[(x+1)*3+1], r1=row[(x+1)*3+2];
+        int Y0 = ( 66*r0 +129*g0 + 25*b0 +128)>>8; Y0 += 16;
+        int Y1 = ( 66*r1 +129*g1 + 25*b1 +128)>>8; Y1 += 16;
+        int U  = (-38*r0 - 74*g0 +112*b0 +128)>>8; U += 128;
+        int V  = (112*r0 - 94*g0 - 18*b0 +128)>>8; V += 128;
+        // Average U,V over pair for simplicity
+        int U1 = (-38*r1 - 74*g1 +112*b1 +128)>>8; U1 += 128;
+        int V1 = (112*r1 - 94*g1 - 18*b1 +128)>>8; V1 += 128;
+        U = (U+U1)>>1; V = (V+V1)>>1;
+        *o++ = clamp(Y0); *o++ = clamp(U); *o++ = clamp(Y1); *o++ = clamp(V);
+      }
+    }
+  };
   while (running) {
     SDL_Event e; while (SDL_PollEvent(&e)) { ImGui_ImplSDL2_ProcessEvent(&e); if (e.type == SDL_QUIT) running = false; }
 
@@ -541,6 +580,19 @@ int main(int argc, char** argv) {
 
     upload(display_rgb);
 
+    // If virtual cam enabled, push this frame into loopback (YUYV)
+    if (vcam_running && vcam_fd >= 0 && !display_rgb.empty()) {
+      // Ensure format matches; if not, try to reconfigure
+      if (display_rgb.cols != vcam_w || display_rgb.rows != vcam_h) {
+        open_vcam(vcam_list.empty()?std::string():vcam_list[ui_vcam_idx].path, display_rgb.cols, display_rgb.rows);
+      }
+      cv::Mat disp_bgr; cv::cvtColor(display_rgb, disp_bgr, cv::COLOR_RGB2BGR);
+      std::vector<uint8_t> yuyv; bgr_to_yuyv(disp_bgr, yuyv);
+      ssize_t need = (ssize_t)yuyv.size();
+      ssize_t wr = ::write(vcam_fd, yuyv.data(), need);
+      (void)wr; // best-effort
+    }
+
     // Start new ImGui frame and build UI windows
     ImGui_ImplOpenGL3_NewFrame(); ImGui_ImplSDL2_NewFrame(); ImGui::NewFrame();
     int dw, dh; SDL_GL_GetDrawableSize(window, &dw, &dh);
@@ -629,6 +681,28 @@ int main(int argc, char** argv) {
           }
         } else {
           ImGui::TextDisabled("Resolutions: unknown (driver)");
+        }
+        ImGui::Separator();
+      }
+      // Virtual Webcam (v4l2loopback)
+      {
+        ImGui::Text("Virtual Webcam");
+        if (vcam_list.empty()) {
+          ImGui::TextDisabled("No v4l2 output devices found. modprobe v4l2loopback?");
+        } else {
+          std::vector<std::string> labels; labels.reserve(vcam_list.size());
+          for (const auto& d : vcam_list) { char b[192]; std::snprintf(b,sizeof(b),"%s (%s)", d.name.c_str(), d.path.c_str()); labels.emplace_back(b); }
+          std::vector<const char*> items; for (auto& s: labels) items.push_back(s.c_str());
+          ImGui::Combo("Output", &ui_vcam_idx, items.data(), (int)items.size()); ImGui::SameLine();
+          if (!vcam_running) {
+            if (ImGui::Button("Start##vcam")) {
+              int W = (tex_w>0?tex_w:init_w>0?init_w:640);
+              int H = (tex_h>0?tex_h:init_h>0?init_h:480);
+              if (ui_vcam_idx >=0 && ui_vcam_idx < (int)vcam_list.size()) open_vcam(vcam_list[ui_vcam_idx].path, W, H);
+            }
+          } else {
+            if (ImGui::Button("Stop##vcam")) { close_vcam(); }
+          }
         }
         ImGui::Separator();
       }

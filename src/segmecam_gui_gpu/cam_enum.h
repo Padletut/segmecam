@@ -25,3 +25,7 @@ struct CtrlRange { int32_t min=0,max=0,step=1,def=0,val=0; bool available=false;
 bool QueryCtrl(const std::string& cam_path, uint32_t id, CtrlRange* out);
 bool GetCtrl(const std::string& cam_path, uint32_t id, int32_t* value);
 bool SetCtrl(const std::string& cam_path, uint32_t id, int32_t value);
+
+// Loopback/video output enumeration (e.g., v4l2loopback)
+struct LoopbackDesc { std::string path; std::string name; int index=-1; };
+std::vector<LoopbackDesc> EnumerateLoopbackDevices();
