@@ -31,6 +31,16 @@ cc_library(
     deps = [],
 )
 
+cc_library(
+    name = "vcam",
+    srcs = ["vcam.cc"],
+    hdrs = ["vcam.h"],
+    includes = ["."],
+    deps = [
+        "//mediapipe/framework/port:opencv_core",
+    ],
+)
+
 cc_binary(
     name = "segmecam_gui_gpu",
     srcs = [
@@ -46,6 +56,7 @@ cc_binary(
         ":segmecam_composite",
         ":segmecam_face_effects",
         ":presets",
+        ":vcam",
         "//mediapipe/framework:calculator_graph",
         "//mediapipe/framework/formats:image_frame",
         "//mediapipe/framework/formats:landmark_cc_proto",
