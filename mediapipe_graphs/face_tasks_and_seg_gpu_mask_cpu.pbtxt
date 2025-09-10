@@ -45,22 +45,23 @@ node {
     input_stream: "IMAGE:input_image"
     output_stream: "NORM_LANDMARKS:multi_face_landmarks"
     output_stream: "FACE_RECTS:face_rects"
-  options: {
-    [mediapipe.tasks.vision.face_landmarker.proto.FaceLandmarkerGraphOptions.ext]: {
-      base_options: {
-        model_asset: { file_name: "mediapipe/external/com_google_mediapipe_face_landmarker_task/file/downloaded" }
-        acceleration: { }
-        gpu_origin: TOP_LEFT
-        use_stream_mode: true
+    options: {
+      [mediapipe.tasks.vision.face_landmarker.proto.FaceLandmarkerGraphOptions.ext]: {
+        base_options: {
+          model_asset: { file_name: "mediapipe/external/com_google_mediapipe_face_landmarker_task/file/downloaded" }
+          acceleration { gpu {} }
+          gpu_origin: TOP_LEFT
+          use_stream_mode: true
+        }
+        face_detector_graph_options: {
+          min_detection_confidence: 0.5
+          num_faces: 1
+        }
+        face_landmarks_detector_graph_options: {
+          min_detection_confidence: 0.5
+        }
+        min_tracking_confidence: 0.5
       }
-      face_detector_graph_options: {
-        min_detection_confidence: 0.5
-        num_faces: 1
-      }
-      face_landmarks_detector_graph_options: {
-        min_detection_confidence: 0.5
-      }
-      min_tracking_confidence: 0.5
     }
   }
 }

@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
       if (rp.ok()) rect_poller = std::make_unique<mp::OutputStreamPoller>(std::move(rp.value()));
     }
   }
-  { auto st = graph.StartRun({}); if (!st.ok()) { std::fprintf(stderr, "StartRun failed: %s\n", st.message().data()); return 4; } }
+  // Defer StartRun until after GL context is created to ensure GPU path is ready.
 
   // Try V4L2 first, then fallback to default backend.
   if (!cam_list.empty()) {
@@ -122,6 +122,10 @@ int main(int argc, char** argv) {
   // Camera control ranges
   CtrlRange r_brightness, r_contrast, r_saturation, r_gain, r_sharpness, r_zoom, r_focus;
   CtrlRange r_autogain, r_autofocus;
+  // Some cameras don't expose AUTOGAIN; use exposure auto/absolute instead
+  CtrlRange r_autoexposure, r_exposure_abs;
+  // Additional helpful controls seen in guvcview
+  CtrlRange r_awb, r_wb_temp, r_backlight, r_expo_dynfps;
   auto refresh_ctrls = [&]() {
     if (current_cam_path.empty()) return;
     QueryCtrl(current_cam_path, V4L2_CID_BRIGHTNESS, &r_brightness);
@@ -133,8 +137,25 @@ int main(int argc, char** argv) {
     QueryCtrl(current_cam_path, V4L2_CID_FOCUS_ABSOLUTE, &r_focus);
     QueryCtrl(current_cam_path, V4L2_CID_AUTOGAIN, &r_autogain);
     QueryCtrl(current_cam_path, V4L2_CID_FOCUS_AUTO, &r_autofocus);
+    // Exposure controls (fallback when AUTOGAIN is not available)
+    QueryCtrl(current_cam_path, V4L2_CID_EXPOSURE_AUTO, &r_autoexposure);
+    QueryCtrl(current_cam_path, V4L2_CID_EXPOSURE_ABSOLUTE, &r_exposure_abs);
+    // White balance / backlight / dynamic fps (exposure priority)
+    QueryCtrl(current_cam_path, V4L2_CID_AUTO_WHITE_BALANCE, &r_awb);
+    QueryCtrl(current_cam_path, V4L2_CID_WHITE_BALANCE_TEMPERATURE, &r_wb_temp);
+    QueryCtrl(current_cam_path, V4L2_CID_BACKLIGHT_COMPENSATION, &r_backlight);
+    QueryCtrl(current_cam_path, V4L2_CID_EXPOSURE_AUTO_PRIORITY, &r_expo_dynfps);
+  };
+  auto apply_default_ctrls = [&]() {
+    // Set auto focus enabled by default if supported
+    if (!current_cam_path.empty() && r_autofocus.available && r_autofocus.val == 0) {
+      if (SetCtrl(current_cam_path, V4L2_CID_FOCUS_AUTO, 1)) {
+        r_autofocus.val = 1;
+      }
+    }
   };
   refresh_ctrls();
+  apply_default_ctrls();
   if (!cap.isOpened()) {
     std::cout << "V4L2 open failed for index " << cam_index << ", retrying with CAP_ANY" << std::endl;
     cap.open(cam_index);
@@ -160,6 +181,7 @@ int main(int argc, char** argv) {
   if (!gl_context) { std::fprintf(stderr, "SDL_GL_CreateContext failed: %s\n", SDL_GetError()); return 6; }
   SDL_GL_MakeCurrent(window, gl_context);
   SDL_GL_SetSwapInterval(1);
+  bool vsync_on = true; // allow toggling to diagnose frame pacing caps
   std::cout << "GL context ready" << std::endl;
 
   // (GPU resources already configured before StartRun.)
@@ -185,6 +207,8 @@ int main(int argc, char** argv) {
   ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
   SDL_GL_SwapWindow(window);
   std::cout << "Initial frame drawn" << std::endl;
+  // Now start the Mediapipe graph (GPU context is ready)
+  { auto st = graph.StartRun({}); if (!st.ok()) { std::fprintf(stderr, "StartRun failed: %s\n", st.message().data()); return 4; } }
 
   GLuint tex = 0; int tex_w = 0, tex_h = 0;
   auto upload = [&](const cv::Mat& rgb){
@@ -208,7 +232,8 @@ int main(int argc, char** argv) {
   bool show_mask = false; int blur_strength = 25; float feather_px = 2.0f; int64_t frame_id = 0;
   bool dbg_composite_rgb = false; // composite in RGB space to test channel order
   // Background mode: 0=None, 1=Blur, 2=Image, 3=Solid Color
-  int bg_mode = 1;
+  int bg_mode = 0;
+  bool bg_fast_blur = true; // approximate fast blur for higher FPS
   cv::Mat bg_image; // background image (BGR)
   static char bg_path_buf[512] = {0};
   float solid_color[3] = {0.0f, 0.0f, 0.0f}; // RGB 0..1
@@ -366,7 +391,11 @@ int main(int argc, char** argv) {
       // No background effect; show camera
       cv::cvtColor(frame_bgr, display_rgb, cv::COLOR_BGR2RGB);
     } else if (bg_mode == 1 && !mask8_resized.empty()) {
-      display_rgb = CompositeBlurBackgroundBGR(frame_bgr, mask8_resized, blur_strength, feather_px);
+      if (bg_fast_blur) {
+        display_rgb = CompositeBlurBackgroundFastBGR(frame_bgr, mask8_resized, blur_strength, feather_px);
+      } else {
+        display_rgb = CompositeBlurBackgroundBGR(frame_bgr, mask8_resized, blur_strength, feather_px);
+      }
       // Debug: print means once per second
       uint32_t now_dbg = SDL_GetTicks();
       if (now_dbg - dbg_last_ms > 1000) {
@@ -517,13 +546,20 @@ int main(int argc, char** argv) {
     int dw, dh; SDL_GL_GetDrawableSize(window, &dw, &dh);
     glViewport(0,0,dw,dh); glClearColor(0.06f,0.06f,0.07f,1.0f); glClear(GL_COLOR_BUFFER_BIT);
     if (tex) {
-      ImGui::Begin("Preview", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs);
-      ImGui::SetWindowPos(ImVec2(0,0), ImGuiCond_Always); ImGui::SetWindowSize(ImVec2((float)dw,(float)dh), ImGuiCond_Always);
-      float aspect = tex_h > 0 ? (float)tex_w/(float)tex_h : 1.0f; float w = (float)dw, h = w/aspect; if (h > dh) { h = (float)dh; w = h*aspect; }
-      ImVec2 center((float)dw*0.5f, (float)dh*0.5f); ImVec2 size(w,h); ImVec2 pos(center.x - size.x*0.5f, center.y - size.y*0.5f);
-      ImGui::SetCursorPos(ImVec2(pos.x,pos.y));
-      ImGui::Image((ImTextureID)(intptr_t)tex, size, ImVec2(0,0), ImVec2(1,1));
-      ImGui::End();
+      // Draw the preview texture on the background draw list so UI stays on top.
+      float aspect = tex_h > 0 ? (float)tex_w/(float)tex_h : 1.0f;
+      float w = (float)dw, h = w / aspect; if (h > dh) { h = (float)dh; w = h * aspect; }
+      ImVec2 center((float)dw * 0.5f, (float)dh * 0.5f);
+      ImVec2 size(w, h);
+      ImVec2 pos(center.x - size.x * 0.5f, center.y - size.y * 0.5f);
+      ImVec2 vp = ImGui::GetMainViewport()->Pos;
+      ImDrawList* bg = ImGui::GetBackgroundDrawList();
+      ImVec2 p0(vp.x + pos.x, vp.y + pos.y);
+      ImVec2 p1(vp.x + pos.x + size.x, vp.y + pos.y + size.y);
+      bg->AddImage((ImTextureID)(intptr_t)tex,
+                   p0,
+                   p1,
+                   ImVec2(0,0), ImVec2(1,1));
     } else {
       // Show explicit message while waiting for first frame/texture
       ImGui::Begin("Preview", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs);
@@ -534,8 +570,14 @@ int main(int argc, char** argv) {
     }
     // Controls (allow user to move/resize; set defaults only once)
     ImGui::SetNextWindowPos(ImVec2(16,16), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(380, 240), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(380, 260), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("SegmeCam", nullptr, ImGuiWindowFlags_NoCollapse)) {
+      // Frame pacing
+      bool prev_vsync = vsync_on;
+      ImGui::Checkbox("VSync", &vsync_on);
+      if (vsync_on != prev_vsync) {
+        SDL_GL_SetSwapInterval(vsync_on ? 1 : 0);
+      }
       // Camera controls
       if (!cam_list.empty()) {
         ImGui::Text("Camera");
@@ -583,6 +625,7 @@ int main(int argc, char** argv) {
               cap.set(cv::CAP_PROP_FPS, fps);
             }
             refresh_ctrls();
+            apply_default_ctrls();
           }
         } else {
           ImGui::TextDisabled("Resolutions: unknown (driver)");
@@ -601,15 +644,91 @@ int main(int argc, char** argv) {
         };
         auto checkbox_ctrl = [&](const char* label, CtrlRange& r, uint32_t id){
           if (!r.available) return; int v = r.val != 0; if (ImGui::Checkbox(label, (bool*)&v)) { r.val = v?1:0; SetCtrl(current_cam_path, id, r.val);} };
+        auto checkbox_exposure_auto = [&](const char* label){
+          if (!r_autoexposure.available) return;
+          // Treat any non-manual as enabled
+          int mode = r_autoexposure.val;
+          bool enabled = (mode != V4L2_EXPOSURE_MANUAL);
+          if (ImGui::Checkbox(label, &enabled)) {
+            if (!enabled) {
+              // Turn OFF -> MANUAL
+              if (SetCtrl(current_cam_path, V4L2_CID_EXPOSURE_AUTO, V4L2_EXPOSURE_MANUAL)) {
+                r_autoexposure.val = V4L2_EXPOSURE_MANUAL;
+              } else {
+                std::cout << "Failed to set EXPOSURE_AUTO to MANUAL" << std::endl;
+              }
+            } else {
+              // Turn ON: try supported non-manual modes in order of likelihood of success for UVC cams
+              const int candidates[] = {
+                (int)V4L2_EXPOSURE_APERTURE_PRIORITY,
+                (int)V4L2_EXPOSURE_AUTO,
+                (int)V4L2_EXPOSURE_SHUTTER_PRIORITY
+              };
+              bool ok = false;
+              for (int c : candidates) {
+                if (c < r_autoexposure.min || c > r_autoexposure.max || c == (int)V4L2_EXPOSURE_MANUAL) continue;
+                if (SetCtrl(current_cam_path, V4L2_CID_EXPOSURE_AUTO, c)) {
+                  r_autoexposure.val = c; ok = true; break;
+                }
+              }
+              if (!ok) {
+                // Last resort: try leaving as-is if it was already some auto mode
+                if (mode != V4L2_EXPOSURE_MANUAL) {
+                  r_autoexposure.val = mode;
+                } else {
+                  std::cout << "Failed to enable auto exposure: no supported mode accepted" << std::endl;
+                }
+              }
+            }
+          }
+        };
         slider_ctrl("Brightness", r_brightness, V4L2_CID_BRIGHTNESS);
         slider_ctrl("Contrast",   r_contrast,   V4L2_CID_CONTRAST);
         slider_ctrl("Saturation", r_saturation, V4L2_CID_SATURATION);
-        checkbox_ctrl("Auto gain", r_autogain, V4L2_CID_AUTOGAIN);
-        slider_ctrl("Gain",       r_gain,       V4L2_CID_GAIN);
+        if (r_autogain.available) {
+          checkbox_ctrl("Auto gain", r_autogain, V4L2_CID_AUTOGAIN);
+        } else if (r_autoexposure.available) {
+          // Fallback label when AUTOGAIN not provided by driver
+          checkbox_exposure_auto("Auto exposure");
+        }
+        // Hide Gain/Exposure sliders completely when Auto Exposure is ON
+        bool ae_on_global = (r_autoexposure.available && r_autoexposure.val != V4L2_EXPOSURE_MANUAL);
+        if (!ae_on_global) {
+          // Gain: disable only if explicit AUTOGAIN is enabled
+          if (r_autogain.available && r_autogain.val) ImGui::BeginDisabled();
+          slider_ctrl("Gain",       r_gain,       V4L2_CID_GAIN);
+          if (r_autogain.available && r_autogain.val) ImGui::EndDisabled();
+        }
+        // Exposure controls and helpers
+        if (r_autoexposure.available) {
+          bool ae_on = (r_autoexposure.val != V4L2_EXPOSURE_MANUAL);
+          if (r_exposure_abs.available && !ae_on) {
+            slider_ctrl("Exposure",   r_exposure_abs, V4L2_CID_EXPOSURE_ABSOLUTE);
+          }
+          if (r_expo_dynfps.available) {
+            checkbox_ctrl("Exposure dynamic framerate", r_expo_dynfps, V4L2_CID_EXPOSURE_AUTO_PRIORITY);
+          }
+        }
+        if (r_backlight.available) {
+          if (r_backlight.min == 0 && r_backlight.max == 1 && r_backlight.step == 1) {
+            checkbox_ctrl("Backlight compensation", r_backlight, V4L2_CID_BACKLIGHT_COMPENSATION);
+          } else {
+            slider_ctrl("Backlight compensation", r_backlight, V4L2_CID_BACKLIGHT_COMPENSATION);
+          }
+        }
         slider_ctrl("Sharpness",  r_sharpness,  V4L2_CID_SHARPNESS);
         slider_ctrl("Zoom",       r_zoom,       V4L2_CID_ZOOM_ABSOLUTE);
         checkbox_ctrl("Auto focus", r_autofocus, V4L2_CID_FOCUS_AUTO);
         slider_ctrl("Focus",      r_focus,      V4L2_CID_FOCUS_ABSOLUTE);
+        // White balance (AWB + temperature)
+        if (r_awb.available) {
+          checkbox_ctrl("Auto white balance", r_awb, V4L2_CID_AUTO_WHITE_BALANCE);
+          if (r_wb_temp.available) {
+            if (r_awb.val) ImGui::BeginDisabled();
+            slider_ctrl("White balance (temp)", r_wb_temp, V4L2_CID_WHITE_BALANCE_TEMPERATURE);
+            if (r_awb.val) ImGui::EndDisabled();
+          }
+        }
         ImGui::Separator();
       }
       ImGui::Checkbox("Show Segmentation (mask)", &show_mask);
@@ -618,6 +737,7 @@ int main(int argc, char** argv) {
       if (bg_mode == 1) {
         ImGui::SliderInt("Blur Strength", &blur_strength, 1, 61);
         if ((blur_strength % 2) == 0) blur_strength++;
+        ImGui::SameLine(); ImGui::Checkbox("Fast blur", &bg_fast_blur);
       } else if (bg_mode == 2) {
         ImGui::InputText("Image Path", bg_path_buf, sizeof(bg_path_buf));
         ImGui::SameLine();
@@ -637,65 +757,108 @@ int main(int argc, char** argv) {
       } else {
         ImGui::Separator();
         ImGui::Text("Beauty Effects");
-        ImGui::Checkbox("Show Face Landmarks", &show_landmarks);
-        if (show_landmarks) {
-          ImGui::Checkbox("LM ROI coords", &lm_roi_mode); ImGui::SameLine();
-          ImGui::Checkbox("Apply rotation", &lm_apply_rot);
-          ImGui::Checkbox("Show grid", &show_mesh); ImGui::SameLine();
-          ImGui::Checkbox("Dense", &show_mesh_dense);
-        }
-        if (show_landmarks) {
-          ImGui::Checkbox("Flip X", &lm_flip_x); ImGui::SameLine();
-          ImGui::Checkbox("Flip Y", &lm_flip_y); ImGui::SameLine();
-          ImGui::Checkbox("Swap XY", &lm_swap_xy);
-        }
-        ImGui::Checkbox("Skin smoothing", &fx_skin);
-        if (fx_skin) {
-          ImGui::SameLine(); ImGui::Checkbox("Advanced", &fx_skin_adv);
-          if (fx_skin_adv) {
-            ImGui::SliderFloat("Amount##skin", &fx_skin_amount, 0.0f, 1.0f);
-            ImGui::SliderFloat("Radius (px)", &fx_skin_radius, 1.0f, 20.0f);
-            ImGui::SliderFloat("Texture keep (0..1)", &fx_skin_tex, 0.05f, 1.0f);
-            ImGui::SliderFloat("Edge feather (px)", &fx_skin_edge, 2.0f, 40.0f);
-            ImGui::Checkbox("Wrinkle-aware", &fx_skin_wrinkle);
-            if (fx_skin_wrinkle) {
-              ImGui::SliderFloat("Smile boost", &fx_skin_smile_boost, 0.0f, 1.0f);
-              ImGui::SliderFloat("Squint boost", &fx_skin_squint_boost, 0.0f, 1.0f);
-              ImGui::SliderFloat("Wrinkle gain", &fx_skin_wrinkle_gain, 0.0f, 8.0f);
-              ImGui::Checkbox("Show wrinkle mask", &dbg_wrinkle_mask); ImGui::SameLine();
-              ImGui::Checkbox("Show stats", &dbg_wrinkle_stats);
-              ImGui::SliderFloat("Forehead boost", &fx_skin_forehead_boost, 0.0f, 2.0f);
-              ImGui::Checkbox("Suppress chin/stubble", &fx_wrinkle_suppress_lower);
-              if (fx_wrinkle_suppress_lower) {
-                ImGui::SliderFloat("Lower-face ratio", &fx_wrinkle_lower_ratio, 0.25f, 0.65f);
-              }
-              ImGui::Checkbox("Ignore glasses", &fx_wrinkle_ignore_glasses); ImGui::SameLine();
-              ImGui::SliderFloat("Glasses margin (px)", &fx_wrinkle_glasses_margin, 0.0f, 30.0f);
-              ImGui::SliderFloat("Wrinkle sensitivity", &fx_wrinkle_keep_ratio, 0.05f, 10.60f);
-              ImGui::Checkbox("Wrinkle-only preview", &fx_wrinkle_preview);
-              ImGui::Checkbox("Custom line width", &fx_wrinkle_custom_scales);
-              if (fx_wrinkle_custom_scales) {
-                ImGui::SliderFloat("Min width (px)", &fx_wrinkle_min_px, 1.0f, 10.0f);
-                ImGui::SliderFloat("Max width (px)", &fx_wrinkle_max_px, 2.0f, 16.0f);
-                if (fx_wrinkle_max_px < fx_wrinkle_min_px) fx_wrinkle_max_px = fx_wrinkle_min_px;
-              }
-              ImGui::Checkbox("Skin gate (YCbCr)", &fx_wrinkle_use_skin_gate); ImGui::SameLine();
-              ImGui::SliderFloat("Mask gain", &fx_wrinkle_mask_gain, 0.5f, 3.0f);
-              ImGui::SliderFloat("Baseline boost", &fx_wrinkle_baseline, 0.0f, 1.0f);
-              ImGui::SliderFloat("Neg atten cap", &fx_wrinkle_neg_cap, 0.6f, 1.0f);
-            }
-          } else {
-            ImGui::SliderFloat("Strength", &fx_skin_strength, 0.0f, 1.0f);
+
+        // Overlay/Debug controls (collapsed by default)
+        ImGui::SetNextItemOpen(false, ImGuiCond_FirstUseEver);
+        if (ImGui::CollapsingHeader("Overlay & Debug")) {
+          ImGui::Checkbox("Show Face Landmarks", &show_landmarks);
+          if (show_landmarks) {
+            ImGui::Checkbox("LM ROI coords", &lm_roi_mode); ImGui::SameLine();
+            ImGui::Checkbox("Apply rotation", &lm_apply_rot);
+            ImGui::Checkbox("Show grid", &show_mesh); ImGui::SameLine();
+            ImGui::Checkbox("Dense", &show_mesh_dense);
+            ImGui::Checkbox("Flip X", &lm_flip_x); ImGui::SameLine();
+            ImGui::Checkbox("Flip Y", &lm_flip_y); ImGui::SameLine();
+            ImGui::Checkbox("Swap XY", &lm_swap_xy);
           }
         }
-        ImGui::Checkbox("Lip refiner", &fx_lipstick);
-        ImGui::ColorEdit3("Lip color", fx_lip_color);
-        ImGui::SliderFloat("Amount##lip", &fx_lip_alpha, 0.0f, 1.0f);
-        ImGui::SliderFloat("Feather (px)", &fx_lip_feather, 0.0f, 20.0f);
-        ImGui::SliderFloat("Band grow (px)", &fx_lip_band, 0.0f, 12.0f);
-        ImGui::SliderFloat("Lightness", &fx_lip_light, -1.0f, 1.0f);
-        ImGui::Checkbox("Teeth whitening", &fx_teeth); ImGui::SameLine(); ImGui::SliderFloat("Amount##teeth", &fx_teeth_strength, 0.0f, 1.0f);
-        ImGui::SliderFloat("Avoid lips (px)", &fx_teeth_margin, 0.0f, 12.0f);
+
+        // Skin Smoothing (main section)
+        ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+        if (ImGui::CollapsingHeader("Skin Smoothing")) {
+          ImGui::Checkbox("Enable##skin", &fx_skin); ImGui::SameLine();
+          ImGui::Checkbox("Advanced", &fx_skin_adv);
+          if (fx_skin) {
+            if (!fx_skin_adv) {
+              ImGui::SliderFloat("Strength", &fx_skin_strength, 0.0f, 1.0f);
+            } else {
+              ImGui::SliderFloat("Amount##skin", &fx_skin_amount, 0.0f, 1.0f);
+              ImGui::SliderFloat("Radius (px)", &fx_skin_radius, 1.0f, 20.0f);
+              ImGui::SliderFloat("Texture keep (0..1)", &fx_skin_tex, 0.05f, 1.0f);
+              ImGui::SliderFloat("Edge feather (px)", &fx_skin_edge, 2.0f, 40.0f);
+
+              ImGui::Separator();
+              ImGui::Checkbox("Wrinkle-aware", &fx_skin_wrinkle);
+              if (fx_skin_wrinkle) {
+                ImGui::Indent();
+                // Sensitivity & boosts
+                ImGui::SliderFloat("Wrinkle gain", &fx_skin_wrinkle_gain, 0.0f, 8.0f);
+                ImGui::SliderFloat("Smile boost", &fx_skin_smile_boost, 0.0f, 1.0f);
+                ImGui::SliderFloat("Squint boost", &fx_skin_squint_boost, 0.0f, 1.0f);
+                ImGui::SliderFloat("Forehead boost", &fx_skin_forehead_boost, 0.0f, 2.0f);
+
+                ImGui::Separator();
+                // Region controls
+                ImGui::Checkbox("Suppress chin/stubble", &fx_wrinkle_suppress_lower);
+                if (fx_wrinkle_suppress_lower) {
+                  ImGui::SliderFloat("Lower-face ratio", &fx_wrinkle_lower_ratio, 0.25f, 0.65f);
+                }
+                ImGui::Checkbox("Ignore glasses", &fx_wrinkle_ignore_glasses);
+                if (fx_wrinkle_ignore_glasses) {
+                  // No extra indent: align with other sliders in this section
+                  ImGui::SliderFloat("Glasses margin (px)", &fx_wrinkle_glasses_margin, 0.0f, 30.0f);
+                }
+
+                ImGui::Separator();
+                // Advanced masking
+                ImGui::SliderFloat("Wrinkle sensitivity", &fx_wrinkle_keep_ratio, 0.05f, 10.60f);
+                ImGui::Checkbox("Custom line width", &fx_wrinkle_custom_scales);
+                if (fx_wrinkle_custom_scales) {
+                  ImGui::SliderFloat("Min width (px)", &fx_wrinkle_min_px, 1.0f, 10.0f);
+                  ImGui::SliderFloat("Max width (px)", &fx_wrinkle_max_px, 2.0f, 16.0f);
+                  if (fx_wrinkle_max_px < fx_wrinkle_min_px) fx_wrinkle_max_px = fx_wrinkle_min_px;
+                }
+                ImGui::Checkbox("Skin gate (YCbCr)", &fx_wrinkle_use_skin_gate);
+                if (fx_wrinkle_use_skin_gate) {
+                  ImGui::Indent();
+                  ImGui::SliderFloat("Mask gain", &fx_wrinkle_mask_gain, 0.5f, 3.0f);
+                  ImGui::Unindent();
+                }
+                ImGui::SliderFloat("Baseline boost", &fx_wrinkle_baseline, 0.0f, 1.0f);
+                ImGui::SliderFloat("Neg atten cap", &fx_wrinkle_neg_cap, 0.6f, 1.0f);
+
+                ImGui::Separator();
+                ImGui::Checkbox("Wrinkle-only preview", &fx_wrinkle_preview);
+                ImGui::Checkbox("Show wrinkle mask", &dbg_wrinkle_mask); ImGui::SameLine();
+                ImGui::Checkbox("Show stats", &dbg_wrinkle_stats);
+                ImGui::Unindent();
+              }
+            }
+          }
+        }
+
+        // Lips
+        ImGui::SetNextItemOpen(false, ImGuiCond_FirstUseEver);
+        if (ImGui::CollapsingHeader("Lips")) {
+          ImGui::Checkbox("Lip refiner", &fx_lipstick);
+          if (fx_lipstick) {
+            ImGui::ColorEdit3("Lip color", fx_lip_color);
+            ImGui::SliderFloat("Amount##lip", &fx_lip_alpha, 0.0f, 1.0f);
+            ImGui::SliderFloat("Feather (px)", &fx_lip_feather, 0.0f, 20.0f);
+            ImGui::SliderFloat("Band grow (px)", &fx_lip_band, 0.0f, 12.0f);
+            ImGui::SliderFloat("Lightness", &fx_lip_light, -1.0f, 1.0f);
+          }
+        }
+
+        // Teeth
+        ImGui::SetNextItemOpen(false, ImGuiCond_FirstUseEver);
+        if (ImGui::CollapsingHeader("Teeth Whitening")) {
+          ImGui::Checkbox("Enable##teeth", &fx_teeth);
+          if (fx_teeth) {
+            ImGui::SliderFloat("Amount##teeth", &fx_teeth_strength, 0.0f, 1.0f);
+            ImGui::SliderFloat("Avoid lips (px)", &fx_teeth_margin, 0.0f, 12.0f);
+          }
+        }
       }
     }
     ImGui::End();
