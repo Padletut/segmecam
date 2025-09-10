@@ -91,6 +91,12 @@ Controls available in the UI:
 - Blur kernel size, color picker, image path loader
 - FPS and texture size overlay
 
+Face effects (optional):
+- Build/run with the combined graph to enable landmark-based effects:
+  - Graph: `mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt`
+  - Adds `multi_face_landmarks` stream used for lipstick, skin smoothing, teeth whitening
+  - If not present, the UI shows a notice and hides controls
+
 ---
 
 ## Cleanup

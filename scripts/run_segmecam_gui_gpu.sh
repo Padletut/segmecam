@@ -5,12 +5,24 @@ set -euo pipefail
 # This guarantees runfiles are set up so the model is found.
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
-# Allow optional --rebuild flag to force a fresh build
+# Allow optional flags:
+# --rebuild           Force a clean rebuild
+# --face              Use combined face+seg graph
+# --graph <path>      Use a specific graph path
+# --tasks             Use Tasks Face Landmarker + Seg graph
 REBUILD=false
-for arg in "$@"; do
-  if [[ "$arg" == "--rebuild" ]]; then
-    REBUILD=true
-  fi
+USE_FACE=false
+USE_TASKS=false
+CUSTOM_GRAPH=""
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --rebuild) REBUILD=true; shift ;;
+    --face) USE_FACE=true; shift ;;
+    --graph) CUSTOM_GRAPH="$2"; shift 2 ;;
+    --tasks) USE_TASKS=true; shift ;;
+    *) ARGS+=("$1"); shift ;;
+  esac
 done
 MP_DIR="$ROOT_DIR/external/mediapipe"
 
@@ -43,21 +55,36 @@ if [[ ! -x "$BAZEL" ]]; then
   fi
 fi
 
-# Use absolute path for the graph so it resolves regardless of Bazel runfiles CWD
-GRAPH_PATH="$ROOT_DIR/mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt"
+# Resolve graph path
+DEFAULT_GRAPH="$ROOT_DIR/mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt"
+FACE_GRAPH="$ROOT_DIR/mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt"
+TASKS_GRAPH="$ROOT_DIR/mediapipe_graphs/face_tasks_and_seg_gpu_mask_cpu.pbtxt"
+if [[ -n "$CUSTOM_GRAPH" ]]; then
+  GRAPH_PATH="$CUSTOM_GRAPH"
+elif [[ "$USE_TASKS" == true ]]; then
+  GRAPH_PATH="$TASKS_GRAPH"
+elif [[ "$USE_FACE" == true ]]; then
+  GRAPH_PATH="$FACE_GRAPH"
+else
+  GRAPH_PATH="$DEFAULT_GRAPH"
+fi
 
 # Ensure OpenCV is discoverable inside Bazel sandbox
 DEFAULT_PKG_PATH="/usr/local/lib/pkgconfig:/usr/local/lib64/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig"
 export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}:${DEFAULT_PKG_PATH}"
 
 echo "Running SegmeCam GUI via: $BAZEL run (single build) ..."
+echo "Graph: $GRAPH_PATH"
 if [[ "$REBUILD" == true ]]; then
   echo "Forcing Bazel clean --expunge before run (this may take a while)..."
   "$BAZEL" clean --expunge || true
 fi
 
+# Compute runfiles dir path (best-effort) for resource loading
+BIN_RUNFILES="$MP_DIR/bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu.runfiles"
+
 "$BAZEL" run -c opt \
   --action_env=PKG_CONFIG_PATH --repo_env=PKG_CONFIG_PATH \
   --cxxopt=-I/usr/include/opencv4 \
   mediapipe/examples/desktop/segmecam_gui_gpu:segmecam_gui_gpu -- \
-  "$GRAPH_PATH" . 0
+  "$GRAPH_PATH" "$BIN_RUNFILES" 0

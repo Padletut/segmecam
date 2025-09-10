@@ -10,6 +10,19 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "segmecam_face_effects",
+    srcs = ["segmecam_face_effects.cc"],
+    hdrs = ["segmecam_face_effects.h"],
+    includes = ["."],
+    deps = [
+        "//mediapipe/framework/formats:landmark_cc_proto",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+        "//mediapipe/framework/port:opencv_highgui",
+    ],
+)
+
 cc_binary(
     name = "segmecam_gui_gpu",
     srcs = [
@@ -17,11 +30,17 @@ cc_binary(
     ],
     data = [
         "//mediapipe/modules/selfie_segmentation:selfie_segmentation.tflite",
+        "//mediapipe/modules/face_landmark:face_landmark_with_attention.tflite",
+        "//mediapipe/modules/face_detection:face_detection_short_range.tflite",
+        "@com_google_mediapipe_face_landmarker_task//file",
     ],
     deps = [
         ":segmecam_composite",
+        ":segmecam_face_effects",
         "//mediapipe/framework:calculator_graph",
         "//mediapipe/framework/formats:image_frame",
+        "//mediapipe/framework/formats:landmark_cc_proto",
+        "//mediapipe/framework/formats:rect_cc_proto",
         "//mediapipe/framework/port:file_helpers",
         "//mediapipe/framework/port:parse_text_proto",
         "//mediapipe/framework/port:status",
@@ -29,6 +48,15 @@ cc_binary(
         "//mediapipe/framework/port:opencv_imgproc",
         "//mediapipe/framework/port:opencv_highgui",
         "//mediapipe/graphs/selfie_segmentation:selfie_segmentation_gpu_deps",
+        "//mediapipe/graphs/face_mesh:desktop_live_gpu_calculators",
+        # Tasks Face Landmarker graph + options protos
+        "//mediapipe/tasks/cc/vision/face_landmarker:face_landmarker_graph",
+        "//mediapipe/tasks/cc/vision/face_landmarker:face_landmarks_connections",
+        "//mediapipe/tasks/cc/vision/face_landmarker/proto:face_landmarker_graph_options_cc_proto",
+        "//mediapipe/tasks/cc/vision/face_landmarker/proto:face_landmarks_detector_graph_options_cc_proto",
+        "//mediapipe/tasks/cc/vision/face_detector/proto:face_detector_graph_options_cc_proto",
+        # Needed calculators referenced by our graphs
+        "//mediapipe/calculators/util:to_image_calculator",
         "//mediapipe/gpu:gl_calculator_helper",
         "//mediapipe/gpu:gpu_buffer",
         "//mediapipe/gpu:gpu_shared_data_internal",

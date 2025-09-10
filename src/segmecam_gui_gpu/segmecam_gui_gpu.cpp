@@ -8,18 +8,25 @@
 
 #include <opencv2/opencv.hpp>
 #include <cstdio>
+#include <memory>
 #include <string>
 #include <iostream>
 
+#include "absl/flags/flag.h"
+#include "absl/flags/declare.h"
 #include "mediapipe/framework/calculator_graph.h"
 #include "mediapipe/framework/formats/image_frame.h"
 #include "mediapipe/framework/port/parse_text_proto.h"
 #include "mediapipe/framework/port/file_helpers.h"
 #include "mediapipe/framework/port/status.h"
+#include "mediapipe/framework/formats/rect.pb.h"
 #include "mediapipe/gpu/gpu_shared_data_internal.h"
 #include "segmecam_composite.h"
+#include "segmecam_face_effects.h"
+#include "mediapipe/tasks/cc/vision/face_landmarker/face_landmarks_connections.h"
 
 namespace mp = mediapipe;
+ABSL_DECLARE_FLAG(std::string, resource_root_dir);
 
 static mp::StatusOr<std::string> LoadTextFile(const std::string& path) {
   std::string contents;
@@ -35,12 +42,20 @@ static void MatToImageFrame(const cv::Mat& src_bgr, std::unique_ptr<mp::ImageFra
 }
 
 int main(int argc, char** argv) {
-  std::string graph_path = "mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt";  // from project root
-  std::string resource_root_dir = ".";  // MediaPipe repo root
+  std::string graph_path = "mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt";  // default: segmentation only
+  std::string resource_root_dir = ".";  // MediaPipe repo root or Bazel runfiles
   int cam_index = 0;
   if (argc > 1) graph_path = argv[1];
   if (argc > 2) resource_root_dir = argv[2];
   if (argc > 3) cam_index = std::atoi(argv[3]);
+
+  // If running under Bazel, point MediaPipe resource loader to runfiles.
+  const char* rf = std::getenv("RUNFILES_DIR");
+  if (rf && *rf) {
+    absl::SetFlag(&FLAGS_resource_root_dir, std::string(rf));
+  } else if (!resource_root_dir.empty()) {
+    absl::SetFlag(&FLAGS_resource_root_dir, resource_root_dir);
+  }
 
   auto cfg_text_or = LoadTextFile(graph_path);
   if (!cfg_text_or.ok()) { std::fprintf(stderr, "Failed to read graph: %s\n", graph_path.c_str()); return 1; }
@@ -58,6 +73,19 @@ int main(int argc, char** argv) {
   auto mask_poller_or = graph.AddOutputStreamPoller("segmentation_mask_cpu");
   if (!mask_poller_or.ok()) { std::fprintf(stderr, "Graph does not produce 'segmentation_mask_cpu'\n"); return 3; }
   mp::OutputStreamPoller mask_poller = std::move(mask_poller_or.value());
+  // Try to attach landmarks poller (optional)
+  bool has_landmarks = true;
+  std::unique_ptr<mp::OutputStreamPoller> lm_poller;
+  std::unique_ptr<mp::OutputStreamPoller> rect_poller;
+  {
+    auto lm_or = graph.AddOutputStreamPoller("multi_face_landmarks");
+    if (!lm_or.ok()) { has_landmarks = false; std::cout << "Landmarks stream not available (graph without face mesh)" << std::endl; }
+    else { lm_poller = std::make_unique<mp::OutputStreamPoller>(std::move(lm_or.value())); }
+    if (has_landmarks) {
+      auto rp = graph.AddOutputStreamPoller("face_rects");
+      if (rp.ok()) rect_poller = std::make_unique<mp::OutputStreamPoller>(std::move(rp.value()));
+    }
+  }
   { auto st = graph.StartRun({}); if (!st.ok()) { std::fprintf(stderr, "StartRun failed: %s\n", st.message().data()); return 4; } }
 
   // Try V4L2 first, then fallback to default backend.
@@ -100,9 +128,9 @@ int main(int argc, char** argv) {
 
   // Draw an initial frame so the window appears even before first camera frame
   ImGui_ImplOpenGL3_NewFrame(); ImGui_ImplSDL2_NewFrame(); ImGui::NewFrame();
-  ImGui::SetNextWindowPos(ImVec2(16,16), ImGuiCond_Always);
-  ImGui::SetNextWindowSize(ImVec2(360,100), ImGuiCond_Always);
-  if (ImGui::Begin("SegmeCam", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings)) {
+  ImGui::SetNextWindowPos(ImVec2(16,16), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(360,100), ImGuiCond_FirstUseEver);
+  if (ImGui::Begin("SegmeCam", nullptr, ImGuiWindowFlags_NoCollapse)) {
     ImGui::Text("Initializing camera and graph...");
   }
   ImGui::End();
@@ -141,6 +169,25 @@ int main(int argc, char** argv) {
   float solid_color[3] = {0.0f, 0.0f, 0.0f}; // RGB 0..1
   cv::Mat last_mask_u8;  // cache latest mask to avoid blocking
   cv::Mat last_display_rgb;
+  // Beauty controls
+  bool fx_skin = false; float fx_skin_strength = 0.4f;
+  bool fx_skin_adv = true; float fx_skin_amount = 0.5f; float fx_skin_radius = 6.0f; float fx_skin_tex = 0.35f; float fx_skin_edge = 12.0f;
+  bool fx_skin_wrinkle = true; float fx_skin_smile_boost = 0.6f; float fx_skin_squint_boost = 0.5f; float fx_skin_forehead_boost = 0.8f; float fx_skin_wrinkle_gain = 1.5f;
+  bool dbg_wrinkle_mask = false; // visualize wrinkle mask overlay
+  bool dbg_wrinkle_stats = true; // show wrinkle stats text when visualizing
+  bool fx_wrinkle_suppress_lower = true; float fx_wrinkle_lower_ratio = 0.45f;
+  bool fx_wrinkle_ignore_glasses = true; float fx_wrinkle_glasses_margin = 12.0f;
+  float fx_wrinkle_keep_ratio = 0.35f; // top fraction kept (higher = more sensitive)
+  bool fx_wrinkle_custom_scales = true; float fx_wrinkle_min_px = 2.0f; float fx_wrinkle_max_px = 8.0f;
+  bool fx_wrinkle_preview = false; // show only wrinkle attenuation (no base smoothing)
+  bool fx_wrinkle_use_skin_gate = false; float fx_wrinkle_mask_gain = 2.0f; float fx_wrinkle_baseline = 0.5f;
+  float fx_wrinkle_neg_cap = 0.9f; // max negative-detail attenuation
+  bool fx_lipstick = false; float fx_lip_alpha = 0.5f; float fx_lip_color[3] = {0.8f, 0.1f, 0.3f}; float fx_lip_feather = 6.0f; float fx_lip_light = 0.0f; float fx_lip_band = 4.0f;
+  bool fx_teeth = false; float fx_teeth_strength = 0.5f; float fx_teeth_margin = 3.0f;
+  bool show_landmarks = false; // draw facial landmarks overlay
+  bool show_mesh = false; bool show_mesh_dense = false; // Studio-like grid
+  bool lm_roi_mode = false; bool lm_apply_rot = true;
+  bool lm_flip_x = false, lm_flip_y = false, lm_swap_xy = false; // landmark coordinate tweaks
   // FPS
   double fps = 0.0; uint64_t fps_frames = 0; uint32_t fps_last_ms = SDL_GetTicks();
   uint32_t dbg_last_ms = SDL_GetTicks();
@@ -179,6 +226,49 @@ int main(int argc, char** argv) {
       if (!first_mask_log) { std::cout << "Received first mask packet" << std::endl; first_mask_log = true; }
     }
 
+    // Poll latest landmarks (non-blocking)
+    mediapipe::NormalizedLandmarkList latest_lms;
+    bool have_lms = false;
+    std::vector<mediapipe::NormalizedRect> latest_rects;
+    if (has_landmarks && lm_poller) {
+      mp::Packet lp;
+      while (lm_poller->QueueSize() > 0 && lm_poller->Next(&lp)) {
+        // Expecting vector<NormalizedLandmarkList>
+        const auto& v = lp.Get<std::vector<mediapipe::NormalizedLandmarkList>>();
+        if (!v.empty()) { latest_lms = v[0]; have_lms = true; }
+      }
+      if (rect_poller) {
+        mp::Packet rp;
+        while (rect_poller->QueueSize() > 0 && rect_poller->Next(&rp)) {
+          latest_rects = rp.Get<std::vector<mediapipe::NormalizedRect>>();
+        }
+      }
+    }
+
+    auto transform_lms_with_rect = [&](const mediapipe::NormalizedLandmarkList& in,
+                                       const mediapipe::NormalizedRect& r,
+                                       int W, int H, bool apply_rot) {
+      mediapipe::NormalizedLandmarkList out = in;
+      const float cx = r.x_center();
+      const float cy = r.y_center();
+      const float rw = r.width();
+      const float rh = r.height();
+      const float ang = apply_rot ? r.rotation() : 0.0f;
+      const float ca = std::cos(ang), sa = std::sin(ang);
+      for (int i=0;i<out.landmark_size();++i) {
+        auto* p = out.mutable_landmark(i);
+        float rx = p->x();
+        float ry = p->y();
+        float ox = (rx - 0.5f) * rw * W;
+        float oy = (ry - 0.5f) * rh * H;
+        float rotx = ca*ox - sa*oy;
+        float roty = sa*ox + ca*oy;
+        p->set_x(cx + rotx / W);
+        p->set_y(cy + roty / H);
+      }
+      return out;
+    };
+
     // Compose display frame
     cv::Mat display_rgb;
     // Ensure mask matches frame size
@@ -187,6 +277,42 @@ int main(int argc, char** argv) {
       cv::resize(last_mask_u8, mask8_resized, frame_bgr.size(), 0, 0, cv::INTER_LINEAR);
     } else if (!last_mask_u8.empty()) {
       mask8_resized = last_mask_u8;
+    }
+
+    // Apply face effects on the foreground before background compositing
+    if (have_lms) {
+      mediapipe::NormalizedLandmarkList used_lms = latest_lms;
+      if (lm_roi_mode && !latest_rects.empty()) {
+        used_lms = transform_lms_with_rect(latest_lms, latest_rects[0], frame_bgr.cols, frame_bgr.rows, lm_apply_rot);
+      }
+      FaceRegions fr; if (ExtractFaceRegions(used_lms, frame_bgr.size(), &fr, lm_flip_x, lm_flip_y, lm_swap_xy)) {
+        // Teeth first to avoid overriding lips later
+        if (fx_teeth)     ApplyTeethWhitenBGR(frame_bgr, fr, fx_teeth_strength, fx_teeth_margin);
+        if (fx_skin) {
+          if (fx_skin_adv) {
+            const mediapipe::NormalizedLandmarkList* lmsp = (has_landmarks && have_lms && fx_skin_wrinkle) ? &used_lms : nullptr;
+            float sboost = fx_skin_wrinkle ? fx_skin_smile_boost : 0.0f;
+            float qboost = fx_skin_wrinkle ? fx_skin_squint_boost : 0.0f;
+            ApplySkinSmoothingAdvBGR(frame_bgr, fr, fx_skin_amount, fx_skin_radius, fx_skin_tex, fx_skin_edge, lmsp, sboost, qboost, fx_skin_forehead_boost, fx_skin_wrinkle_gain,
+                                     fx_wrinkle_suppress_lower, fx_wrinkle_lower_ratio, fx_wrinkle_ignore_glasses, fx_wrinkle_glasses_margin,
+                                     fx_wrinkle_keep_ratio,
+                                     fx_wrinkle_custom_scales ? fx_wrinkle_min_px : -1.0f,
+                                     fx_wrinkle_custom_scales ? fx_wrinkle_max_px : -1.0f,
+                                     10.0f,
+                                     fx_wrinkle_preview,
+                                     fx_wrinkle_baseline,
+                                     fx_wrinkle_use_skin_gate,
+                                     fx_wrinkle_mask_gain,
+                                     fx_wrinkle_neg_cap);
+          } else {
+            ApplySkinSmoothingBGR(frame_bgr, fr, fx_skin_strength);
+          }
+        }
+        if (fx_lipstick)  ApplyLipRefinerBGR(frame_bgr, fr,
+                     cv::Scalar((int)(fx_lip_color[2]*255.0f),(int)(fx_lip_color[1]*255.0f),(int)(fx_lip_color[0]*255.0f)),
+                     fx_lip_alpha, fx_lip_feather, fx_lip_light, fx_lip_band,
+                     used_lms, frame_bgr.size());
+      }
     }
 
     if (show_mask && !mask8_resized.empty()) {
@@ -223,6 +349,122 @@ int main(int argc, char** argv) {
       cv::cvtColor(frame_bgr, display_rgb, cv::COLOR_BGR2RGB);
     }
 
+    // Optional: draw face landmarks overlay (on display_rgb)
+    if (show_landmarks && have_lms) {
+      // Convert to BGR for correct OpenCV color ordering while drawing
+      cv::Mat dbg_bgr; cv::cvtColor(display_rgb, dbg_bgr, cv::COLOR_RGB2BGR);
+      // Draw points
+      int W = dbg_bgr.cols, H = dbg_bgr.rows;
+      mediapipe::NormalizedLandmarkList draw_lms = latest_lms;
+      if (lm_roi_mode && !latest_rects.empty()) draw_lms = transform_lms_with_rect(latest_lms, latest_rects[0], W, H, lm_apply_rot);
+      const int n = draw_lms.landmark_size();
+      for (int i = 0; i < n; ++i) {
+        const auto& p = draw_lms.landmark(i);
+        float nx = p.x(); float ny = p.y();
+        if (lm_swap_xy) { std::swap(nx, ny); }
+        if (lm_flip_x) nx = 1.0f - nx;
+        if (lm_flip_y) ny = 1.0f - ny;
+        int x = std::max(0, std::min(W - 1, (int)std::round(nx * W)));
+        int y = std::max(0, std::min(H - 1, (int)std::round(ny * H)));
+        cv::circle(dbg_bgr, cv::Point(x, y), 1, cv::Scalar(0, 255, 0), cv::FILLED, cv::LINE_AA);
+      }
+      // Draw lip connections (Studio-like) for clearer outlines
+      auto draw_conn = [&](int a, int b, const cv::Scalar& col){
+        const auto& pa = draw_lms.landmark(a);
+        const auto& pb = draw_lms.landmark(b);
+        auto tx = [&](float nx, float ny){ if (lm_swap_xy) std::swap(nx,ny); if (lm_flip_x) nx=1.0f-nx; if (lm_flip_y) ny=1.0f-ny; return cv::Point((int)std::round(nx*W),(int)std::round(ny*H)); };
+        cv::line(dbg_bgr, tx(pa.x(),pa.y()), tx(pb.x(),pb.y()), col, 1, cv::LINE_AA);
+      };
+      using Conn = ::mediapipe::tasks::vision::face_landmarker::FaceLandmarksConnections;
+      for (const auto& e : Conn::kFaceLandmarksLips) draw_conn(e[0], e[1], cv::Scalar(0,128,255));
+      if (show_mesh) {
+        // Face oval and eyes/brows connectors
+        for (const auto& e : Conn::kFaceLandmarksFaceOval) draw_conn(e[0], e[1], cv::Scalar(255,200,0));
+        for (const auto& e : Conn::kFaceLandmarksLeftEye) draw_conn(e[0], e[1], cv::Scalar(80,200,255));
+        for (const auto& e : Conn::kFaceLandmarksRightEye) draw_conn(e[0], e[1], cv::Scalar(80,200,255));
+        for (const auto& e : Conn::kFaceLandmarksLeftEyeBrow) draw_conn(e[0], e[1], cv::Scalar(180,180,255));
+        for (const auto& e : Conn::kFaceLandmarksRightEyeBrow) draw_conn(e[0], e[1], cv::Scalar(180,180,255));
+        // Optional dense tessellation (heavier)
+        if (show_mesh_dense) {
+          for (const auto& e : Conn::kFaceLandmarksTesselation) draw_conn(e[0], e[1], cv::Scalar(120,120,120));
+        }
+      }
+      // Optionally draw lip and face ovals for clarity
+      FaceRegions fr;
+      if (ExtractFaceRegions(draw_lms, dbg_bgr.size(), &fr, lm_flip_x, lm_flip_y, lm_swap_xy)) {
+        if (!fr.face_oval.empty()) {
+          const std::vector<std::vector<cv::Point>> polys = {fr.face_oval};
+          cv::polylines(dbg_bgr, polys, true, cv::Scalar(255, 200, 0), 1, cv::LINE_AA);
+        }
+        if (!fr.lips_outer.empty()) {
+          const std::vector<std::vector<cv::Point>> polys = {fr.lips_outer};
+          cv::polylines(dbg_bgr, polys, true, cv::Scalar(0, 128, 255), 1, cv::LINE_AA);
+        }
+        if (!latest_rects.empty()) {
+          const auto& r = latest_rects[0];
+          int cx = (int)std::round(r.x_center() * W);
+          int cy = (int)std::round(r.y_center() * H);
+          int hw = (int)std::round(0.5f * r.width() * W);
+          int hh = (int)std::round(0.5f * r.height() * H);
+          cv::RotatedRect rr(cv::Point2f((float)cx,(float)cy), cv::Size2f((float)hw*2,(float)hh*2), r.rotation() * 180.0f / (float)M_PI);
+          cv::Point2f verts[4]; rr.points(verts);
+          for (int i=0;i<4;++i) cv::line(dbg_bgr, verts[i], verts[(i+1)%4], cv::Scalar(255,0,0), 1, cv::LINE_AA);
+        }
+      }
+      cv::cvtColor(dbg_bgr, display_rgb, cv::COLOR_BGR2RGB);
+    }
+
+    // Optional: overlay wrinkle mask heatmap for debugging/inspection (small inset)
+    if (dbg_wrinkle_mask && have_lms) {
+      mediapipe::NormalizedLandmarkList used_lms = latest_lms;
+      if (lm_roi_mode && !latest_rects.empty()) {
+        used_lms = transform_lms_with_rect(latest_lms, latest_rects[0], frame_bgr.cols, frame_bgr.rows, lm_apply_rot);
+      }
+      FaceRegions fr_dbg; if (ExtractFaceRegions(used_lms, frame_bgr.size(), &fr_dbg, lm_flip_x, lm_flip_y, lm_swap_xy)) {
+        float s_min = std::max(1.5f, fx_skin_radius * 0.5f);
+        float s_max = std::max(3.0f, fx_skin_radius * 1.25f);
+        if (fx_wrinkle_custom_scales) { s_min = fx_wrinkle_min_px; s_max = fx_wrinkle_max_px; }
+        cv::Mat wr = BuildWrinkleLineMask(frame_bgr, fr_dbg, s_min, s_max,
+                                          fx_wrinkle_suppress_lower, fx_wrinkle_lower_ratio,
+                                          fx_wrinkle_ignore_glasses, fx_wrinkle_glasses_margin,
+                                          fx_wrinkle_keep_ratio,
+                                          fx_wrinkle_use_skin_gate,
+                                          fx_wrinkle_mask_gain); // CV_32F 0..1
+        cv::Mat wr_scaled; cv::multiply(wr, cv::Scalar(1.6f), wr_scaled); wr_scaled = cv::min(wr_scaled, 1.0f);
+        cv::Mat wr8; wr_scaled.convertTo(wr8, CV_8U, 255.0);
+        cv::Mat heat; cv::applyColorMap(wr8, heat, cv::COLORMAP_TURBO); // BGR
+        // Convert display to BGR for drawing
+        cv::Mat disp_bgr; cv::cvtColor(display_rgb, disp_bgr, cv::COLOR_RGB2BGR);
+        // Draw as small inset (bottom-left), keeping aspect
+        int inset_w = std::max(128, frame_bgr.cols / 4);
+        int inset_h = std::max(96, frame_bgr.rows / 4);
+        cv::Mat heat_small; cv::resize(heat, heat_small, cv::Size(inset_w, inset_h), 0, 0, cv::INTER_AREA);
+        // Add thin border
+        cv::Rect roi(10, disp_bgr.rows - inset_h - 10, inset_w, inset_h);
+        roi.x = std::max(0, std::min(roi.x, disp_bgr.cols - roi.width));
+        roi.y = std::max(0, std::min(roi.y, disp_bgr.rows - roi.height));
+        cv::rectangle(disp_bgr, cv::Rect(roi.x-1, roi.y-1, roi.width+2, roi.height+2), cv::Scalar(30,30,30), 1, cv::LINE_AA);
+        // Light alpha for readability
+        cv::Mat dst = disp_bgr(roi);
+        cv::addWeighted(dst, 0.65, heat_small, 0.35, 0.0, dst);
+        if (dbg_wrinkle_stats) {
+          // Build a face ROI mask to compute stats
+          cv::Mat face_mask(frame_bgr.size(), CV_8U, cv::Scalar(0));
+          if (!fr_dbg.face_oval.empty()) cv::fillPoly(face_mask, std::vector<std::vector<cv::Point>>{fr_dbg.face_oval}, cv::Scalar(255));
+          if (!fr_dbg.lips_outer.empty()) cv::fillPoly(face_mask, std::vector<std::vector<cv::Point>>{fr_dbg.lips_outer}, cv::Scalar(0));
+          if (!fr_dbg.left_eye.empty())   cv::fillPoly(face_mask, std::vector<std::vector<cv::Point>>{fr_dbg.left_eye},   cv::Scalar(0));
+          if (!fr_dbg.right_eye.empty())  cv::fillPoly(face_mask, std::vector<std::vector<cv::Point>>{fr_dbg.right_eye},  cv::Scalar(0));
+          cv::Scalar meanWr = cv::mean(wr, face_mask);
+          double minv, maxv; cv::minMaxLoc(wr, &minv, &maxv, nullptr, nullptr, face_mask);
+          char buf[128]; std::snprintf(buf, sizeof(buf), "wr mean: %.3f  max: %.3f", (float)meanWr[0], (float)maxv);
+          int tx = roi.x + 6, ty = roi.y + 18;
+          cv::putText(disp_bgr, buf, cv::Point(tx, ty), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(10,10,10), 2, cv::LINE_AA);
+          cv::putText(disp_bgr, buf, cv::Point(tx, ty), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(240,240,240), 1, cv::LINE_AA);
+        }
+        cv::cvtColor(disp_bgr, display_rgb, cv::COLOR_BGR2RGB);
+      }
+    }
+
     upload(display_rgb);
 
     // Start new ImGui frame and build UI windows
@@ -245,10 +487,10 @@ int main(int argc, char** argv) {
       ImGui::Text("Waiting for camera frame... (tex=0)");
       ImGui::End();
     }
-    // Controls pinned top-left
-    ImGui::SetNextWindowPos(ImVec2(16,16), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(360, 160), ImGuiCond_Always);
-    if (ImGui::Begin("SegmeCam", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings)) {
+    // Controls (allow user to move/resize; set defaults only once)
+    ImGui::SetNextWindowPos(ImVec2(16,16), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(380, 240), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("SegmeCam", nullptr, ImGuiWindowFlags_NoCollapse)) {
       ImGui::Checkbox("Show Segmentation (mask)", &show_mask);
       const char* modes[] = {"None", "Blur", "Image", "Solid Color"};
       ImGui::Combo("Background", &bg_mode, modes, IM_ARRAYSIZE(modes));
@@ -268,6 +510,72 @@ int main(int argc, char** argv) {
         ImGui::ColorEdit3("Color", solid_color);
       }
       ImGui::TextDisabled("GPU graph; CPU composite");
+      // Beauty effects UI
+      if (!has_landmarks) {
+        ImGui::TextDisabled("Face landmarks not available (use combined graph)");
+      } else {
+        ImGui::Separator();
+        ImGui::Text("Beauty Effects");
+        ImGui::Checkbox("Show Face Landmarks", &show_landmarks);
+        if (show_landmarks) {
+          ImGui::Checkbox("LM ROI coords", &lm_roi_mode); ImGui::SameLine();
+          ImGui::Checkbox("Apply rotation", &lm_apply_rot);
+          ImGui::Checkbox("Show grid", &show_mesh); ImGui::SameLine();
+          ImGui::Checkbox("Dense", &show_mesh_dense);
+        }
+        if (show_landmarks) {
+          ImGui::Checkbox("Flip X", &lm_flip_x); ImGui::SameLine();
+          ImGui::Checkbox("Flip Y", &lm_flip_y); ImGui::SameLine();
+          ImGui::Checkbox("Swap XY", &lm_swap_xy);
+        }
+        ImGui::Checkbox("Skin smoothing", &fx_skin);
+        if (fx_skin) {
+          ImGui::SameLine(); ImGui::Checkbox("Advanced", &fx_skin_adv);
+          if (fx_skin_adv) {
+            ImGui::SliderFloat("Amount##skin", &fx_skin_amount, 0.0f, 1.0f);
+            ImGui::SliderFloat("Radius (px)", &fx_skin_radius, 1.0f, 20.0f);
+            ImGui::SliderFloat("Texture keep (0..1)", &fx_skin_tex, 0.05f, 1.0f);
+            ImGui::SliderFloat("Edge feather (px)", &fx_skin_edge, 2.0f, 40.0f);
+            ImGui::Checkbox("Wrinkle-aware", &fx_skin_wrinkle);
+            if (fx_skin_wrinkle) {
+              ImGui::SliderFloat("Smile boost", &fx_skin_smile_boost, 0.0f, 1.0f);
+              ImGui::SliderFloat("Squint boost", &fx_skin_squint_boost, 0.0f, 1.0f);
+              ImGui::SliderFloat("Wrinkle gain", &fx_skin_wrinkle_gain, 0.0f, 8.0f);
+              ImGui::Checkbox("Show wrinkle mask", &dbg_wrinkle_mask); ImGui::SameLine();
+              ImGui::Checkbox("Show stats", &dbg_wrinkle_stats);
+              ImGui::SliderFloat("Forehead boost", &fx_skin_forehead_boost, 0.0f, 2.0f);
+              ImGui::Checkbox("Suppress chin/stubble", &fx_wrinkle_suppress_lower);
+              if (fx_wrinkle_suppress_lower) {
+                ImGui::SliderFloat("Lower-face ratio", &fx_wrinkle_lower_ratio, 0.25f, 0.65f);
+              }
+              ImGui::Checkbox("Ignore glasses", &fx_wrinkle_ignore_glasses); ImGui::SameLine();
+              ImGui::SliderFloat("Glasses margin (px)", &fx_wrinkle_glasses_margin, 0.0f, 30.0f);
+              ImGui::SliderFloat("Wrinkle sensitivity", &fx_wrinkle_keep_ratio, 0.05f, 10.60f);
+              ImGui::Checkbox("Wrinkle-only preview", &fx_wrinkle_preview);
+              ImGui::Checkbox("Custom line width", &fx_wrinkle_custom_scales);
+              if (fx_wrinkle_custom_scales) {
+                ImGui::SliderFloat("Min width (px)", &fx_wrinkle_min_px, 1.0f, 10.0f);
+                ImGui::SliderFloat("Max width (px)", &fx_wrinkle_max_px, 2.0f, 16.0f);
+                if (fx_wrinkle_max_px < fx_wrinkle_min_px) fx_wrinkle_max_px = fx_wrinkle_min_px;
+              }
+              ImGui::Checkbox("Skin gate (YCbCr)", &fx_wrinkle_use_skin_gate); ImGui::SameLine();
+              ImGui::SliderFloat("Mask gain", &fx_wrinkle_mask_gain, 0.5f, 3.0f);
+              ImGui::SliderFloat("Baseline boost", &fx_wrinkle_baseline, 0.0f, 1.0f);
+              ImGui::SliderFloat("Neg atten cap", &fx_wrinkle_neg_cap, 0.6f, 1.0f);
+            }
+          } else {
+            ImGui::SliderFloat("Strength", &fx_skin_strength, 0.0f, 1.0f);
+          }
+        }
+        ImGui::Checkbox("Lip refiner", &fx_lipstick);
+        ImGui::ColorEdit3("Lip color", fx_lip_color);
+        ImGui::SliderFloat("Amount##lip", &fx_lip_alpha, 0.0f, 1.0f);
+        ImGui::SliderFloat("Feather (px)", &fx_lip_feather, 0.0f, 20.0f);
+        ImGui::SliderFloat("Band grow (px)", &fx_lip_band, 0.0f, 12.0f);
+        ImGui::SliderFloat("Lightness", &fx_lip_light, -1.0f, 1.0f);
+        ImGui::Checkbox("Teeth whitening", &fx_teeth); ImGui::SameLine(); ImGui::SliderFloat("Amount##teeth", &fx_teeth_strength, 0.0f, 1.0f);
+        ImGui::SliderFloat("Avoid lips (px)", &fx_teeth_margin, 0.0f, 12.0f);
+      }
     }
     ImGui::End();
     // Status overlay top-right
