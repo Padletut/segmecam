@@ -11,6 +11,8 @@
 #include <memory>
 #include <string>
 #include <iostream>
+#include <fstream>
+#include <algorithm>
 #include <filesystem>
 
 #include "absl/flags/flag.h"
