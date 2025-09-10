@@ -118,8 +118,8 @@ Removes local binaries and Bazel outputs (`bazel-*`). External checkouts remain.
 ## Roadmap
 - [x] Real‑time selfie segmentation (GPU mask → CPU)
 - [x] Background blur / image / solid color compositing
-- [ ] Face landmarks for beauty effects,anti-wrinkles,Lipstick effect
-- [ ] Skin smoothing, teeth whitening, makeup
+- [x] Face landmarks for beauty effects,anti-wrinkles,Lipstick effect
+- [x] Skin smoothing, teeth whitening, makeup
 - [ ] Profiles (save/load settings)
 - [ ] Virtual webcam via v4l2loopback
 - [ ] Flatpak packaging

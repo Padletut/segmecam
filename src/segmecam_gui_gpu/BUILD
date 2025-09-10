@@ -12,8 +12,8 @@ cc_library(
 
 cc_library(
     name = "segmecam_face_effects",
-    srcs = ["segmecam_face_effects.cc"],
-    hdrs = ["segmecam_face_effects.h"],
+    srcs = ["segmecam_face_effects.cc", "cam_enum.cc"],
+    hdrs = ["segmecam_face_effects.h", "cam_enum.h"],
     includes = ["."],
     deps = [
         "//mediapipe/framework/formats:landmark_cc_proto",

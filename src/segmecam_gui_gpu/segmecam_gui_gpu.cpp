@@ -23,6 +23,8 @@
 #include "mediapipe/gpu/gpu_shared_data_internal.h"
 #include "segmecam_composite.h"
 #include "segmecam_face_effects.h"
+#include "cam_enum.h"
+#include <linux/videodev2.h>
 #include "mediapipe/tasks/cc/vision/face_landmarker/face_landmarks_connections.h"
 
 namespace mp = mediapipe;
@@ -45,6 +47,9 @@ int main(int argc, char** argv) {
   std::string graph_path = "mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt";  // default: segmentation only
   std::string resource_root_dir = ".";  // MediaPipe repo root or Bazel runfiles
   int cam_index = 0;
+  std::vector<CameraDesc> cam_list = EnumerateCameras();
+  int ui_cam_idx = 0; // index into cam_list
+  int ui_res_idx = 0; // index into resolutions of selected cam
   if (argc > 1) graph_path = argv[1];
   if (argc > 2) resource_root_dir = argv[2];
   if (argc > 3) cam_index = std::atoi(argv[3]);
@@ -89,7 +94,47 @@ int main(int argc, char** argv) {
   { auto st = graph.StartRun({}); if (!st.ok()) { std::fprintf(stderr, "StartRun failed: %s\n", st.message().data()); return 4; } }
 
   // Try V4L2 first, then fallback to default backend.
-  cv::VideoCapture cap(cam_index, cv::CAP_V4L2);
+  if (!cam_list.empty()) {
+    for (size_t i=0;i<cam_list.size();++i) if (cam_list[i].index == cam_index) { ui_cam_idx = (int)i; break; }
+  }
+  auto open_capture = [&](int idx, int w, int h){
+    cv::VideoCapture c(idx, cv::CAP_V4L2);
+    if (c.isOpened() && w>0 && h>0) {
+      c.set(cv::CAP_PROP_FRAME_WIDTH, w);
+      c.set(cv::CAP_PROP_FRAME_HEIGHT, h);
+      c.set(cv::CAP_PROP_FRAME_WIDTH, w);
+      c.set(cv::CAP_PROP_FRAME_HEIGHT, h);
+    }
+    return c;
+  };
+  int init_w = 0, init_h = 0;
+  if (!cam_list.empty() && !cam_list[ui_cam_idx].resolutions.empty()) {
+    auto wh = cam_list[ui_cam_idx].resolutions.back();
+    init_w = wh.first; init_h = wh.second;
+  }
+  cv::VideoCapture cap = open_capture(cam_index, init_w, init_h);
+  std::vector<int> ui_fps_opts; int ui_fps_idx = 0;
+  std::string current_cam_path = (!cam_list.empty()?cam_list[ui_cam_idx].path:std::string());
+  if (!current_cam_path.empty() && init_w>0 && init_h>0) {
+    ui_fps_opts = EnumerateFPS(current_cam_path, init_w, init_h);
+    if (!ui_fps_opts.empty()) ui_fps_idx = (int)ui_fps_opts.size()-1;
+  }
+  // Camera control ranges
+  CtrlRange r_brightness, r_contrast, r_saturation, r_gain, r_sharpness, r_zoom, r_focus;
+  CtrlRange r_autogain, r_autofocus;
+  auto refresh_ctrls = [&]() {
+    if (current_cam_path.empty()) return;
+    QueryCtrl(current_cam_path, V4L2_CID_BRIGHTNESS, &r_brightness);
+    QueryCtrl(current_cam_path, V4L2_CID_CONTRAST, &r_contrast);
+    QueryCtrl(current_cam_path, V4L2_CID_SATURATION, &r_saturation);
+    QueryCtrl(current_cam_path, V4L2_CID_GAIN, &r_gain);
+    QueryCtrl(current_cam_path, V4L2_CID_SHARPNESS, &r_sharpness);
+    QueryCtrl(current_cam_path, V4L2_CID_ZOOM_ABSOLUTE, &r_zoom);
+    QueryCtrl(current_cam_path, V4L2_CID_FOCUS_ABSOLUTE, &r_focus);
+    QueryCtrl(current_cam_path, V4L2_CID_AUTOGAIN, &r_autogain);
+    QueryCtrl(current_cam_path, V4L2_CID_FOCUS_AUTO, &r_autofocus);
+  };
+  refresh_ctrls();
   if (!cap.isOpened()) {
     std::cout << "V4L2 open failed for index " << cam_index << ", retrying with CAP_ANY" << std::endl;
     cap.open(cam_index);
@@ -160,7 +205,7 @@ int main(int argc, char** argv) {
     }
   };
 
-  bool show_mask = false; int blur_strength = 15; float feather_px = 2.0f; int64_t frame_id = 0;
+  bool show_mask = false; int blur_strength = 25; float feather_px = 2.0f; int64_t frame_id = 0;
   bool dbg_composite_rgb = false; // composite in RGB space to test channel order
   // Background mode: 0=None, 1=Blur, 2=Image, 3=Solid Color
   int bg_mode = 1;
@@ -491,11 +536,87 @@ int main(int argc, char** argv) {
     ImGui::SetNextWindowPos(ImVec2(16,16), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(380, 240), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("SegmeCam", nullptr, ImGuiWindowFlags_NoCollapse)) {
+      // Camera controls
+      if (!cam_list.empty()) {
+        ImGui::Text("Camera");
+        std::vector<std::string> labels; labels.reserve(cam_list.size());
+        for (const auto& c : cam_list) {
+          char buf[256]; std::snprintf(buf, sizeof(buf), "%s (%s)", c.name.c_str(), c.path.c_str());
+          labels.emplace_back(buf);
+        }
+        std::vector<const char*> items; items.reserve(labels.size());
+        for (auto& s : labels) items.push_back(s.c_str());
+        ImGui::Combo("Device", &ui_cam_idx, items.data(), (int)items.size());
+        const auto& rlist = cam_list[ui_cam_idx].resolutions;
+        if (!rlist.empty()) {
+          if (ui_res_idx >= (int)rlist.size()) ui_res_idx = (int)rlist.size()-1;
+          std::vector<std::string> rlabels; rlabels.reserve(rlist.size());
+          for (auto& r : rlist) { char b[32]; std::snprintf(b,sizeof(b),"%dx%d", r.first, r.second); rlabels.emplace_back(b);} 
+          std::vector<const char*> ritems; for (auto& s : rlabels) ritems.push_back(s.c_str());
+          ImGui::Combo("Resolution", &ui_res_idx, ritems.data(), (int)ritems.size());
+          // FPS combo for selected resolution
+          if (ImGui::IsItemEdited() || ui_fps_opts.empty()) {
+            auto wh2 = rlist[ui_res_idx];
+            current_cam_path = cam_list[ui_cam_idx].path;
+            ui_fps_opts = EnumerateFPS(current_cam_path, wh2.first, wh2.second);
+            ui_fps_idx = ui_fps_opts.empty()?0:(int)ui_fps_opts.size()-1;
+          }
+          if (!ui_fps_opts.empty()) {
+            std::vector<std::string> flabels; for (int f: ui_fps_opts){ char b[16]; std::snprintf(b,sizeof(b),"%d fps", f); flabels.emplace_back(b);} 
+            std::vector<const char*> fitems; for (auto& s: flabels) fitems.push_back(s.c_str());
+            ImGui::Combo("FPS", &ui_fps_idx, fitems.data(), (int)fitems.size());
+          } else {
+            ImGui::TextDisabled("FPS: unknown (driver)");
+          }
+          ImGui::SameLine();
+          if (ImGui::Button("Apply##cam")) {
+            int new_idx = cam_list[ui_cam_idx].index;
+            auto wh = rlist[ui_res_idx];
+            cap.release();
+            cap = open_capture(new_idx, wh.first, wh.second);
+            if (!cap.isOpened()) {
+              cap.open(new_idx);
+            }
+            current_cam_path = cam_list[ui_cam_idx].path;
+            if (!ui_fps_opts.empty()) {
+              double fps = (double)ui_fps_opts[ui_fps_idx];
+              cap.set(cv::CAP_PROP_FPS, fps);
+            }
+            refresh_ctrls();
+          }
+        } else {
+          ImGui::TextDisabled("Resolutions: unknown (driver)");
+        }
+        ImGui::Separator();
+      }
+      // Camera controls (V4L2)
+      if (!current_cam_path.empty()) {
+        ImGui::Text("Camera Controls");
+        auto slider_ctrl = [&](const char* label, CtrlRange& r, uint32_t id){
+          if (!r.available) return; int v = r.val; int minv=r.min, maxv=r.max; int step= std::max(1, r.step);
+          if (ImGui::SliderInt(label, &v, minv, maxv)) {
+            // round to step
+            int rs = minv + ((v - minv)/step)*step; r.val = rs; SetCtrl(current_cam_path, id, r.val);
+          }
+        };
+        auto checkbox_ctrl = [&](const char* label, CtrlRange& r, uint32_t id){
+          if (!r.available) return; int v = r.val != 0; if (ImGui::Checkbox(label, (bool*)&v)) { r.val = v?1:0; SetCtrl(current_cam_path, id, r.val);} };
+        slider_ctrl("Brightness", r_brightness, V4L2_CID_BRIGHTNESS);
+        slider_ctrl("Contrast",   r_contrast,   V4L2_CID_CONTRAST);
+        slider_ctrl("Saturation", r_saturation, V4L2_CID_SATURATION);
+        checkbox_ctrl("Auto gain", r_autogain, V4L2_CID_AUTOGAIN);
+        slider_ctrl("Gain",       r_gain,       V4L2_CID_GAIN);
+        slider_ctrl("Sharpness",  r_sharpness,  V4L2_CID_SHARPNESS);
+        slider_ctrl("Zoom",       r_zoom,       V4L2_CID_ZOOM_ABSOLUTE);
+        checkbox_ctrl("Auto focus", r_autofocus, V4L2_CID_FOCUS_AUTO);
+        slider_ctrl("Focus",      r_focus,      V4L2_CID_FOCUS_ABSOLUTE);
+        ImGui::Separator();
+      }
       ImGui::Checkbox("Show Segmentation (mask)", &show_mask);
       const char* modes[] = {"None", "Blur", "Image", "Solid Color"};
       ImGui::Combo("Background", &bg_mode, modes, IM_ARRAYSIZE(modes));
       if (bg_mode == 1) {
-        ImGui::SliderInt("Blur Strength", &blur_strength, 1, 31);
+        ImGui::SliderInt("Blur Strength", &blur_strength, 1, 61);
         if ((blur_strength % 2) == 0) blur_strength++;
       } else if (bg_mode == 2) {
         ImGui::InputText("Image Path", bg_path_buf, sizeof(bg_path_buf));
