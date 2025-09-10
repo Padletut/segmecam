@@ -26,6 +26,7 @@
 #include "mediapipe/gpu/gpu_shared_data_internal.h"
 #include "segmecam_composite.h"
 #include "segmecam_face_effects.h"
+#include "presets.h"
 #include "cam_enum.h"
 #include <linux/videodev2.h>
 #include "mediapipe/tasks/cc/vision/face_landmarker/face_landmarks_connections.h"
@@ -366,10 +367,12 @@ int main(int argc, char** argv) {
     fsw << "solid_color" << "[" << solid_color[0] << solid_color[1] << solid_color[2] << "]";
     fsw << "bg_path" << bg_path_buf;
     fsw << "show_landmarks" << (int)show_landmarks << "lm_roi_mode" << (int)lm_roi_mode << "lm_apply_rot" << (int)lm_apply_rot
-        << "lm_flip_x" << (int)lm_flip_x << "lm_flip_y" << (int)lm_flip_y << "lm_swap_xy" << (int)lm_swap_xy;
+        << "lm_flip_x" << (int)lm_flip_x << "lm_flip_y" << (int)lm_flip_y << "lm_swap_xy" << (int)lm_swap_xy
+        << "show_mesh" << (int)show_mesh << "show_mesh_dense" << (int)show_mesh_dense;
     fsw << "fx_skin" << (int)fx_skin << "fx_skin_adv" << (int)fx_skin_adv << "fx_skin_strength" << fx_skin_strength
         << "fx_skin_amount" << fx_skin_amount << "fx_skin_radius" << fx_skin_radius << "fx_skin_tex" << fx_skin_tex << "fx_skin_edge" << fx_skin_edge
         << "fx_adv_scale" << fx_adv_scale << "fx_adv_detail_preserve" << fx_adv_detail_preserve;
+    fsw << "use_opencl" << (int)use_opencl;
     fsw << "fx_skin_wrinkle" << (int)fx_skin_wrinkle << "fx_skin_smile_boost" << fx_skin_smile_boost << "fx_skin_squint_boost" << fx_skin_squint_boost
         << "fx_skin_forehead_boost" << fx_skin_forehead_boost << "fx_skin_wrinkle_gain" << fx_skin_wrinkle_gain
         << "dbg_wrinkle_mask" << (int)dbg_wrinkle_mask << "dbg_wrinkle_stats" << (int)dbg_wrinkle_stats
@@ -461,6 +464,8 @@ int main(int argc, char** argv) {
     lm_flip_x = read_int(root["lm_flip_x"], lm_flip_x?1:0)!=0;
     lm_flip_y = read_int(root["lm_flip_y"], lm_flip_y?1:0)!=0;
     lm_swap_xy = read_int(root["lm_swap_xy"], lm_swap_xy?1:0)!=0;
+    show_mesh = read_int(root["show_mesh"], show_mesh?1:0)!=0;
+    show_mesh_dense = read_int(root["show_mesh_dense"], show_mesh_dense?1:0)!=0;
     fx_skin = read_int(root["fx_skin"], fx_skin?1:0)!=0; fx_skin_adv = read_int(root["fx_skin_adv"], fx_skin_adv?1:0)!=0;
     fx_skin_strength = read_float(root["fx_skin_strength"], fx_skin_strength);
     fx_skin_amount = read_float(root["fx_skin_amount"], fx_skin_amount);
@@ -469,6 +474,12 @@ int main(int argc, char** argv) {
     fx_skin_edge = read_float(root["fx_skin_edge"], fx_skin_edge);
     fx_adv_scale = read_float(root["fx_adv_scale"], fx_adv_scale);
     fx_adv_detail_preserve = read_float(root["fx_adv_detail_preserve"], fx_adv_detail_preserve);
+    // OpenCL accel toggle
+    {
+      int ocl = read_int(root["use_opencl"], use_opencl?1:0);
+      use_opencl = (ocl!=0);
+      if (opencl_available) cv::ocl::setUseOpenCL(use_opencl);
+    }
     fx_skin_wrinkle = read_int(root["fx_skin_wrinkle"], fx_skin_wrinkle?1:0)!=0;
     fx_skin_smile_boost = read_float(root["fx_skin_smile_boost"], fx_skin_smile_boost);
     fx_skin_squint_boost = read_float(root["fx_skin_squint_boost"], fx_skin_squint_boost);
@@ -505,7 +516,26 @@ int main(int argc, char** argv) {
     std::ifstream fin(default_profile_path); if (fin) { std::string defname; std::getline(fin, defname); if (!defname.empty()) { load_profile(defname); profile_names = list_profiles(); auto it = std::find(profile_names.begin(), profile_names.end(), defname); ui_profile_idx = (it==profile_names.end()? -1 : (int)std::distance(profile_names.begin(), it)); std::snprintf(profile_name_buf, sizeof(profile_name_buf), "%s", defname.c_str()); }}
   }
   while (running) {
-    SDL_Event e; while (SDL_PollEvent(&e)) { ImGui_ImplSDL2_ProcessEvent(&e); if (e.type == SDL_QUIT) running = false; }
+    SDL_Event e; while (SDL_PollEvent(&e)) {
+      ImGui_ImplSDL2_ProcessEvent(&e);
+      if (e.type == SDL_QUIT) running = false;
+      // Allow users to drag-and-drop an image file to set custom background
+      if (e.type == SDL_DROPFILE) {
+        char* dropped_path = e.drop.file; // SDL allocates; we must SDL_free
+        if (dropped_path && *dropped_path) {
+          cv::Mat img = cv::imread(dropped_path, cv::IMREAD_COLOR);
+          if (!img.empty()) {
+            bg_image = img; // BGR
+            std::snprintf(bg_path_buf, sizeof(bg_path_buf), "%s", dropped_path);
+            bg_mode = 2; // Image
+            std::cout << "Loaded background image from drop: " << dropped_path << std::endl;
+          } else {
+            std::cout << "Failed to load dropped file as image: " << dropped_path << std::endl;
+          }
+        }
+        if (dropped_path) SDL_free(dropped_path);
+      }
+    }
 
     // Grab frame first, then build UI
     cv::Mat frame_bgr; if (!cap.read(frame_bgr) || frame_bgr.empty()) {
@@ -923,19 +953,25 @@ int main(int argc, char** argv) {
     ImGui_ImplOpenGL3_NewFrame(); ImGui_ImplSDL2_NewFrame(); ImGui::NewFrame();
     int dw, dh; SDL_GL_GetDrawableSize(window, &dw, &dh);
     glViewport(0,0,dw,dh); glClearColor(0.06f,0.06f,0.07f,1.0f); glClear(GL_COLOR_BUFFER_BIT);
-    // Preview window (kept on top by z-ordering of ImGui windows)
-    ImGui::Begin("Preview", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs);
-    ImGui::SetWindowPos(ImVec2(0,0), ImGuiCond_Always); ImGui::SetWindowSize(ImVec2((float)dw,(float)dh), ImGuiCond_Always);
+    // Draw preview on background so UI windows are always on top
     if (tex) {
       float aspect = tex_h > 0 ? (float)tex_w/(float)tex_h : 1.0f;
-      float w = (float)dw, h = w/aspect; if (h > dh) { h = (float)dh; w = h*aspect; }
-      ImVec2 center((float)dw*0.5f, (float)dh*0.5f); ImVec2 size(w,h); ImVec2 pos(center.x - size.x*0.5f, center.y - size.y*0.5f);
-      ImGui::SetCursorPos(ImVec2(pos.x,pos.y));
-      ImGui::Image((ImTextureID)(intptr_t)tex, size, ImVec2(0,0), ImVec2(1,1));
+      float w = (float)dw, h = w / aspect; if (h > dh) { h = (float)dh; w = h * aspect; }
+      ImVec2 center((float)dw * 0.5f, (float)dh * 0.5f);
+      ImVec2 size(w, h);
+      ImVec2 pos(center.x - size.x * 0.5f, center.y - size.y * 0.5f);
+      ImVec2 vp = ImGui::GetMainViewport()->Pos;
+      ImDrawList* bg = ImGui::GetBackgroundDrawList();
+      ImVec2 p0(vp.x + pos.x, vp.y + pos.y);
+      ImVec2 p1(vp.x + pos.x + size.x, vp.y + pos.y + size.y);
+      bg->AddImage((ImTextureID)(intptr_t)tex, p0, p1, ImVec2(0,0), ImVec2(1,1));
     } else {
+      // Show minimal message window while waiting for first frame
+      ImGui::Begin("Preview", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs);
+      ImGui::SetWindowPos(ImVec2(0,0), ImGuiCond_Always); ImGui::SetWindowSize(ImVec2((float)dw,(float)dh), ImGuiCond_Always);
       ImGui::SetCursorPos(ImVec2(20,20)); ImGui::Text("Waiting for camera frame... (tex=0)");
+      ImGui::End();
     }
-    ImGui::End();
     // Controls (allow user to move/resize; set defaults only once)
     ImGui::SetNextWindowPos(ImVec2(16,16), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(400, 260), ImGuiCond_FirstUseEver);
@@ -1146,20 +1182,84 @@ int main(int argc, char** argv) {
         ImGui::SameLine();
         if (ImGui::Button("Load")) {
           cv::Mat img = cv::imread(bg_path_buf, cv::IMREAD_COLOR);
-          if (!img.empty()) {
-            bg_image = img; // BGR kept
-          }
+          if (!img.empty()) { bg_image = img; }
         }
+        ImGui::SameLine();
+        if (ImGui::Button("Paste")) {
+          char* clip = SDL_GetClipboardText();
+          if (clip && *clip) {
+            std::snprintf(bg_path_buf, sizeof(bg_path_buf), "%s", clip);
+            cv::Mat img = cv::imread(bg_path_buf, cv::IMREAD_COLOR);
+            if (!img.empty()) { bg_image = img; }
+          }
+          if (clip) SDL_free(clip);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Clear")) { bg_image.release(); bg_path_buf[0] = '\0'; }
+        // Optional: try to open a native file picker via zenity if available
+        ImGui::SameLine();
+        if (ImGui::Button("Browse...")) {
+#ifdef __linux__
+          FILE* fp = popen("zenity --file-selection --title='Select background image' 2>/dev/null", "r");
+          if (fp) {
+            char out[1024] = {0};
+            if (fgets(out, sizeof(out), fp)) {
+              // strip trailing newline
+              size_t n = strlen(out); while (n>0 && (out[n-1]=='\n' || out[n-1]=='\r')) { out[--n] = '\0'; }
+              if (n>0) {
+                std::snprintf(bg_path_buf, sizeof(bg_path_buf), "%s", out);
+                cv::Mat img = cv::imread(bg_path_buf, cv::IMREAD_COLOR);
+                if (!img.empty()) { bg_image = img; }
+              }
+            }
+            pclose(fp);
+          }
+#endif
+        }
+        ImGui::TextDisabled("Tip: Drag & drop an image file onto the window.");
       } else if (bg_mode == 3) {
         ImGui::ColorEdit3("Color", solid_color);
       }
-      ImGui::TextDisabled("GPU graph; CPU composite");
-      // Beauty effects UI
-      if (!has_landmarks) {
-        ImGui::TextDisabled("Face landmarks not available (use combined graph)");
-      } else {
-        ImGui::Separator();
-        ImGui::Text("Beauty Effects");
+  ImGui::TextDisabled("GPU graph; CPU composite");
+  // Beauty effects UI
+  if (!has_landmarks) {
+    ImGui::TextDisabled("Face landmarks not available (use combined graph)");
+  } else {
+    ImGui::Separator();
+    ImGui::Text("Beauty Effects");
+
+    // Built-in Presets (quick apply). These just set current session vars; save a profile to persist.
+    {
+      const char* preset_names[] = {"Default", "Natural", "Studio", "Glam", "Meeting"};
+      static int ui_preset_idx = 0;
+      ImGui::Combo("Preset", &ui_preset_idx, preset_names, IM_ARRAYSIZE(preset_names));
+      ImGui::SameLine();
+      if (ImGui::Button("Apply##preset")) {
+        segmecam::BeautyState bs;
+        bs.bg_mode = bg_mode; bs.blur_strength = blur_strength; bs.feather_px = feather_px; bs.show_mask = show_mask;
+        bs.fx_skin = fx_skin; bs.fx_skin_adv = fx_skin_adv; bs.fx_skin_amount = fx_skin_amount; bs.fx_skin_radius = fx_skin_radius; bs.fx_skin_tex = fx_skin_tex; bs.fx_skin_edge = fx_skin_edge;
+        bs.fx_skin_wrinkle = fx_skin_wrinkle; bs.fx_skin_smile_boost = fx_skin_smile_boost; bs.fx_skin_squint_boost = fx_skin_squint_boost; bs.fx_skin_forehead_boost = fx_skin_forehead_boost; bs.fx_skin_wrinkle_gain = fx_skin_wrinkle_gain;
+        bs.fx_wrinkle_suppress_lower = fx_wrinkle_suppress_lower; bs.fx_wrinkle_lower_ratio = fx_wrinkle_lower_ratio; bs.fx_wrinkle_ignore_glasses = fx_wrinkle_ignore_glasses; bs.fx_wrinkle_glasses_margin = fx_wrinkle_glasses_margin; bs.fx_wrinkle_keep_ratio = fx_wrinkle_keep_ratio;
+        bs.fx_wrinkle_custom_scales = fx_wrinkle_custom_scales; bs.fx_wrinkle_min_px = fx_wrinkle_min_px; bs.fx_wrinkle_max_px = fx_wrinkle_max_px; bs.fx_wrinkle_use_skin_gate = fx_wrinkle_use_skin_gate; bs.fx_wrinkle_mask_gain = fx_wrinkle_mask_gain;
+        bs.fx_wrinkle_baseline = fx_wrinkle_baseline; bs.fx_wrinkle_neg_cap = fx_wrinkle_neg_cap; bs.fx_wrinkle_preview = fx_wrinkle_preview;
+        bs.fx_adv_scale = fx_adv_scale; bs.fx_adv_detail_preserve = fx_adv_detail_preserve;
+        bs.fx_lipstick = fx_lipstick; bs.fx_lip_alpha = fx_lip_alpha; bs.fx_lip_feather = fx_lip_feather; bs.fx_lip_light = fx_lip_light; bs.fx_lip_band = fx_lip_band; bs.fx_lip_color[0]=fx_lip_color[0]; bs.fx_lip_color[1]=fx_lip_color[1]; bs.fx_lip_color[2]=fx_lip_color[2];
+        bs.fx_teeth = fx_teeth; bs.fx_teeth_strength = fx_teeth_strength; bs.fx_teeth_margin = fx_teeth_margin;
+
+        segmecam::ApplyPreset(ui_preset_idx, bs);
+        // Write back
+        bg_mode = bs.bg_mode; blur_strength = bs.blur_strength; feather_px = bs.feather_px; show_mask = bs.show_mask;
+        fx_skin = bs.fx_skin; fx_skin_adv = bs.fx_skin_adv; fx_skin_amount = bs.fx_skin_amount; fx_skin_radius = bs.fx_skin_radius; fx_skin_tex = bs.fx_skin_tex; fx_skin_edge = bs.fx_skin_edge;
+        fx_skin_wrinkle = bs.fx_skin_wrinkle; fx_skin_smile_boost = bs.fx_skin_smile_boost; fx_skin_squint_boost = bs.fx_skin_squint_boost; fx_skin_forehead_boost = bs.fx_skin_forehead_boost; fx_skin_wrinkle_gain = bs.fx_skin_wrinkle_gain;
+        fx_wrinkle_suppress_lower = bs.fx_wrinkle_suppress_lower; fx_wrinkle_lower_ratio = bs.fx_wrinkle_lower_ratio; fx_wrinkle_ignore_glasses = bs.fx_wrinkle_ignore_glasses; fx_wrinkle_glasses_margin = bs.fx_wrinkle_glasses_margin; fx_wrinkle_keep_ratio = bs.fx_wrinkle_keep_ratio;
+        fx_wrinkle_custom_scales = bs.fx_wrinkle_custom_scales; fx_wrinkle_min_px = bs.fx_wrinkle_min_px; fx_wrinkle_max_px = bs.fx_wrinkle_max_px; fx_wrinkle_use_skin_gate = bs.fx_wrinkle_use_skin_gate; fx_wrinkle_mask_gain = bs.fx_wrinkle_mask_gain;
+        fx_wrinkle_baseline = bs.fx_wrinkle_baseline; fx_wrinkle_neg_cap = bs.fx_wrinkle_neg_cap; fx_wrinkle_preview = bs.fx_wrinkle_preview;
+        fx_adv_scale = bs.fx_adv_scale; fx_adv_detail_preserve = bs.fx_adv_detail_preserve;
+        fx_lipstick = bs.fx_lipstick; fx_lip_alpha = bs.fx_lip_alpha; fx_lip_feather = bs.fx_lip_feather; fx_lip_light = bs.fx_lip_light; fx_lip_band = bs.fx_lip_band; fx_lip_color[0]=bs.fx_lip_color[0]; fx_lip_color[1]=bs.fx_lip_color[1]; fx_lip_color[2]=bs.fx_lip_color[2];
+        fx_teeth = bs.fx_teeth; fx_teeth_strength = bs.fx_teeth_strength; fx_teeth_margin = bs.fx_teeth_margin;
+      }
+      ImGui::Separator();
+    }
 
         // Overlay/Debug controls (collapsed by default)
         ImGui::SetNextItemOpen(false, ImGuiCond_FirstUseEver);

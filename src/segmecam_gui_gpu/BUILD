@@ -23,6 +23,14 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "presets",
+    srcs = ["presets.cc"],
+    hdrs = ["presets.h"],
+    includes = ["."],
+    deps = [],
+)
+
 cc_binary(
     name = "segmecam_gui_gpu",
     srcs = [
@@ -37,6 +45,7 @@ cc_binary(
     deps = [
         ":segmecam_composite",
         ":segmecam_face_effects",
+        ":presets",
         "//mediapipe/framework:calculator_graph",
         "//mediapipe/framework/formats:image_frame",
         "//mediapipe/framework/formats:landmark_cc_proto",

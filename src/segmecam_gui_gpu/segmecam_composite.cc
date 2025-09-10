@@ -1,5 +1,9 @@
 #include "segmecam_composite.h"
 
+// Persistently remembered preferred channel when mask comes as 4xU8 (SRGBA).
+// This avoids per-frame channel switches that can look like flicker.
+static int g_rgba_mask_channel = -1; // 0=B,1=G,2=R,3=A
+
 cv::Mat DecodeMaskToU8(const mediapipe::ImageFrame& mask, bool* logged_once) {
   const int ch = mask.NumberOfChannels();
   const int bd = mask.ByteDepth();
@@ -20,16 +24,20 @@ cv::Mat DecodeMaskToU8(const mediapipe::ImageFrame& mask, bool* logged_once) {
     cv::Scalar mg = cv::mean(chm[1]);
     cv::Scalar mr = cv::mean(chm[2]);
     cv::Scalar ma = cv::mean(chm[3]);
-    // Prefer alpha if it looks non-empty; otherwise fall back to brightest color channel
-    int best = 0; double bestv = mb[0];
-    if (mg[0] > bestv) { best=1; bestv=mg[0]; }
-    if (mr[0] > bestv) { best=2; bestv=mr[0]; }
-    if (ma[0] > 5.0 && ma[0] >= bestv - 1e-3) { best=3; bestv=ma[0]; }
+    int best = g_rgba_mask_channel;
+    if (best < 0) {
+      // Prefer alpha if it looks non-empty; otherwise fall back to brightest color channel
+      best = 0; double bestv = mb[0];
+      if (mg[0] > bestv) { best=1; bestv=mg[0]; }
+      if (mr[0] > bestv) { best=2; bestv=mr[0]; }
+      if (ma[0] > 5.0 && ma[0] >= bestv - 1e-3) { best=3; bestv=ma[0]; }
+      g_rgba_mask_channel = best;
+    }
     out = chm[best].clone();
     if (logged_once && !*logged_once) {
       std::cout << "Mask channels=4 byteDepth=1 means[B,G,R,A]="
                 << mb[0] << "," << mg[0] << "," << mr[0] << "," << ma[0]
-                << " chosen=" << (best==0?"B":best==1?"G":best==2?"R":"A")
+                << " chosen=" << (g_rgba_mask_channel==0?"B":g_rgba_mask_channel==1?"G":g_rgba_mask_channel==2?"R":"A")
                 << std::endl;
       *logged_once = true;
     }
