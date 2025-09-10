@@ -737,15 +737,7 @@ int main(int argc, char** argv) {
       display_rgb = CompositeBlurBackgroundBGR_Accel(frame_bgr, mask8_resized, blur_strength, feather_px, use_opencl, bg_scale);
       auto t1 = std::chrono::steady_clock::now();
       t_bg_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-      // Debug: print means once per second
-      uint32_t now_dbg = SDL_GetTicks();
-      if (now_dbg - dbg_last_ms > 1000) {
-        cv::Scalar m_frame = cv::mean(frame_bgr);
-        cv::Mat dbg_bgr; cv::cvtColor(display_rgb, dbg_bgr, cv::COLOR_RGB2BGR);
-        cv::Scalar m_comp  = cv::mean(dbg_bgr);
-        std::cout << "mean(BGR) frame=" << m_frame << " comp=" << m_comp << std::endl;
-        dbg_last_ms = now_dbg;
-      }
+      // (mean BGR debug removed)
     } else if (bg_mode == 2 && !last_mask_u8.empty()) {
       // Background image replace (fill background with image)
       if (!bg_image.empty()) {
