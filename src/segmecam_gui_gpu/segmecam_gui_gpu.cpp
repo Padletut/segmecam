@@ -281,6 +281,7 @@ int main(int argc, char** argv) {
   static char bg_path_buf[512] = {0};
   float solid_color[3] = {0.0f, 0.0f, 0.0f}; // RGB 0..1
   cv::Mat last_mask_u8;  // cache latest mask to avoid blocking
+  cv::Mat last_mask_f32; // temporal-smoothed mask (0..1)
   cv::Mat last_display_rgb;
   // Beauty controls
   bool fx_skin = false; float fx_skin_strength = 0.4f;
@@ -533,15 +534,21 @@ int main(int argc, char** argv) {
     int drain = 0;
     while (mask_poller.QueueSize() > 0 && mask_poller.Next(&pkt)) {
       const auto& mask = pkt.Get<mp::ImageFrame>();
-      cv::Mat new_mask = DecodeMaskToU8(mask, &first_mask_info);
-      // Guard against occasional empty/degenerate masks by requiring minimal energy
-      double meanv = cv::mean(new_mask)[0];
-      if (!last_mask_u8.empty()) {
-        if (meanv > 0.5) last_mask_u8 = new_mask; // accept normal masks
-        // else keep previous mask to avoid visible blinking
+      cv::Mat new_u8 = DecodeMaskToU8(mask, &first_mask_info);
+      // Convert to 0..1 float for temporal smoothing
+      cv::Mat new_f; new_u8.convertTo(new_f, CV_32F, 1.0/255.0);
+      // If the mask is suspiciously empty (e.g., all zeros), skip update once
+      if (cv::countNonZero(new_u8) < 16 && !last_mask_f32.empty()) {
+        // keep previous to avoid blink
       } else {
-        // On first assignment, accept whatever we have
-        last_mask_u8 = new_mask;
+        if (last_mask_f32.empty()) {
+          last_mask_f32 = new_f.clone();
+        } else {
+          const float alpha = 0.35f; // new contribution
+          cv::addWeighted(last_mask_f32, 1.0f - alpha, new_f, alpha, 0.0, last_mask_f32);
+        }
+        // Update 8-bit cache from smoothed float
+        last_mask_f32.convertTo(last_mask_u8, CV_8U, 255.0);
       }
       drain++;
       if (!first_mask_log) { std::cout << "Received first mask packet" << std::endl; first_mask_log = true; }
