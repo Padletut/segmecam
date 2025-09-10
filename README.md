@@ -121,7 +121,7 @@ Removes local binaries and Bazel outputs (`bazel-*`). External checkouts remain.
 - [x] Face landmarks for beauty effects,anti-wrinkles,Lipstick effect
 - [x] Skin smoothing, teeth whitening, makeup
 - [ ] Profiles (save/load settings)
-- [ ] Virtual webcam via v4l2loopback
+- [x] Virtual webcam via v4l2loopback
 - [ ] Flatpak packaging
 
 ---

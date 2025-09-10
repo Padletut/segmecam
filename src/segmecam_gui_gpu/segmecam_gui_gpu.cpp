@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 #include <iostream>
+#include <filesystem>
 
 #include "absl/flags/flag.h"
 #include "absl/flags/declare.h"
@@ -116,6 +117,29 @@ int main(int argc, char** argv) {
     init_w = wh.first; init_h = wh.second;
   }
   cv::VideoCapture cap = open_capture(cam_index, init_w, init_h);
+  // Profiles (saved settings)
+  namespace fs = std::filesystem;
+  auto get_profile_dir = [](){
+    const char* home = std::getenv("HOME");
+    std::string dir = (home && *home) ? std::string(home) + "/.config/segmecam" : std::string("./.segmecam");
+    fs::create_directories(dir);
+    return dir;
+  };
+  std::string profile_dir = get_profile_dir();
+  auto default_profile_path = profile_dir + "/default_profile.txt";
+  auto list_profiles = [&](){
+    std::vector<std::string> names;
+    std::error_code ec;
+    for (const auto& e : fs::directory_iterator(profile_dir, ec)) {
+      if (ec) break; if (!e.is_regular_file()) continue;
+      auto p = e.path(); if (p.extension() == ".yml" || p.extension() == ".yaml") names.push_back(p.stem().string());
+    }
+    std::sort(names.begin(), names.end());
+    return names;
+  };
+  std::vector<std::string> profile_names = list_profiles();
+  int ui_profile_idx = profile_names.empty()? -1 : 0;
+  static char profile_name_buf[128] = {0};
   // Enumerate v4l2loopback outputs (virtual cams)
   std::vector<LoopbackDesc> vcam_list = EnumerateLoopbackDevices();
   int ui_vcam_idx = 0; bool vcam_running = false; int vcam_fd = -1; int vcam_w = 0, vcam_h = 0;
@@ -303,6 +327,103 @@ int main(int argc, char** argv) {
       }
     }
   };
+
+  // Profile save/load helpers (use OpenCV FileStorage YAML)
+  auto save_profile = [&](const std::string& name){
+    if (name.empty()) return false; fs::create_directories(profile_dir);
+    std::string path = profile_dir + "/" + name + ".yml";
+    cv::FileStorage fsw(path, cv::FileStorage::WRITE);
+    if (!fsw.isOpened()) return false;
+    fsw << "ui_cam_idx" << ui_cam_idx << "ui_res_idx" << ui_res_idx << "ui_fps_idx" << ui_fps_idx;
+    fsw << "vsync_on" << (int)vsync_on;
+    fsw << "show_mask" << (int)show_mask << "bg_mode" << bg_mode << "blur_strength" << blur_strength << "feather_px" << feather_px << "bg_fast_blur" << (int)bg_fast_blur;
+    fsw << "solid_color" << "[" << solid_color[0] << solid_color[1] << solid_color[2] << "]";
+    fsw << "bg_path" << bg_path_buf;
+    fsw << "show_landmarks" << (int)show_landmarks << "lm_roi_mode" << (int)lm_roi_mode << "lm_apply_rot" << (int)lm_apply_rot
+        << "lm_flip_x" << (int)lm_flip_x << "lm_flip_y" << (int)lm_flip_y << "lm_swap_xy" << (int)lm_swap_xy;
+    fsw << "fx_skin" << (int)fx_skin << "fx_skin_adv" << (int)fx_skin_adv << "fx_skin_strength" << fx_skin_strength
+        << "fx_skin_amount" << fx_skin_amount << "fx_skin_radius" << fx_skin_radius << "fx_skin_tex" << fx_skin_tex << "fx_skin_edge" << fx_skin_edge;
+    fsw << "fx_skin_wrinkle" << (int)fx_skin_wrinkle << "fx_skin_smile_boost" << fx_skin_smile_boost << "fx_skin_squint_boost" << fx_skin_squint_boost
+        << "fx_skin_forehead_boost" << fx_skin_forehead_boost << "fx_skin_wrinkle_gain" << fx_skin_wrinkle_gain
+        << "dbg_wrinkle_mask" << (int)dbg_wrinkle_mask << "dbg_wrinkle_stats" << (int)dbg_wrinkle_stats
+        << "fx_wrinkle_suppress_lower" << (int)fx_wrinkle_suppress_lower << "fx_wrinkle_lower_ratio" << fx_wrinkle_lower_ratio
+        << "fx_wrinkle_ignore_glasses" << (int)fx_wrinkle_ignore_glasses << "fx_wrinkle_glasses_margin" << fx_wrinkle_glasses_margin
+        << "fx_wrinkle_keep_ratio" << fx_wrinkle_keep_ratio << "fx_wrinkle_custom_scales" << (int)fx_wrinkle_custom_scales
+        << "fx_wrinkle_min_px" << fx_wrinkle_min_px << "fx_wrinkle_max_px" << fx_wrinkle_max_px
+        << "fx_wrinkle_use_skin_gate" << (int)fx_wrinkle_use_skin_gate << "fx_wrinkle_mask_gain" << fx_wrinkle_mask_gain
+        << "fx_wrinkle_baseline" << fx_wrinkle_baseline << "fx_wrinkle_neg_cap" << fx_wrinkle_neg_cap
+        << "fx_wrinkle_preview" << (int)fx_wrinkle_preview;
+    fsw << "fx_lipstick" << (int)fx_lipstick << "fx_lip_alpha" << fx_lip_alpha << "fx_lip_feather" << fx_lip_feather << "fx_lip_light" << fx_lip_light << "fx_lip_band" << fx_lip_band;
+    fsw << "fx_lip_color" << "[" << fx_lip_color[0] << fx_lip_color[1] << fx_lip_color[2] << "]";
+    fsw << "fx_teeth" << (int)fx_teeth << "fx_teeth_strength" << fx_teeth_strength << "fx_teeth_margin" << fx_teeth_margin;
+    fsw.release();
+    return true;
+  };
+  auto read_int = [](const cv::FileNode& n, int def){ return n.empty()?def:(int)n; };
+  auto read_float = [](const cv::FileNode& n, float def){ return n.empty()?def:(float)n; };
+  auto load_profile = [&](const std::string& name){
+    std::string path = profile_dir + "/" + name + ".yml";
+    cv::FileStorage fsr(path, cv::FileStorage::READ);
+    if (!fsr.isOpened()) return false;
+    ui_cam_idx = read_int(fsr["ui_cam_idx"], ui_cam_idx);
+    ui_res_idx = read_int(fsr["ui_res_idx"], ui_res_idx);
+    ui_fps_idx = read_int(fsr["ui_fps_idx"], ui_fps_idx);
+    vsync_on = read_int(fsr["vsync_on"], vsync_on?1:0)!=0; SDL_GL_SetSwapInterval(vsync_on?1:0);
+    show_mask = read_int(fsr["show_mask"], show_mask?1:0)!=0;
+    bg_mode = read_int(fsr["bg_mode"], bg_mode);
+    blur_strength = read_int(fsr["blur_strength"], blur_strength);
+    feather_px = read_float(fsr["feather_px"], feather_px);
+    bg_fast_blur = read_int(fsr["bg_fast_blur"], bg_fast_blur?1:0)!=0;
+    if (!fsr["solid_color"].empty()) {
+      cv::Mat sc; fsr["solid_color"] >> sc; if (sc.total()>=3) { solid_color[0]=sc.at<double>(0); solid_color[1]=sc.at<double>(1); solid_color[2]=sc.at<double>(2);} }
+    if (!fsr["bg_path"].empty()) { std::string s; fsr["bg_path"] >> s; std::snprintf(bg_path_buf,sizeof(bg_path_buf),"%s", s.c_str()); }
+    show_landmarks = read_int(fsr["show_landmarks"], show_landmarks?1:0)!=0;
+    lm_roi_mode = read_int(fsr["lm_roi_mode"], lm_roi_mode?1:0)!=0;
+    lm_apply_rot = read_int(fsr["lm_apply_rot"], lm_apply_rot?1:0)!=0;
+    lm_flip_x = read_int(fsr["lm_flip_x"], lm_flip_x?1:0)!=0;
+    lm_flip_y = read_int(fsr["lm_flip_y"], lm_flip_y?1:0)!=0;
+    lm_swap_xy = read_int(fsr["lm_swap_xy"], lm_swap_xy?1:0)!=0;
+    fx_skin = read_int(fsr["fx_skin"], fx_skin?1:0)!=0; fx_skin_adv = read_int(fsr["fx_skin_adv"], fx_skin_adv?1:0)!=0;
+    fx_skin_strength = read_float(fsr["fx_skin_strength"], fx_skin_strength);
+    fx_skin_amount = read_float(fsr["fx_skin_amount"], fx_skin_amount);
+    fx_skin_radius = read_float(fsr["fx_skin_radius"], fx_skin_radius);
+    fx_skin_tex = read_float(fsr["fx_skin_tex"], fx_skin_tex);
+    fx_skin_edge = read_float(fsr["fx_skin_edge"], fx_skin_edge);
+    fx_skin_wrinkle = read_int(fsr["fx_skin_wrinkle"], fx_skin_wrinkle?1:0)!=0;
+    fx_skin_smile_boost = read_float(fsr["fx_skin_smile_boost"], fx_skin_smile_boost);
+    fx_skin_squint_boost = read_float(fsr["fx_skin_squint_boost"], fx_skin_squint_boost);
+    fx_skin_forehead_boost = read_float(fsr["fx_skin_forehead_boost"], fx_skin_forehead_boost);
+    fx_skin_wrinkle_gain = read_float(fsr["fx_skin_wrinkle_gain"], fx_skin_wrinkle_gain);
+    dbg_wrinkle_mask = read_int(fsr["dbg_wrinkle_mask"], dbg_wrinkle_mask?1:0)!=0;
+    dbg_wrinkle_stats = read_int(fsr["dbg_wrinkle_stats"], dbg_wrinkle_stats?1:0)!=0;
+    fx_wrinkle_suppress_lower = read_int(fsr["fx_wrinkle_suppress_lower"], fx_wrinkle_suppress_lower?1:0)!=0;
+    fx_wrinkle_lower_ratio = read_float(fsr["fx_wrinkle_lower_ratio"], fx_wrinkle_lower_ratio);
+    fx_wrinkle_ignore_glasses = read_int(fsr["fx_wrinkle_ignore_glasses"], fx_wrinkle_ignore_glasses?1:0)!=0;
+    fx_wrinkle_glasses_margin = read_float(fsr["fx_wrinkle_glasses_margin"], fx_wrinkle_glasses_margin);
+    fx_wrinkle_keep_ratio = read_float(fsr["fx_wrinkle_keep_ratio"], fx_wrinkle_keep_ratio);
+    fx_wrinkle_custom_scales = read_int(fsr["fx_wrinkle_custom_scales"], fx_wrinkle_custom_scales?1:0)!=0;
+    fx_wrinkle_min_px = read_float(fsr["fx_wrinkle_min_px"], fx_wrinkle_min_px);
+    fx_wrinkle_max_px = read_float(fsr["fx_wrinkle_max_px"], fx_wrinkle_max_px);
+    fx_wrinkle_use_skin_gate = read_int(fsr["fx_wrinkle_use_skin_gate"], fx_wrinkle_use_skin_gate?1:0)!=0;
+    fx_wrinkle_mask_gain = read_float(fsr["fx_wrinkle_mask_gain"], fx_wrinkle_mask_gain);
+    fx_wrinkle_baseline = read_float(fsr["fx_wrinkle_baseline"], fx_wrinkle_baseline);
+    fx_wrinkle_neg_cap = read_float(fsr["fx_wrinkle_neg_cap"], fx_wrinkle_neg_cap);
+    fx_wrinkle_preview = read_int(fsr["fx_wrinkle_preview"], fx_wrinkle_preview?1:0)!=0;
+    fx_lipstick = read_int(fsr["fx_lipstick"], fx_lipstick?1:0)!=0;
+    fx_lip_alpha = read_float(fsr["fx_lip_alpha"], fx_lip_alpha);
+    fx_lip_feather = read_float(fsr["fx_lip_feather"], fx_lip_feather);
+    fx_lip_light = read_float(fsr["fx_lip_light"], fx_lip_light);
+    fx_lip_band = read_float(fsr["fx_lip_band"], fx_lip_band);
+    if (!fsr["fx_lip_color"].empty()) { cv::Mat c; fsr["fx_lip_color"] >> c; if (c.total()>=3){ fx_lip_color[0]=c.at<double>(0); fx_lip_color[1]=c.at<double>(1); fx_lip_color[2]=c.at<double>(2);} }
+    fx_teeth = read_int(fsr["fx_teeth"], fx_teeth?1:0)!=0;
+    fx_teeth_strength = read_float(fsr["fx_teeth_strength"], fx_teeth_strength);
+    fx_teeth_margin = read_float(fsr["fx_teeth_margin"], fx_teeth_margin);
+    return true;
+  };
+  // Load default profile if present
+  {
+    std::ifstream fin(default_profile_path); if (fin) { std::string defname; std::getline(fin, defname); if (!defname.empty()) { load_profile(defname); profile_names = list_profiles(); auto it = std::find(profile_names.begin(), profile_names.end(), defname); ui_profile_idx = (it==profile_names.end()? -1 : (int)std::distance(profile_names.begin(), it)); std::snprintf(profile_name_buf, sizeof(profile_name_buf), "%s", defname.c_str()); }}
+  }
   while (running) {
     SDL_Event e; while (SDL_PollEvent(&e)) { ImGui_ImplSDL2_ProcessEvent(&e); if (e.type == SDL_QUIT) running = false; }
 
@@ -684,6 +805,26 @@ int main(int argc, char** argv) {
         }
         ImGui::Separator();
       }
+      // Profiles
+      {
+        ImGui::Text("Profile");
+        // List existing profiles
+        if (profile_names.empty()) {
+          ImGui::TextDisabled("No profiles yet");
+        } else {
+          std::vector<const char*> items; for (auto& n: profile_names) items.push_back(n.c_str());
+          if (ui_profile_idx < -1 || ui_profile_idx >= (int)profile_names.size()) ui_profile_idx = -1;
+          ImGui::Combo("Select", &ui_profile_idx, items.data(), (int)items.size()); ImGui::SameLine();
+          if (ImGui::Button("Load##prof") && ui_profile_idx>=0) { load_profile(profile_names[ui_profile_idx]); }
+        }
+        ImGui::InputText("Name", profile_name_buf, sizeof(profile_name_buf));
+        if (ImGui::Button("Save##prof")) {
+          std::string nm(profile_name_buf); if (!nm.empty()) { if (save_profile(nm)) { profile_names = list_profiles(); auto it = std::find(profile_names.begin(), profile_names.end(), nm); ui_profile_idx = (it==profile_names.end()?-1:(int)std::distance(profile_names.begin(), it)); } }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Set Default##prof")) { std::ofstream fout(default_profile_path); if (fout) fout << profile_name_buf; }
+        ImGui::Separator();
+      }
       // Virtual Webcam (v4l2loopback)
       {
         ImGui::Text("Virtual Webcam");
@@ -951,6 +1092,8 @@ int main(int argc, char** argv) {
     SDL_GL_SwapWindow(window);
   }
 
+  // Ensure virtual webcam is properly closed on exit
+  if (vcam_running) { close_vcam(); }
   ImGui_ImplOpenGL3_Shutdown(); ImGui_ImplSDL2_Shutdown(); ImGui::DestroyContext();
   if (tex) glDeleteTextures(1, &tex);
   SDL_GL_DeleteContext(gl_context); SDL_DestroyWindow(window); SDL_Quit();
