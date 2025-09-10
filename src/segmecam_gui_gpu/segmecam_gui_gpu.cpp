@@ -33,6 +33,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <opencv2/core/ocl.hpp>
+#include <chrono>
 
 namespace mp = mediapipe;
 ABSL_DECLARE_FLAG(std::string, resource_root_dir);
@@ -267,6 +268,11 @@ int main(int argc, char** argv) {
   bool dbg_composite_rgb = false; // composite in RGB space to test channel order
   // OpenCL acceleration (Transparent API)
   bool use_opencl = false; bool opencl_available = cv::ocl::haveOpenCL();
+  // Perf logging (terminal)
+  bool perf_log = false; int perf_log_interval_ms = 5000; // 5s default
+  uint32_t perf_last_log_ms = SDL_GetTicks();
+  double perf_sum_frame_ms = 0.0, perf_sum_smooth_ms = 0.0, perf_sum_bg_ms = 0.0; uint32_t perf_sum_frames = 0;
+  bool perf_logged_caps = false;
   // Background mode: 0=None, 1=Blur, 2=Image, 3=Solid Color
   int bg_mode = 0;
   cv::Mat bg_image; // background image (BGR)
@@ -581,6 +587,8 @@ int main(int argc, char** argv) {
     }
 
     // Apply face effects on the foreground before background compositing
+    auto t_frame_start = std::chrono::steady_clock::now();
+    double t_smooth_ms = 0.0, t_bg_ms = 0.0;
     if (have_lms) {
       mediapipe::NormalizedLandmarkList used_lms = latest_lms;
       if (lm_roi_mode && !latest_rects.empty()) {
@@ -590,6 +598,7 @@ int main(int argc, char** argv) {
         // Teeth first to avoid overriding lips later
         if (fx_teeth)     ApplyTeethWhitenBGR(frame_bgr, fr, fx_teeth_strength, fx_teeth_margin);
         if (fx_skin) {
+          auto t0 = std::chrono::steady_clock::now();
           if (fx_skin_adv) {
             const mediapipe::NormalizedLandmarkList* lmsp = (has_landmarks && have_lms && fx_skin_wrinkle) ? &used_lms : nullptr;
             float sboost = fx_skin_wrinkle ? fx_skin_smile_boost : 0.0f;
@@ -676,6 +685,8 @@ int main(int argc, char** argv) {
           } else {
             ApplySkinSmoothingBGR(frame_bgr, fr, fx_skin_strength, use_opencl);
           }
+          auto t1 = std::chrono::steady_clock::now();
+          t_smooth_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
         }
         if (fx_lipstick)  ApplyLipRefinerBGR(frame_bgr, fr,
                      cv::Scalar((int)(fx_lip_color[2]*255.0f),(int)(fx_lip_color[1]*255.0f),(int)(fx_lip_color[0]*255.0f)),
@@ -690,7 +701,10 @@ int main(int argc, char** argv) {
       // No background effect; show camera
       cv::cvtColor(frame_bgr, display_rgb, cv::COLOR_BGR2RGB);
     } else if (bg_mode == 1 && !mask8_resized.empty()) {
+      auto t0 = std::chrono::steady_clock::now();
       display_rgb = CompositeBlurBackgroundBGR(frame_bgr, mask8_resized, blur_strength, feather_px);
+      auto t1 = std::chrono::steady_clock::now();
+      t_bg_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
       // Debug: print means once per second
       uint32_t now_dbg = SDL_GetTicks();
       if (now_dbg - dbg_last_ms > 1000) {
@@ -836,6 +850,40 @@ int main(int argc, char** argv) {
 
     upload(display_rgb);
 
+    // Perf accumulation + periodic log
+    auto t_frame_end = std::chrono::steady_clock::now();
+    double t_frame_ms = std::chrono::duration<double, std::milli>(t_frame_end - t_frame_start).count();
+    perf_sum_frame_ms += t_frame_ms; perf_sum_smooth_ms += t_smooth_ms; perf_sum_bg_ms += t_bg_ms; perf_sum_frames++;
+    if (perf_log && !perf_logged_caps) {
+      std::cout << "[PERF] OpenCL build: " << (opencl_available?"available":"not available")
+                << ", useOpenCL=" << (cv::ocl::useOpenCL()?"on":"off");
+      if (opencl_available) {
+        try {
+          cv::ocl::Context ctx = cv::ocl::Context::getDefault();
+          cv::ocl::Device dev = cv::ocl::Device::getDefault();
+          std::cout << ", device='" << dev.name() << "' vendor='" << dev.vendorName() << "'";
+        } catch (...) {}
+      }
+      std::cout << std::endl;
+      perf_logged_caps = true;
+    }
+    uint32_t now_ms_perf = SDL_GetTicks();
+    if (perf_log && now_ms_perf - perf_last_log_ms >= (uint32_t)perf_log_interval_ms && perf_sum_frames > 0) {
+      double avg_frame = perf_sum_frame_ms / (double)perf_sum_frames;
+      double avg_smooth = perf_sum_smooth_ms / (double)perf_sum_frames;
+      double avg_bg = perf_sum_bg_ms / (double)perf_sum_frames;
+      double est_fps = 1000.0 / std::max(1e-3, avg_frame);
+      std::cout << "[PERF] frames=" << perf_sum_frames
+                << " avg_ms frame=" << avg_frame
+                << " smooth=" << avg_smooth
+                << " bg=" << avg_bg
+                << " est_fps=" << est_fps
+                << " (bg_mode=" << bg_mode << ", adv=" << (int)fx_skin_adv << ", smooth_on=" << (int)fx_skin
+                << ", ocl=" << (cv::ocl::useOpenCL()?"on":"off") << ")"
+                << std::endl;
+      perf_sum_frame_ms = perf_sum_smooth_ms = perf_sum_bg_ms = 0.0; perf_sum_frames = 0; perf_last_log_ms = now_ms_perf;
+    }
+
     // If virtual cam enabled, push this frame into loopback (YUYV)
     if (vcam_running && vcam_fd >= 0 && !display_rgb.empty()) {
       // Ensure format matches; if not, try to reconfigure
@@ -868,7 +916,7 @@ int main(int argc, char** argv) {
     ImGui::End();
     // Controls (allow user to move/resize; set defaults only once)
     ImGui::SetNextWindowPos(ImVec2(16,16), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(380, 240), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(400, 260), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("SegmeCam", nullptr, ImGuiWindowFlags_NoCollapse)) {
       // Camera controls
       if (!cam_list.empty()) {
@@ -1117,6 +1165,9 @@ int main(int argc, char** argv) {
           } else {
             ImGui::TextDisabled("OpenCL not available");
           }
+          ImGui::SameLine();
+          ImGui::Checkbox("Perf log", &perf_log);
+          if (perf_log) { ImGui::SameLine(); ImGui::SliderInt("Interval (ms)", &perf_log_interval_ms, 500, 10000); }
           ImGui::Checkbox("Enable##skin", &fx_skin); ImGui::SameLine();
           ImGui::Checkbox("Advanced", &fx_skin_adv);
           if (fx_skin) {
