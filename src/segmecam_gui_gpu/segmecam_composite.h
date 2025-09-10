@@ -21,13 +21,6 @@ cv::Mat CompositeBlurBackgroundBGR(const cv::Mat& frame_bgr,
                                    int blur_strength,
                                    float feather_px);
 
-// Faster approximation: blur full frame once then blend with mask.
-// Trades a bit of edge accuracy for speed.
-cv::Mat CompositeBlurBackgroundFastBGR(const cv::Mat& frame_bgr,
-                                       const cv::Mat& mask_u8,
-                                       int blur_strength,
-                                       float feather_px);
-
 // Image background composite. bg_bgr must be same size or will be resized.
 cv::Mat CompositeImageBackgroundBGR(const cv::Mat& frame_bgr,
                                     const cv::Mat& mask_u8,

@@ -85,27 +85,6 @@ cv::Mat CompositeBlurBackgroundBGR(const cv::Mat& frame_bgr,
   return rgb;
 }
 
-cv::Mat CompositeBlurBackgroundFastBGR(const cv::Mat& frame_bgr,
-                                       const cv::Mat& mask_u8,
-                                       int blur_strength,
-                                       float feather_px) {
-  // Single blur of the whole frame, then blend using feathered mask.
-  int k = blur_strength | 1;
-  cv::Mat blurred; cv::GaussianBlur(frame_bgr, blurred, cv::Size(k,k), 0);
-  // Use float [0,1] for blending
-  cv::Mat frame_f, blurred_f; frame_bgr.convertTo(frame_f, CV_32FC3, 1.0/255.0);
-  blurred.convertTo(blurred_f, CV_32FC3, 1.0/255.0);
-  cv::Mat mask_f; mask_u8.convertTo(mask_f, CV_32FC1, 1.0/255.0);
-  // Feather mask
-  int fks = (int)std::max(1.0f, feather_px) * 2 + 1;
-  if (feather_px > 0.5f) cv::GaussianBlur(mask_f, mask_f, cv::Size(fks,fks), 0);
-  std::vector<cv::Mat> ff(3), bf(3), out(3); cv::split(frame_f, ff); cv::split(blurred_f, bf);
-  for (int i=0;i<3;++i) out[i] = ff[i].mul(mask_f) + bf[i].mul(1.0f - mask_f);
-  cv::Mat comp_f; cv::merge(out, comp_f);
-  cv::Mat comp_u8; comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
-  cv::Mat rgb; cv::cvtColor(comp_u8, rgb, cv::COLOR_BGR2RGB);
-  return rgb;
-}
 
 cv::Mat CompositeImageBackgroundBGR(const cv::Mat& frame_bgr,
                                     const cv::Mat& mask_u8,

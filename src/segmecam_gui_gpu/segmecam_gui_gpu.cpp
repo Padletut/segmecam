@@ -97,7 +97,8 @@ int main(int argc, char** argv) {
       if (rp.ok()) rect_poller = std::make_unique<mp::OutputStreamPoller>(std::move(rp.value()));
     }
   }
-  // Defer StartRun until after GL context is created to ensure GPU path is ready.
+  { auto st = graph.StartRun({}); if (!st.ok()) { std::fprintf(stderr, "StartRun failed: %s\n", st.message().data()); return 4; } }
+  // Defer StartRun was previously moved; restored to earlier start for stability.
 
   // Try V4L2 first, then fallback to default backend.
   if (!cam_list.empty()) {
@@ -239,8 +240,8 @@ int main(int argc, char** argv) {
   ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
   SDL_GL_SwapWindow(window);
   std::cout << "Initial frame drawn" << std::endl;
-  // Now start the Mediapipe graph (GPU context is ready)
-  { auto st = graph.StartRun({}); if (!st.ok()) { std::fprintf(stderr, "StartRun failed: %s\n", st.message().data()); return 4; } }
+  // Now start the Mediapipe graph (start earlier to match stable behavior)
+  // (Moved back before SDL init to previous timing)
 
   GLuint tex = 0; int tex_w = 0, tex_h = 0;
   auto upload = [&](const cv::Mat& rgb){
@@ -265,7 +266,6 @@ int main(int argc, char** argv) {
   bool dbg_composite_rgb = false; // composite in RGB space to test channel order
   // Background mode: 0=None, 1=Blur, 2=Image, 3=Solid Color
   int bg_mode = 0;
-  bool bg_fast_blur = true; // approximate fast blur for higher FPS
   cv::Mat bg_image; // background image (BGR)
   static char bg_path_buf[512] = {0};
   float solid_color[3] = {0.0f, 0.0f, 0.0f}; // RGB 0..1
@@ -274,8 +274,6 @@ int main(int argc, char** argv) {
   // Beauty controls
   bool fx_skin = false; float fx_skin_strength = 0.4f;
   bool fx_skin_adv = true; float fx_skin_amount = 0.5f; float fx_skin_radius = 6.0f; float fx_skin_tex = 0.35f; float fx_skin_edge = 12.0f;
-  // Fast skin path (ROI + downscale)
-  bool fx_skin_fast = false; float fx_skin_fast_scale = 0.5f; int fx_skin_fast_stride = 2;
   bool fx_skin_wrinkle = true; float fx_skin_smile_boost = 0.6f; float fx_skin_squint_boost = 0.5f; float fx_skin_forehead_boost = 0.8f; float fx_skin_wrinkle_gain = 1.5f;
   bool dbg_wrinkle_mask = false; // visualize wrinkle mask overlay
   bool dbg_wrinkle_stats = true; // show wrinkle stats text when visualizing
@@ -351,7 +349,7 @@ int main(int argc, char** argv) {
     // UI indices (best-effort)
     fsw << "ui_cam_idx" << ui_cam_idx << "ui_res_idx" << ui_res_idx << "ui_fps_idx" << ui_fps_idx;
     fsw << "vsync_on" << (int)vsync_on;
-    fsw << "show_mask" << (int)show_mask << "bg_mode" << bg_mode << "blur_strength" << blur_strength << "feather_px" << feather_px << "bg_fast_blur" << (int)bg_fast_blur;
+    fsw << "show_mask" << (int)show_mask << "bg_mode" << bg_mode << "blur_strength" << blur_strength << "feather_px" << feather_px;
     fsw << "solid_color" << "[" << solid_color[0] << solid_color[1] << solid_color[2] << "]";
     fsw << "bg_path" << bg_path_buf;
     fsw << "show_landmarks" << (int)show_landmarks << "lm_roi_mode" << (int)lm_roi_mode << "lm_apply_rot" << (int)lm_apply_rot
@@ -439,7 +437,6 @@ int main(int argc, char** argv) {
     bg_mode = read_int(root["bg_mode"], bg_mode);
     blur_strength = read_int(root["blur_strength"], blur_strength);
     feather_px = read_float(root["feather_px"], feather_px);
-    bg_fast_blur = read_int(root["bg_fast_blur"], bg_fast_blur?1:0)!=0;
     if (!root["solid_color"].empty() && root["solid_color"].isSeq()) {
       auto sc = root["solid_color"]; int i=0; for (auto it=sc.begin(); it!=sc.end() && i<3; ++it,++i) solid_color[i] = (float)((double)*it);
     }
@@ -586,45 +583,7 @@ int main(int argc, char** argv) {
         // Teeth first to avoid overriding lips later
         if (fx_teeth)     ApplyTeethWhitenBGR(frame_bgr, fr, fx_teeth_strength, fx_teeth_margin);
         if (fx_skin) {
-          if (fx_skin_fast) {
-            // Fast skin smoothing: ROI + downscale + cached updates
-            cv::Rect face_bb = cv::boundingRect(fr.face_oval);
-            int pad = std::max(8, std::min(face_bb.width, face_bb.height) / 6);
-            cv::Rect roi(face_bb.x - pad, face_bb.y - pad, face_bb.width + 2*pad, face_bb.height + 2*pad);
-            roi &= cv::Rect(0,0, frame_bgr.cols, frame_bgr.rows);
-            if (roi.width >= 8 && roi.height >= 8) {
-              static int fast_ctr = 0; bool do_update = (fx_skin_fast_stride <= 1) || ((fast_ctr++ % fx_skin_fast_stride) == 0);
-              // Build feathered mask within ROI
-              cv::Mat mask_roi_u8(roi.size(), CV_8U, cv::Scalar(0));
-              auto shift_poly = [&](const std::vector<cv::Point>& poly){ std::vector<cv::Point> out; out.reserve(poly.size()); for (auto p: poly){ out.emplace_back(p.x - roi.x, p.y - roi.y);} return out; };
-              if (!fr.face_oval.empty()) cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.face_oval)}, cv::Scalar(220));
-              if (!fr.lips_outer.empty()) cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.lips_outer)}, cv::Scalar(0));
-              if (!fr.left_eye.empty())   cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.left_eye)},   cv::Scalar(0));
-              if (!fr.right_eye.empty())  cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.right_eye)},  cv::Scalar(0));
-              int fk = std::max(3, (int)std::round(fx_skin_edge) | 1); cv::GaussianBlur(mask_roi_u8, mask_roi_u8, cv::Size(fk,fk), 0);
-
-              cv::Mat roi_bgr = frame_bgr(roi);
-              if (do_update) {
-                double sc = std::clamp((double)fx_skin_fast_scale, 0.3, 1.0);
-                cv::Mat small; cv::resize(roi_bgr, small, cv::Size(), sc, sc, cv::INTER_AREA);
-                // Downscaled bilateral + light Gaussian
-                int d = 7; double sigC = 40.0 * fx_skin_amount + 20.0; double sigS = 6.0 + 12.0 * fx_skin_amount;
-                cv::Mat sm; cv::bilateralFilter(small, sm, d, sigC, sigS);
-                cv::GaussianBlur(sm, sm, cv::Size(0,0), 0.8);
-                cv::resize(sm, sm, roi.size(), 0, 0, cv::INTER_LINEAR);
-                // Blend inside ROI using gated amount (no smoothing outside mask)
-                cv::Mat mask_f; mask_roi_u8.convertTo(mask_f, CV_32F, 1.0/255.0); mask_f = cv::min(mask_f, 1.0f);
-                std::vector<cv::Mat> sf(3), rf(3), of(3);
-                cv::split(sm, sf); cv::split(roi_bgr, rf);
-                cv::Mat am = mask_f * fx_skin_amount; // 0..1
-                for (int i=0;i<3;++i) {
-                  cv::Mat s32, r32; sf[i].convertTo(s32, CV_32F, 1.0/255.0); rf[i].convertTo(r32, CV_32F, 1.0/255.0);
-                  of[i] = r32.mul(1.0f - am) + s32.mul(am);
-                }
-                cv::Mat comp; cv::merge(of, comp); comp.convertTo(roi_bgr, CV_8U, 255.0);
-              }
-            }
-          } else if (fx_skin_adv) {
+          if (fx_skin_adv) {
             const mediapipe::NormalizedLandmarkList* lmsp = (has_landmarks && have_lms && fx_skin_wrinkle) ? &used_lms : nullptr;
             float sboost = fx_skin_wrinkle ? fx_skin_smile_boost : 0.0f;
             float qboost = fx_skin_wrinkle ? fx_skin_squint_boost : 0.0f;
@@ -656,11 +615,7 @@ int main(int argc, char** argv) {
       // No background effect; show camera
       cv::cvtColor(frame_bgr, display_rgb, cv::COLOR_BGR2RGB);
     } else if (bg_mode == 1 && !mask8_resized.empty()) {
-      if (bg_fast_blur) {
-        display_rgb = CompositeBlurBackgroundFastBGR(frame_bgr, mask8_resized, blur_strength, feather_px);
-      } else {
-        display_rgb = CompositeBlurBackgroundBGR(frame_bgr, mask8_resized, blur_strength, feather_px);
-      }
+      display_rgb = CompositeBlurBackgroundBGR(frame_bgr, mask8_resized, blur_strength, feather_px);
       // Debug: print means once per second
       uint32_t now_dbg = SDL_GetTicks();
       if (now_dbg - dbg_last_ms > 1000) {
@@ -823,39 +778,23 @@ int main(int argc, char** argv) {
     ImGui_ImplOpenGL3_NewFrame(); ImGui_ImplSDL2_NewFrame(); ImGui::NewFrame();
     int dw, dh; SDL_GL_GetDrawableSize(window, &dw, &dh);
     glViewport(0,0,dw,dh); glClearColor(0.06f,0.06f,0.07f,1.0f); glClear(GL_COLOR_BUFFER_BIT);
+    // Preview window (kept on top by z-ordering of ImGui windows)
+    ImGui::Begin("Preview", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs);
+    ImGui::SetWindowPos(ImVec2(0,0), ImGuiCond_Always); ImGui::SetWindowSize(ImVec2((float)dw,(float)dh), ImGuiCond_Always);
     if (tex) {
-      // Draw the preview texture on the background draw list so UI stays on top.
       float aspect = tex_h > 0 ? (float)tex_w/(float)tex_h : 1.0f;
-      float w = (float)dw, h = w / aspect; if (h > dh) { h = (float)dh; w = h * aspect; }
-      ImVec2 center((float)dw * 0.5f, (float)dh * 0.5f);
-      ImVec2 size(w, h);
-      ImVec2 pos(center.x - size.x * 0.5f, center.y - size.y * 0.5f);
-      ImVec2 vp = ImGui::GetMainViewport()->Pos;
-      ImDrawList* bg = ImGui::GetBackgroundDrawList();
-      ImVec2 p0(vp.x + pos.x, vp.y + pos.y);
-      ImVec2 p1(vp.x + pos.x + size.x, vp.y + pos.y + size.y);
-      bg->AddImage((ImTextureID)(intptr_t)tex,
-                   p0,
-                   p1,
-                   ImVec2(0,0), ImVec2(1,1));
+      float w = (float)dw, h = w/aspect; if (h > dh) { h = (float)dh; w = h*aspect; }
+      ImVec2 center((float)dw*0.5f, (float)dh*0.5f); ImVec2 size(w,h); ImVec2 pos(center.x - size.x*0.5f, center.y - size.y*0.5f);
+      ImGui::SetCursorPos(ImVec2(pos.x,pos.y));
+      ImGui::Image((ImTextureID)(intptr_t)tex, size, ImVec2(0,0), ImVec2(1,1));
     } else {
-      // Show explicit message while waiting for first frame/texture
-      ImGui::Begin("Preview", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs);
-      ImGui::SetWindowPos(ImVec2(0,0), ImGuiCond_Always); ImGui::SetWindowSize(ImVec2((float)dw,(float)dh), ImGuiCond_Always);
-      ImGui::SetCursorPos(ImVec2(20, 20));
-      ImGui::Text("Waiting for camera frame... (tex=0)");
-      ImGui::End();
+      ImGui::SetCursorPos(ImVec2(20,20)); ImGui::Text("Waiting for camera frame... (tex=0)");
     }
+    ImGui::End();
     // Controls (allow user to move/resize; set defaults only once)
     ImGui::SetNextWindowPos(ImVec2(16,16), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(380, 260), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(380, 240), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("SegmeCam", nullptr, ImGuiWindowFlags_NoCollapse)) {
-      // Frame pacing
-      bool prev_vsync = vsync_on;
-      ImGui::Checkbox("VSync", &vsync_on);
-      if (vsync_on != prev_vsync) {
-        SDL_GL_SetSwapInterval(vsync_on ? 1 : 0);
-      }
       // Camera controls
       if (!cam_list.empty()) {
         ImGui::Text("Camera");
@@ -1057,7 +996,6 @@ int main(int argc, char** argv) {
       if (bg_mode == 1) {
         ImGui::SliderInt("Blur Strength", &blur_strength, 1, 61);
         if ((blur_strength % 2) == 0) blur_strength++;
-        ImGui::SameLine(); ImGui::Checkbox("Fast blur", &bg_fast_blur);
       } else if (bg_mode == 2) {
         ImGui::InputText("Image Path", bg_path_buf, sizeof(bg_path_buf));
         ImGui::SameLine();
@@ -1097,15 +1035,9 @@ int main(int argc, char** argv) {
         ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
         if (ImGui::CollapsingHeader("Skin Smoothing")) {
           ImGui::Checkbox("Enable##skin", &fx_skin); ImGui::SameLine();
-          ImGui::Checkbox("Advanced", &fx_skin_adv); ImGui::SameLine();
-          ImGui::Checkbox("Fast mode", &fx_skin_fast);
+          ImGui::Checkbox("Advanced", &fx_skin_adv);
           if (fx_skin) {
-            if (fx_skin_fast) {
-              ImGui::SliderFloat("Amount##skin", &fx_skin_amount, 0.0f, 1.0f);
-              ImGui::SliderFloat("Scale (0.3-1.0)", &fx_skin_fast_scale, 0.3f, 1.0f);
-              ImGui::SliderInt("Update every N frames", &fx_skin_fast_stride, 1, 4);
-              ImGui::TextDisabled("Fast mode ignores advanced wrinkle-aware settings");
-            } else if (!fx_skin_adv) {
+            if (!fx_skin_adv) {
               ImGui::SliderFloat("Strength", &fx_skin_strength, 0.0f, 1.0f);
             } else {
               ImGui::SliderFloat("Amount##skin", &fx_skin_amount, 0.0f, 1.0f);
