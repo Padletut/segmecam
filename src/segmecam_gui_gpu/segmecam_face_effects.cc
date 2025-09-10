@@ -242,12 +242,15 @@ void ApplySkinSmoothingBGR(cv::Mat& frame_bgr,
     cv::UMat mask_f; mask_u.convertTo(mask_f, CV_32FC1, 1.0/255.0);
     std::vector<cv::UMat> fch(3), sch(3), of(3);
     cv::split(src, fch); cv::split(smooth_u, sch);
+    // Precompute (1 - mask)
+    cv::UMat one(mask_f.size(), mask_f.type()); one.setTo(1.0f);
+    cv::UMat inv_mask; cv::subtract(one, mask_f, inv_mask);
     for (int i = 0; i < 3; ++i) {
       cv::UMat f32, s32;
       fch[i].convertTo(f32, CV_32FC1, 1.0/255.0);
       sch[i].convertTo(s32, CV_32FC1, 1.0/255.0);
-      // out = f*(1-mask) + s*mask
-      of[i] = f32.mul(1.0f - mask_f) + s32.mul(mask_f);
+      // out = f*(1-mask) + s*mask (all UMat)
+      of[i] = f32.mul(inv_mask) + s32.mul(mask_f);
     }
     cv::UMat comp_f; cv::merge(of, comp_f);
     cv::UMat comp_u8; comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
