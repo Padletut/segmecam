@@ -378,11 +378,13 @@ int main(int argc, char** argv) {
     std::string path = profile_dir + "/" + name + ".yml";
     cv::FileStorage fsr(path, cv::FileStorage::READ);
     if (!fsr.isOpened()) return false;
+    cv::FileNode root = fsr.root();
+    if (root.empty() || !root.isMap()) return false; // guard malformed/old files
     // Camera selection by path, resolution and fps (robust to device order changes)
-    std::string saved_path; if (!fsr["cam_path"].empty()) fsr["cam_path"] >> saved_path;
-    int saved_w = read_int(fsr["res_w"], 0);
-    int saved_h = read_int(fsr["res_h"], 0);
-    int saved_fps = read_int(fsr["fps_value"], 0);
+    std::string saved_path; if (!root["cam_path"].empty()) root["cam_path"] >> saved_path;
+    int saved_w = read_int(root["res_w"], 0);
+    int saved_h = read_int(root["res_h"], 0);
+    int saved_fps = read_int(root["fps_value"], 0);
     // Choose camera index
     if (!cam_list.empty()) {
       int chosen_idx = -1;
@@ -427,59 +429,60 @@ int main(int argc, char** argv) {
       }
     }
     // Legacy indices if present (non-fatal)
-    ui_cam_idx = read_int(fsr["ui_cam_idx"], ui_cam_idx);
-    ui_res_idx = read_int(fsr["ui_res_idx"], ui_res_idx);
-    ui_fps_idx = read_int(fsr["ui_fps_idx"], ui_fps_idx);
-    vsync_on = read_int(fsr["vsync_on"], vsync_on?1:0)!=0; SDL_GL_SetSwapInterval(vsync_on?1:0);
-    show_mask = read_int(fsr["show_mask"], show_mask?1:0)!=0;
-    bg_mode = read_int(fsr["bg_mode"], bg_mode);
-    blur_strength = read_int(fsr["blur_strength"], blur_strength);
-    feather_px = read_float(fsr["feather_px"], feather_px);
-    bg_fast_blur = read_int(fsr["bg_fast_blur"], bg_fast_blur?1:0)!=0;
-    if (!fsr["solid_color"].empty()) {
-      cv::Mat sc; fsr["solid_color"] >> sc; if (sc.total()>=3) { solid_color[0]=sc.at<double>(0); solid_color[1]=sc.at<double>(1); solid_color[2]=sc.at<double>(2);} }
-    if (!fsr["bg_path"].empty()) { std::string s; fsr["bg_path"] >> s; std::snprintf(bg_path_buf,sizeof(bg_path_buf),"%s", s.c_str()); }
-    show_landmarks = read_int(fsr["show_landmarks"], show_landmarks?1:0)!=0;
-    lm_roi_mode = read_int(fsr["lm_roi_mode"], lm_roi_mode?1:0)!=0;
-    lm_apply_rot = read_int(fsr["lm_apply_rot"], lm_apply_rot?1:0)!=0;
-    lm_flip_x = read_int(fsr["lm_flip_x"], lm_flip_x?1:0)!=0;
-    lm_flip_y = read_int(fsr["lm_flip_y"], lm_flip_y?1:0)!=0;
-    lm_swap_xy = read_int(fsr["lm_swap_xy"], lm_swap_xy?1:0)!=0;
-    fx_skin = read_int(fsr["fx_skin"], fx_skin?1:0)!=0; fx_skin_adv = read_int(fsr["fx_skin_adv"], fx_skin_adv?1:0)!=0;
-    fx_skin_strength = read_float(fsr["fx_skin_strength"], fx_skin_strength);
-    fx_skin_amount = read_float(fsr["fx_skin_amount"], fx_skin_amount);
-    fx_skin_radius = read_float(fsr["fx_skin_radius"], fx_skin_radius);
-    fx_skin_tex = read_float(fsr["fx_skin_tex"], fx_skin_tex);
-    fx_skin_edge = read_float(fsr["fx_skin_edge"], fx_skin_edge);
-    fx_skin_wrinkle = read_int(fsr["fx_skin_wrinkle"], fx_skin_wrinkle?1:0)!=0;
-    fx_skin_smile_boost = read_float(fsr["fx_skin_smile_boost"], fx_skin_smile_boost);
-    fx_skin_squint_boost = read_float(fsr["fx_skin_squint_boost"], fx_skin_squint_boost);
-    fx_skin_forehead_boost = read_float(fsr["fx_skin_forehead_boost"], fx_skin_forehead_boost);
-    fx_skin_wrinkle_gain = read_float(fsr["fx_skin_wrinkle_gain"], fx_skin_wrinkle_gain);
-    dbg_wrinkle_mask = read_int(fsr["dbg_wrinkle_mask"], dbg_wrinkle_mask?1:0)!=0;
-    dbg_wrinkle_stats = read_int(fsr["dbg_wrinkle_stats"], dbg_wrinkle_stats?1:0)!=0;
-    fx_wrinkle_suppress_lower = read_int(fsr["fx_wrinkle_suppress_lower"], fx_wrinkle_suppress_lower?1:0)!=0;
-    fx_wrinkle_lower_ratio = read_float(fsr["fx_wrinkle_lower_ratio"], fx_wrinkle_lower_ratio);
-    fx_wrinkle_ignore_glasses = read_int(fsr["fx_wrinkle_ignore_glasses"], fx_wrinkle_ignore_glasses?1:0)!=0;
-    fx_wrinkle_glasses_margin = read_float(fsr["fx_wrinkle_glasses_margin"], fx_wrinkle_glasses_margin);
-    fx_wrinkle_keep_ratio = read_float(fsr["fx_wrinkle_keep_ratio"], fx_wrinkle_keep_ratio);
-    fx_wrinkle_custom_scales = read_int(fsr["fx_wrinkle_custom_scales"], fx_wrinkle_custom_scales?1:0)!=0;
-    fx_wrinkle_min_px = read_float(fsr["fx_wrinkle_min_px"], fx_wrinkle_min_px);
-    fx_wrinkle_max_px = read_float(fsr["fx_wrinkle_max_px"], fx_wrinkle_max_px);
-    fx_wrinkle_use_skin_gate = read_int(fsr["fx_wrinkle_use_skin_gate"], fx_wrinkle_use_skin_gate?1:0)!=0;
-    fx_wrinkle_mask_gain = read_float(fsr["fx_wrinkle_mask_gain"], fx_wrinkle_mask_gain);
-    fx_wrinkle_baseline = read_float(fsr["fx_wrinkle_baseline"], fx_wrinkle_baseline);
-    fx_wrinkle_neg_cap = read_float(fsr["fx_wrinkle_neg_cap"], fx_wrinkle_neg_cap);
-    fx_wrinkle_preview = read_int(fsr["fx_wrinkle_preview"], fx_wrinkle_preview?1:0)!=0;
-    fx_lipstick = read_int(fsr["fx_lipstick"], fx_lipstick?1:0)!=0;
-    fx_lip_alpha = read_float(fsr["fx_lip_alpha"], fx_lip_alpha);
-    fx_lip_feather = read_float(fsr["fx_lip_feather"], fx_lip_feather);
-    fx_lip_light = read_float(fsr["fx_lip_light"], fx_lip_light);
-    fx_lip_band = read_float(fsr["fx_lip_band"], fx_lip_band);
-    if (!fsr["fx_lip_color"].empty()) { cv::Mat c; fsr["fx_lip_color"] >> c; if (c.total()>=3){ fx_lip_color[0]=c.at<double>(0); fx_lip_color[1]=c.at<double>(1); fx_lip_color[2]=c.at<double>(2);} }
-    fx_teeth = read_int(fsr["fx_teeth"], fx_teeth?1:0)!=0;
-    fx_teeth_strength = read_float(fsr["fx_teeth_strength"], fx_teeth_strength);
-    fx_teeth_margin = read_float(fsr["fx_teeth_margin"], fx_teeth_margin);
+    ui_cam_idx = read_int(root["ui_cam_idx"], ui_cam_idx);
+    ui_res_idx = read_int(root["ui_res_idx"], ui_res_idx);
+    ui_fps_idx = read_int(root["ui_fps_idx"], ui_fps_idx);
+    vsync_on = read_int(root["vsync_on"], vsync_on?1:0)!=0; SDL_GL_SetSwapInterval(vsync_on?1:0);
+    show_mask = read_int(root["show_mask"], show_mask?1:0)!=0;
+    bg_mode = read_int(root["bg_mode"], bg_mode);
+    blur_strength = read_int(root["blur_strength"], blur_strength);
+    feather_px = read_float(root["feather_px"], feather_px);
+    bg_fast_blur = read_int(root["bg_fast_blur"], bg_fast_blur?1:0)!=0;
+    if (!root["solid_color"].empty() && root["solid_color"].isSeq()) {
+      auto sc = root["solid_color"]; int i=0; for (auto it=sc.begin(); it!=sc.end() && i<3; ++it,++i) solid_color[i] = (float)((double)*it);
+    }
+    if (!root["bg_path"].empty()) { std::string s; root["bg_path"] >> s; std::snprintf(bg_path_buf,sizeof(bg_path_buf),"%s", s.c_str()); }
+    show_landmarks = read_int(root["show_landmarks"], show_landmarks?1:0)!=0;
+    lm_roi_mode = read_int(root["lm_roi_mode"], lm_roi_mode?1:0)!=0;
+    lm_apply_rot = read_int(root["lm_apply_rot"], lm_apply_rot?1:0)!=0;
+    lm_flip_x = read_int(root["lm_flip_x"], lm_flip_x?1:0)!=0;
+    lm_flip_y = read_int(root["lm_flip_y"], lm_flip_y?1:0)!=0;
+    lm_swap_xy = read_int(root["lm_swap_xy"], lm_swap_xy?1:0)!=0;
+    fx_skin = read_int(root["fx_skin"], fx_skin?1:0)!=0; fx_skin_adv = read_int(root["fx_skin_adv"], fx_skin_adv?1:0)!=0;
+    fx_skin_strength = read_float(root["fx_skin_strength"], fx_skin_strength);
+    fx_skin_amount = read_float(root["fx_skin_amount"], fx_skin_amount);
+    fx_skin_radius = read_float(root["fx_skin_radius"], fx_skin_radius);
+    fx_skin_tex = read_float(root["fx_skin_tex"], fx_skin_tex);
+    fx_skin_edge = read_float(root["fx_skin_edge"], fx_skin_edge);
+    fx_skin_wrinkle = read_int(root["fx_skin_wrinkle"], fx_skin_wrinkle?1:0)!=0;
+    fx_skin_smile_boost = read_float(root["fx_skin_smile_boost"], fx_skin_smile_boost);
+    fx_skin_squint_boost = read_float(root["fx_skin_squint_boost"], fx_skin_squint_boost);
+    fx_skin_forehead_boost = read_float(root["fx_skin_forehead_boost"], fx_skin_forehead_boost);
+    fx_skin_wrinkle_gain = read_float(root["fx_skin_wrinkle_gain"], fx_skin_wrinkle_gain);
+    dbg_wrinkle_mask = read_int(root["dbg_wrinkle_mask"], dbg_wrinkle_mask?1:0)!=0;
+    dbg_wrinkle_stats = read_int(root["dbg_wrinkle_stats"], dbg_wrinkle_stats?1:0)!=0;
+    fx_wrinkle_suppress_lower = read_int(root["fx_wrinkle_suppress_lower"], fx_wrinkle_suppress_lower?1:0)!=0;
+    fx_wrinkle_lower_ratio = read_float(root["fx_wrinkle_lower_ratio"], fx_wrinkle_lower_ratio);
+    fx_wrinkle_ignore_glasses = read_int(root["fx_wrinkle_ignore_glasses"], fx_wrinkle_ignore_glasses?1:0)!=0;
+    fx_wrinkle_glasses_margin = read_float(root["fx_wrinkle_glasses_margin"], fx_wrinkle_glasses_margin);
+    fx_wrinkle_keep_ratio = read_float(root["fx_wrinkle_keep_ratio"], fx_wrinkle_keep_ratio);
+    fx_wrinkle_custom_scales = read_int(root["fx_wrinkle_custom_scales"], fx_wrinkle_custom_scales?1:0)!=0;
+    fx_wrinkle_min_px = read_float(root["fx_wrinkle_min_px"], fx_wrinkle_min_px);
+    fx_wrinkle_max_px = read_float(root["fx_wrinkle_max_px"], fx_wrinkle_max_px);
+    fx_wrinkle_use_skin_gate = read_int(root["fx_wrinkle_use_skin_gate"], fx_wrinkle_use_skin_gate?1:0)!=0;
+    fx_wrinkle_mask_gain = read_float(root["fx_wrinkle_mask_gain"], fx_wrinkle_mask_gain);
+    fx_wrinkle_baseline = read_float(root["fx_wrinkle_baseline"], fx_wrinkle_baseline);
+    fx_wrinkle_neg_cap = read_float(root["fx_wrinkle_neg_cap"], fx_wrinkle_neg_cap);
+    fx_wrinkle_preview = read_int(root["fx_wrinkle_preview"], fx_wrinkle_preview?1:0)!=0;
+    fx_lipstick = read_int(root["fx_lipstick"], fx_lipstick?1:0)!=0;
+    fx_lip_alpha = read_float(root["fx_lip_alpha"], fx_lip_alpha);
+    fx_lip_feather = read_float(root["fx_lip_feather"], fx_lip_feather);
+    fx_lip_light = read_float(root["fx_lip_light"], fx_lip_light);
+    fx_lip_band = read_float(root["fx_lip_band"], fx_lip_band);
+    if (!root["fx_lip_color"].empty() && root["fx_lip_color"].isSeq()) { auto c = root["fx_lip_color"]; int i=0; for (auto it=c.begin(); it!=c.end() && i<3; ++it,++i) fx_lip_color[i] = (float)((double)*it); }
+    fx_teeth = read_int(root["fx_teeth"], fx_teeth?1:0)!=0;
+    fx_teeth_strength = read_float(root["fx_teeth_strength"], fx_teeth_strength);
+    fx_teeth_margin = read_float(root["fx_teeth_margin"], fx_teeth_margin);
     return true;
   };
   // Load default profile if present
