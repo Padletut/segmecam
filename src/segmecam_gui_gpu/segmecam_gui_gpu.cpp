@@ -334,6 +334,17 @@ int main(int argc, char** argv) {
     std::string path = profile_dir + "/" + name + ".yml";
     cv::FileStorage fsw(path, cv::FileStorage::WRITE);
     if (!fsw.isOpened()) return false;
+    // Camera info
+    int saved_w = 0, saved_h = 0, saved_fps = 0;
+    if (!cam_list.empty() && ui_cam_idx >= 0 && ui_cam_idx < (int)cam_list.size()) {
+      const auto& rlist = cam_list[ui_cam_idx].resolutions;
+      if (!rlist.empty() && ui_res_idx >= 0 && ui_res_idx < (int)rlist.size()) { saved_w = rlist[ui_res_idx].first; saved_h = rlist[ui_res_idx].second; }
+    }
+    if (!ui_fps_opts.empty() && ui_fps_idx >= 0 && ui_fps_idx < (int)ui_fps_opts.size()) saved_fps = ui_fps_opts[ui_fps_idx];
+    fsw << "cam_path" << current_cam_path;
+    fsw << "res_w" << saved_w << "res_h" << saved_h;
+    fsw << "fps_value" << saved_fps;
+    // UI indices (best-effort)
     fsw << "ui_cam_idx" << ui_cam_idx << "ui_res_idx" << ui_res_idx << "ui_fps_idx" << ui_fps_idx;
     fsw << "vsync_on" << (int)vsync_on;
     fsw << "show_mask" << (int)show_mask << "bg_mode" << bg_mode << "blur_strength" << blur_strength << "feather_px" << feather_px << "bg_fast_blur" << (int)bg_fast_blur;
@@ -365,6 +376,55 @@ int main(int argc, char** argv) {
     std::string path = profile_dir + "/" + name + ".yml";
     cv::FileStorage fsr(path, cv::FileStorage::READ);
     if (!fsr.isOpened()) return false;
+    // Camera selection by path, resolution and fps (robust to device order changes)
+    std::string saved_path; if (!fsr["cam_path"].empty()) fsr["cam_path"] >> saved_path;
+    int saved_w = read_int(fsr["res_w"], 0);
+    int saved_h = read_int(fsr["res_h"], 0);
+    int saved_fps = read_int(fsr["fps_value"], 0);
+    // Choose camera index
+    if (!cam_list.empty()) {
+      int chosen_idx = -1;
+      if (!saved_path.empty()) {
+        for (size_t i=0;i<cam_list.size();++i) if (cam_list[i].path == saved_path) { chosen_idx = (int)i; break; }
+      }
+      if (chosen_idx < 0) chosen_idx = 0; // fallback to first enumerated
+      ui_cam_idx = chosen_idx;
+      // Choose resolution
+      const auto& rlist = cam_list[ui_cam_idx].resolutions;
+      if (!rlist.empty()) {
+        int ridx = -1;
+        if (saved_w>0 && saved_h>0) {
+          for (size_t i=0;i<rlist.size();++i) if (rlist[i].first==saved_w && rlist[i].second==saved_h) { ridx=(int)i; break; }
+        }
+        if (ridx < 0) ridx = (int)rlist.size()-1; // fallback to largest known
+        ui_res_idx = ridx;
+        // Enumerate fps for this resolution
+        current_cam_path = cam_list[ui_cam_idx].path;
+        ui_fps_opts = EnumerateFPS(current_cam_path, rlist[ui_res_idx].first, rlist[ui_res_idx].second);
+        // Pick fps
+        if (!ui_fps_opts.empty()) {
+          int fidx = (int)ui_fps_opts.size()-1;
+          if (saved_fps > 0) {
+            for (size_t i=0;i<ui_fps_opts.size();++i) if (ui_fps_opts[i]==saved_fps) { fidx=(int)i; break; }
+          }
+          ui_fps_idx = fidx;
+        } else {
+          ui_fps_idx = 0;
+        }
+        // Open camera
+        int new_idx = cam_list[ui_cam_idx].index;
+        auto wh = rlist[ui_res_idx];
+        cap.release();
+        cap = open_capture(new_idx, wh.first, wh.second);
+        if (!cap.isOpened()) cap.open(new_idx);
+        if (!ui_fps_opts.empty()) {
+          double fpsv = (double)ui_fps_opts[ui_fps_idx]; cap.set(cv::CAP_PROP_FPS, fpsv);
+        }
+        refresh_ctrls();
+        apply_default_ctrls();
+      }
+    }
+    // Legacy indices if present (non-fatal)
     ui_cam_idx = read_int(fsr["ui_cam_idx"], ui_cam_idx);
     ui_res_idx = read_int(fsr["ui_res_idx"], ui_res_idx);
     ui_fps_idx = read_int(fsr["ui_fps_idx"], ui_fps_idx);
