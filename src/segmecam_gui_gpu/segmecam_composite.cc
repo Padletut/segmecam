@@ -20,11 +20,11 @@ cv::Mat DecodeMaskToU8(const mediapipe::ImageFrame& mask, bool* logged_once) {
     cv::Scalar mg = cv::mean(chm[1]);
     cv::Scalar mr = cv::mean(chm[2]);
     cv::Scalar ma = cv::mean(chm[3]);
-    // Prefer alpha if it looks non-empty; otherwise fall back to highest-mean channel
+    // Prefer alpha if it looks non-empty; otherwise fall back to brightest color channel
     int best = 0; double bestv = mb[0];
     if (mg[0] > bestv) { best=1; bestv=mg[0]; }
     if (mr[0] > bestv) { best=2; bestv=mr[0]; }
-    if (ma[0] > 1.0 && ma[0] >= bestv - 1e-3) { best=3; bestv=ma[0]; }
+    if (ma[0] > 5.0 && ma[0] >= bestv - 1e-3) { best=3; bestv=ma[0]; }
     out = chm[best].clone();
     if (logged_once && !*logged_once) {
       std::cout << "Mask channels=4 byteDepth=1 means[B,G,R,A]="

@@ -533,7 +533,16 @@ int main(int argc, char** argv) {
     int drain = 0;
     while (mask_poller.QueueSize() > 0 && mask_poller.Next(&pkt)) {
       const auto& mask = pkt.Get<mp::ImageFrame>();
-      last_mask_u8 = DecodeMaskToU8(mask, &first_mask_info);
+      cv::Mat new_mask = DecodeMaskToU8(mask, &first_mask_info);
+      // Guard against occasional empty/degenerate masks by requiring minimal energy
+      double meanv = cv::mean(new_mask)[0];
+      if (!last_mask_u8.empty()) {
+        if (meanv > 0.5) last_mask_u8 = new_mask; // accept normal masks
+        // else keep previous mask to avoid visible blinking
+      } else {
+        // On first assignment, accept whatever we have
+        last_mask_u8 = new_mask;
+      }
       drain++;
       if (!first_mask_log) { std::cout << "Received first mask packet" << std::endl; first_mask_log = true; }
     }
