@@ -298,8 +298,6 @@ int main(int argc, char** argv) {
 
   bool first_frame_log = false, first_mask_log = false, first_mask_info = false;
   bool running = true;
-  // Fast skin cache
-  int fast_counter = 0; cv::Mat last_fast_smooth; cv::Mat last_fast_mask; cv::Rect last_fast_roi;
 
   auto close_vcam = [&](){ if (vcam_fd >= 0) { ::close(vcam_fd); vcam_fd = -1; vcam_running=false; } };
   auto open_vcam = [&](const std::string& path, int W, int H){
@@ -589,53 +587,42 @@ int main(int argc, char** argv) {
         if (fx_teeth)     ApplyTeethWhitenBGR(frame_bgr, fr, fx_teeth_strength, fx_teeth_margin);
         if (fx_skin) {
           if (fx_skin_fast) {
-            // Fast skin smoothing: ROI + downscale + bilateral/gaussian blend
-            // Build an ROI around the face oval
+            // Fast skin smoothing: ROI + downscale + cached updates
             cv::Rect face_bb = cv::boundingRect(fr.face_oval);
             int pad = std::max(8, std::min(face_bb.width, face_bb.height) / 6);
             cv::Rect roi(face_bb.x - pad, face_bb.y - pad, face_bb.width + 2*pad, face_bb.height + 2*pad);
             roi &= cv::Rect(0,0, frame_bgr.cols, frame_bgr.rows);
             if (roi.width >= 8 && roi.height >= 8) {
-              bool recompute = (fx_skin_fast_stride <= 1) || (fast_counter % fx_skin_fast_stride == 0) || roi != last_fast_roi;
-              cv::Mat mask_roi_u8;
-              if (recompute) {
-                // Build mask inside ROI from face, excluding lips/eyes
-                mask_roi_u8 = cv::Mat(roi.size(), CV_8U, cv::Scalar(0));
-                auto shift_poly = [&](const std::vector<cv::Point>& poly){ std::vector<cv::Point> out; out.reserve(poly.size()); for (auto p: poly){ out.emplace_back(p.x - roi.x, p.y - roi.y);} return out; };
-                if (!fr.face_oval.empty()) cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.face_oval)}, cv::Scalar(220));
-                if (!fr.lips_outer.empty()) cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.lips_outer)}, cv::Scalar(0));
-                if (!fr.left_eye.empty())   cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.left_eye)},   cv::Scalar(0));
-                if (!fr.right_eye.empty())  cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.right_eye)},  cv::Scalar(0));
-                int fk = std::max(3, (int)std::round(fx_skin_edge) | 1);
-                cv::GaussianBlur(mask_roi_u8, mask_roi_u8, cv::Size(fk, fk), 0);
+              static int fast_ctr = 0; bool do_update = (fx_skin_fast_stride <= 1) || ((fast_ctr++ % fx_skin_fast_stride) == 0);
+              // Build feathered mask within ROI
+              cv::Mat mask_roi_u8(roi.size(), CV_8U, cv::Scalar(0));
+              auto shift_poly = [&](const std::vector<cv::Point>& poly){ std::vector<cv::Point> out; out.reserve(poly.size()); for (auto p: poly){ out.emplace_back(p.x - roi.x, p.y - roi.y);} return out; };
+              if (!fr.face_oval.empty()) cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.face_oval)}, cv::Scalar(220));
+              if (!fr.lips_outer.empty()) cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.lips_outer)}, cv::Scalar(0));
+              if (!fr.left_eye.empty())   cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.left_eye)},   cv::Scalar(0));
+              if (!fr.right_eye.empty())  cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.right_eye)},  cv::Scalar(0));
+              int fk = std::max(3, (int)std::round(fx_skin_edge) | 1); cv::GaussianBlur(mask_roi_u8, mask_roi_u8, cv::Size(fk,fk), 0);
 
-                // Downscale ROI
-                cv::Mat roi_bgr = frame_bgr(roi);
+              cv::Mat roi_bgr = frame_bgr(roi);
+              if (do_update) {
                 double sc = std::clamp((double)fx_skin_fast_scale, 0.3, 1.0);
                 cv::Mat small; cv::resize(roi_bgr, small, cv::Size(), sc, sc, cv::INTER_AREA);
-                // Smooth: bilateral on downscaled, then light Gaussian
+                // Downscaled bilateral + light Gaussian
                 int d = 7; double sigC = 40.0 * fx_skin_amount + 20.0; double sigS = 6.0 + 12.0 * fx_skin_amount;
                 cv::Mat sm; cv::bilateralFilter(small, sm, d, sigC, sigS);
                 cv::GaussianBlur(sm, sm, cv::Size(0,0), 0.8);
-                cv::Mat up; cv::resize(sm, up, roi.size(), 0, 0, cv::INTER_LINEAR);
-                last_fast_smooth = up;
-                last_fast_mask = mask_roi_u8;
-                last_fast_roi = roi;
-              }
-              // Blend cached or freshly computed smoothing
-              if (!last_fast_smooth.empty() && last_fast_roi == roi) {
-                cv::Mat roi_bgr = frame_bgr(roi);
-                cv::Mat mask_f; (recompute?mask_roi_u8:last_fast_mask).convertTo(mask_f, CV_32F, 1.0/255.0);
-                std::vector<cv::Mat> sf(3), rf(3), out(3);
-                cv::Mat up = recompute ? last_fast_smooth : last_fast_smooth;
-                cv::split(up, sf); cv::split(roi_bgr, rf);
+                cv::resize(sm, sm, roi.size(), 0, 0, cv::INTER_LINEAR);
+                // Blend inside ROI using gated amount (no smoothing outside mask)
+                cv::Mat mask_f; mask_roi_u8.convertTo(mask_f, CV_32F, 1.0/255.0); mask_f = cv::min(mask_f, 1.0f);
+                std::vector<cv::Mat> sf(3), rf(3), of(3);
+                cv::split(sm, sf); cv::split(roi_bgr, rf);
+                cv::Mat am = mask_f * fx_skin_amount; // 0..1
                 for (int i=0;i<3;++i) {
                   cv::Mat s32, r32; sf[i].convertTo(s32, CV_32F, 1.0/255.0); rf[i].convertTo(r32, CV_32F, 1.0/255.0);
-                  out[i] = r32.mul(1.0f - mask_f) + s32.mul(mask_f * fx_skin_amount + (1.0f - fx_skin_amount));
+                  of[i] = r32.mul(1.0f - am) + s32.mul(am);
                 }
-                cv::Mat comp; cv::merge(out, comp); comp.convertTo(roi_bgr, CV_8U, 255.0);
+                cv::Mat comp; cv::merge(of, comp); comp.convertTo(roi_bgr, CV_8U, 255.0);
               }
-              fast_counter++;
             }
           } else if (fx_skin_adv) {
             const mediapipe::NormalizedLandmarkList* lmsp = (has_landmarks && have_lms && fx_skin_wrinkle) ? &used_lms : nullptr;
