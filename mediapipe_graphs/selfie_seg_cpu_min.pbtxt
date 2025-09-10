@@ -1,0 +1,21 @@
+# Minimal MediaPipe graph for CPU selfie segmentation without recolor options.
+# Input:  input_video (GpuBuffer or ImageFrame will be converted as needed)
+# Output: segmentation_mask (mask tensor/image)
+
+input_stream: "input_video"
+output_stream: "segmentation_mask"
+
+node {
+  calculator: "FlowLimiterCalculator"
+  input_stream: "input_video"
+  input_stream: "FINISHED:segmentation_mask"
+  input_stream_info: { tag_index: "FINISHED" back_edge: true }
+  output_stream: "throttled_input_video"
+}
+
+node {
+  calculator: "SelfieSegmentationCpu"
+  input_stream: "IMAGE:throttled_input_video"
+  output_stream: "SEGMENTATION_MASK:segmentation_mask"
+}
+

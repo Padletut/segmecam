@@ -1,0 +1,4 @@
+module(name = "segmecam")
+
+# No external deps yet. Using native cc_* rules.
+

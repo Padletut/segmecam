@@ -1,0 +1,34 @@
+# GPU selfie segmentation with CPU-friendly mask output.
+
+input_stream: "input_video"            # ImageFrame (CPU)
+output_stream: "segmentation_mask_cpu"  # ImageFrame (1ch)
+
+node {
+  calculator: "FlowLimiterCalculator"
+  input_stream: "input_video"
+  input_stream: "FINISHED:segmentation_mask_cpu"
+  input_stream_info: { tag_index: "FINISHED" back_edge: true }
+  output_stream: "throttled_input_video"
+}
+
+# Upload to GPU
+node {
+  calculator: "ImageFrameToGpuBufferCalculator"
+  input_stream: "throttled_input_video"
+  output_stream: "input_video_gpu"
+}
+
+# Selfie segmentation on GPU
+node {
+  calculator: "SelfieSegmentationGpu"
+  input_stream: "IMAGE:input_video_gpu"
+  output_stream: "SEGMENTATION_MASK:segmentation_mask_gpu"
+}
+
+# Download mask for CPU processing
+node {
+  calculator: "GpuBufferToImageFrameCalculator"
+  input_stream: "segmentation_mask_gpu"
+  output_stream: "segmentation_mask_cpu"
+}
+

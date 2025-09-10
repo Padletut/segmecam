@@ -1,0 +1,50 @@
+# SegmeCam .gitignore
+# Bazel build outputs
+bazel-*
+/.bazelignore
+
+# Compiled binaries
+*.o
+*.so
+*.a
+*.exe
+*.out
+app
+segmecam_gui
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# AppImage and Flatpak packaging
+*.AppImage
+*.flatpak
+
+# Model files and large assets (customize as needed)
+*.tflite
+*.onnx
+*.pb
+models/
+
+# Logs
+*.log
+
+# Python cache (if any scripts)
+__pycache__/
+*.pyc
+
+# Misc
+*.bak
+*.tmp
+
+# Vendor/externals (fetched by scripts)
+external/mediapipe/
+external/imgui/
+third_party/tflite_c/lib/
+app-old-just-example.cc
