@@ -310,8 +310,7 @@ int main(int argc, char** argv) {
 
   bool first_frame_log = false, first_mask_log = false, first_mask_info = false;
   bool running = true;
-  // Frame pacing: cap processing to camera FPS (no UI toggle)
-  uint32_t fpscap_next_ms = 0;
+  // Frame pacing: removed explicit cap (capture is already frame-paced)
 
   auto close_vcam = [&](){ if (vcam_fd >= 0) { ::close(vcam_fd); vcam_fd = -1; vcam_running=false; } };
   auto open_vcam = [&](const std::string& path, int W, int H){
@@ -1306,31 +1305,7 @@ int main(int argc, char** argv) {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     SDL_GL_SwapWindow(window);
 
-    // Cap to camera FPS to reduce CPU when pipeline runs faster than capture.
-    // Determine target FPS from selected UI FPS if available, else camera property.
-    double target_fps = 0.0;
-    if (!ui_fps_opts.empty() && ui_fps_idx >= 0 && ui_fps_idx < (int)ui_fps_opts.size()) {
-      target_fps = (double)ui_fps_opts[ui_fps_idx];
-    } else {
-      double prop = cap.get(cv::CAP_PROP_FPS);
-      if (prop > 0.0 && prop < 500.0) target_fps = prop;
-    }
-    if (target_fps > 0.0) {
-      double period_ms_d = 1000.0 / target_fps;
-      uint32_t period_ms = (uint32_t)std::max(1.0, period_ms_d);
-      uint32_t now_cap = SDL_GetTicks();
-      if (fpscap_next_ms == 0) fpscap_next_ms = now_cap + period_ms; else {
-        // If we ran too slow and are far behind, reset the schedule to avoid long catch-up loops.
-        if (now_cap > fpscap_next_ms + period_ms * 2u) fpscap_next_ms = now_cap + period_ms;
-      }
-      if (now_cap + 1u < fpscap_next_ms) {
-        SDL_Delay(std::min<uint32_t>(50u, fpscap_next_ms - now_cap));
-      }
-      // Advance schedule for next frame
-      uint32_t after_sleep = SDL_GetTicks();
-      // Keep the next deadline monotonic; if we slipped past it, start from 'after_sleep'
-      if (after_sleep >= fpscap_next_ms) fpscap_next_ms = after_sleep + period_ms; else fpscap_next_ms += period_ms;
-    }
+    // No explicit FPS cap; rely on camera capture timing and vsync.
   }
 
   // Ensure virtual webcam is properly closed on exit
