@@ -268,6 +268,8 @@ int main(int argc, char** argv) {
   bool dbg_composite_rgb = false; // composite in RGB space to test channel order
   // OpenCL acceleration (Transparent API)
   bool use_opencl = false; bool opencl_available = cv::ocl::haveOpenCL();
+  // Background acceleration params
+  float bg_scale = 1.0f; // 0.5..1.0 downscale for background blur
   // Perf logging (terminal)
   bool perf_log = false; int perf_log_interval_ms = 5000; // 5s default
   uint32_t perf_last_log_ms = SDL_GetTicks();
@@ -731,7 +733,7 @@ int main(int argc, char** argv) {
       cv::cvtColor(frame_bgr, display_rgb, cv::COLOR_BGR2RGB);
     } else if (bg_mode == 1 && !mask8_resized.empty()) {
       auto t0 = std::chrono::steady_clock::now();
-      display_rgb = CompositeBlurBackgroundBGR(frame_bgr, mask8_resized, blur_strength, feather_px);
+      display_rgb = CompositeBlurBackgroundBGR_Accel(frame_bgr, mask8_resized, blur_strength, feather_px, use_opencl, bg_scale);
       auto t1 = std::chrono::steady_clock::now();
       t_bg_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
       // Debug: print means once per second
@@ -1148,6 +1150,7 @@ int main(int argc, char** argv) {
       if (bg_mode == 1) {
         ImGui::SliderInt("Blur Strength", &blur_strength, 1, 61);
         if ((blur_strength % 2) == 0) blur_strength++;
+        ImGui::SliderFloat("Background scale", &bg_scale, 0.5f, 1.0f);
       } else if (bg_mode == 2) {
         ImGui::InputText("Image Path", bg_path_buf, sizeof(bg_path_buf));
         ImGui::SameLine();
