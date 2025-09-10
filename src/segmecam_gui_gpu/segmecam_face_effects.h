@@ -56,7 +56,8 @@ void ApplyTeethWhitenBGR(cv::Mat& frame_bgr,
 // strength controls bilateral filter sigma (typical 0..1 -> 25..75).
 void ApplySkinSmoothingBGR(cv::Mat& frame_bgr,
                            const FaceRegions& fr,
-                           float strength);
+                           float strength,
+                           bool use_ocl=false);
 
 // Build a high-quality skin weight map (0..1 float) using landmarks.
 // - edge_feather_px: width of the falloff near face contour in pixels.

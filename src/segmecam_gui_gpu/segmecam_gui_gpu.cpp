@@ -32,6 +32,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
+#include <opencv2/core/ocl.hpp>
 
 namespace mp = mediapipe;
 ABSL_DECLARE_FLAG(std::string, resource_root_dir);
@@ -264,6 +265,8 @@ int main(int argc, char** argv) {
 
   bool show_mask = false; int blur_strength = 25; float feather_px = 2.0f; int64_t frame_id = 0;
   bool dbg_composite_rgb = false; // composite in RGB space to test channel order
+  // OpenCL acceleration (Transparent API)
+  bool use_opencl = false; bool opencl_available = cv::ocl::haveOpenCL();
   // Background mode: 0=None, 1=Blur, 2=Image, 3=Solid Color
   int bg_mode = 0;
   cv::Mat bg_image; // background image (BGR)
@@ -599,7 +602,7 @@ int main(int argc, char** argv) {
                                      fx_wrinkle_mask_gain,
                                      fx_wrinkle_neg_cap);
           } else {
-            ApplySkinSmoothingBGR(frame_bgr, fr, fx_skin_strength);
+            ApplySkinSmoothingBGR(frame_bgr, fr, fx_skin_strength, use_opencl);
           }
         }
         if (fx_lipstick)  ApplyLipRefinerBGR(frame_bgr, fr,
@@ -1034,6 +1037,14 @@ int main(int argc, char** argv) {
         // Skin Smoothing (main section)
         ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
         if (ImGui::CollapsingHeader("Skin Smoothing")) {
+          if (opencl_available) {
+            bool prev = use_opencl;
+            ImGui::Checkbox("OpenCL accel (T-API)", &use_opencl);
+            if (use_opencl != prev) cv::ocl::setUseOpenCL(use_opencl);
+            ImGui::SameLine(); ImGui::TextDisabled("%s", use_opencl?"on":"off");
+          } else {
+            ImGui::TextDisabled("OpenCL not available");
+          }
           ImGui::Checkbox("Enable##skin", &fx_skin); ImGui::SameLine();
           ImGui::Checkbox("Advanced", &fx_skin_adv);
           if (fx_skin) {

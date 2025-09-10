@@ -120,7 +120,7 @@ Removes local binaries and Bazel outputs (`bazel-*`). External checkouts remain.
 - [x] Background blur / image / solid color compositing
 - [x] Face landmarks for beauty effects,anti-wrinkles,Lipstick effect
 - [x] Skin smoothing, teeth whitening, makeup
-- [ ] Profiles (save/load settings)
+- [x] Profiles (save/load settings)
 - [x] Virtual webcam via v4l2loopback
 - [ ] Flatpak packaging
 
