@@ -274,6 +274,8 @@ int main(int argc, char** argv) {
   // Beauty controls
   bool fx_skin = false; float fx_skin_strength = 0.4f;
   bool fx_skin_adv = true; float fx_skin_amount = 0.5f; float fx_skin_radius = 6.0f; float fx_skin_tex = 0.35f; float fx_skin_edge = 12.0f;
+  // Fast skin path (ROI + downscale)
+  bool fx_skin_fast = false; float fx_skin_fast_scale = 0.5f; int fx_skin_fast_stride = 2;
   bool fx_skin_wrinkle = true; float fx_skin_smile_boost = 0.6f; float fx_skin_squint_boost = 0.5f; float fx_skin_forehead_boost = 0.8f; float fx_skin_wrinkle_gain = 1.5f;
   bool dbg_wrinkle_mask = false; // visualize wrinkle mask overlay
   bool dbg_wrinkle_stats = true; // show wrinkle stats text when visualizing
@@ -296,6 +298,8 @@ int main(int argc, char** argv) {
 
   bool first_frame_log = false, first_mask_log = false, first_mask_info = false;
   bool running = true;
+  // Fast skin cache
+  int fast_counter = 0; cv::Mat last_fast_smooth; cv::Mat last_fast_mask; cv::Rect last_fast_roi;
 
   auto close_vcam = [&](){ if (vcam_fd >= 0) { ::close(vcam_fd); vcam_fd = -1; vcam_running=false; } };
   auto open_vcam = [&](const std::string& path, int W, int H){
@@ -584,7 +588,56 @@ int main(int argc, char** argv) {
         // Teeth first to avoid overriding lips later
         if (fx_teeth)     ApplyTeethWhitenBGR(frame_bgr, fr, fx_teeth_strength, fx_teeth_margin);
         if (fx_skin) {
-          if (fx_skin_adv) {
+          if (fx_skin_fast) {
+            // Fast skin smoothing: ROI + downscale + bilateral/gaussian blend
+            // Build an ROI around the face oval
+            cv::Rect face_bb = cv::boundingRect(fr.face_oval);
+            int pad = std::max(8, std::min(face_bb.width, face_bb.height) / 6);
+            cv::Rect roi(face_bb.x - pad, face_bb.y - pad, face_bb.width + 2*pad, face_bb.height + 2*pad);
+            roi &= cv::Rect(0,0, frame_bgr.cols, frame_bgr.rows);
+            if (roi.width >= 8 && roi.height >= 8) {
+              bool recompute = (fx_skin_fast_stride <= 1) || (fast_counter % fx_skin_fast_stride == 0) || roi != last_fast_roi;
+              cv::Mat mask_roi_u8;
+              if (recompute) {
+                // Build mask inside ROI from face, excluding lips/eyes
+                mask_roi_u8 = cv::Mat(roi.size(), CV_8U, cv::Scalar(0));
+                auto shift_poly = [&](const std::vector<cv::Point>& poly){ std::vector<cv::Point> out; out.reserve(poly.size()); for (auto p: poly){ out.emplace_back(p.x - roi.x, p.y - roi.y);} return out; };
+                if (!fr.face_oval.empty()) cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.face_oval)}, cv::Scalar(220));
+                if (!fr.lips_outer.empty()) cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.lips_outer)}, cv::Scalar(0));
+                if (!fr.left_eye.empty())   cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.left_eye)},   cv::Scalar(0));
+                if (!fr.right_eye.empty())  cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{shift_poly(fr.right_eye)},  cv::Scalar(0));
+                int fk = std::max(3, (int)std::round(fx_skin_edge) | 1);
+                cv::GaussianBlur(mask_roi_u8, mask_roi_u8, cv::Size(fk, fk), 0);
+
+                // Downscale ROI
+                cv::Mat roi_bgr = frame_bgr(roi);
+                double sc = std::clamp((double)fx_skin_fast_scale, 0.3, 1.0);
+                cv::Mat small; cv::resize(roi_bgr, small, cv::Size(), sc, sc, cv::INTER_AREA);
+                // Smooth: bilateral on downscaled, then light Gaussian
+                int d = 7; double sigC = 40.0 * fx_skin_amount + 20.0; double sigS = 6.0 + 12.0 * fx_skin_amount;
+                cv::Mat sm; cv::bilateralFilter(small, sm, d, sigC, sigS);
+                cv::GaussianBlur(sm, sm, cv::Size(0,0), 0.8);
+                cv::Mat up; cv::resize(sm, up, roi.size(), 0, 0, cv::INTER_LINEAR);
+                last_fast_smooth = up;
+                last_fast_mask = mask_roi_u8;
+                last_fast_roi = roi;
+              }
+              // Blend cached or freshly computed smoothing
+              if (!last_fast_smooth.empty() && last_fast_roi == roi) {
+                cv::Mat roi_bgr = frame_bgr(roi);
+                cv::Mat mask_f; (recompute?mask_roi_u8:last_fast_mask).convertTo(mask_f, CV_32F, 1.0/255.0);
+                std::vector<cv::Mat> sf(3), rf(3), out(3);
+                cv::Mat up = recompute ? last_fast_smooth : last_fast_smooth;
+                cv::split(up, sf); cv::split(roi_bgr, rf);
+                for (int i=0;i<3;++i) {
+                  cv::Mat s32, r32; sf[i].convertTo(s32, CV_32F, 1.0/255.0); rf[i].convertTo(r32, CV_32F, 1.0/255.0);
+                  out[i] = r32.mul(1.0f - mask_f) + s32.mul(mask_f * fx_skin_amount + (1.0f - fx_skin_amount));
+                }
+                cv::Mat comp; cv::merge(out, comp); comp.convertTo(roi_bgr, CV_8U, 255.0);
+              }
+              fast_counter++;
+            }
+          } else if (fx_skin_adv) {
             const mediapipe::NormalizedLandmarkList* lmsp = (has_landmarks && have_lms && fx_skin_wrinkle) ? &used_lms : nullptr;
             float sboost = fx_skin_wrinkle ? fx_skin_smile_boost : 0.0f;
             float qboost = fx_skin_wrinkle ? fx_skin_squint_boost : 0.0f;
@@ -1057,9 +1110,15 @@ int main(int argc, char** argv) {
         ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
         if (ImGui::CollapsingHeader("Skin Smoothing")) {
           ImGui::Checkbox("Enable##skin", &fx_skin); ImGui::SameLine();
-          ImGui::Checkbox("Advanced", &fx_skin_adv);
+          ImGui::Checkbox("Advanced", &fx_skin_adv); ImGui::SameLine();
+          ImGui::Checkbox("Fast mode", &fx_skin_fast);
           if (fx_skin) {
-            if (!fx_skin_adv) {
+            if (fx_skin_fast) {
+              ImGui::SliderFloat("Amount##skin", &fx_skin_amount, 0.0f, 1.0f);
+              ImGui::SliderFloat("Scale (0.3-1.0)", &fx_skin_fast_scale, 0.3f, 1.0f);
+              ImGui::SliderInt("Update every N frames", &fx_skin_fast_stride, 1, 4);
+              ImGui::TextDisabled("Fast mode ignores advanced wrinkle-aware settings");
+            } else if (!fx_skin_adv) {
               ImGui::SliderFloat("Strength", &fx_skin_strength, 0.0f, 1.0f);
             } else {
               ImGui::SliderFloat("Amount##skin", &fx_skin_amount, 0.0f, 1.0f);
