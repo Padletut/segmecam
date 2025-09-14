@@ -2,3 +2,6 @@ module(name = "segmecam")
 
 # No external deps yet. Using native cc_* rules.
 
+register_toolchains(
+    "//toolchain:cc_toolchain_for_linux_x86_x64"
+)

@@ -49,3 +49,5 @@ external/imgui/
 third_party/tflite_c/lib/
 app-old-just-example.cc
 make_appimage.sh
+notes.txt
+.github/copilot-instructions.md
