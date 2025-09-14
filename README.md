@@ -1,12 +1,9 @@
 # SegmeCam
 
-[![Build](https://github.com/Padletut/SegmeCam/actions/workflows/build.yml/badge.svg)](https://github.com/Padletut/SegmeCam/actions)
-[![Release](https://img.shields.io/github/v/release/Padletut/SegmeCam?color=brightgreen&logo=github)](https://github.com/Padletut/SegmeCam/releases)
-[![License](https://img.shields.io/github/license/Padletut/SegmeCam?color=blue)](LICENSE)
+This will create a fresh image named `segmecam:latest` for use with the run commands below.
 
-
-🎥 **SegmeCam** — the first AI-powered Linux webcam app that combines **Selfie Segmentation** and **Face Landmark Detection** for real-time professional effects.  
-Built with **TensorFlow Lite**, **SDL2 + OpenGL 3.3**, and **Dear ImGui**, SegmeCam brings studio-grade features to your Linux desktop.
+🎥 **SegmeCam** is an AI-powered Linux desktop webcam app that combines **Selfie Segmentation** and **Face Landmark Detection** for professional-grade real-time effects.  
+Built with **TensorFlow Lite** (TFLite), **SDL2**, **OpenGL 3.3**, and **Dear ImGui**, SegmeCam provides natural background blur, custom backgrounds, and precise beauty enhancements such as skin smoothing, makeup, and teeth whitening.
 
 ---
 
@@ -73,17 +70,65 @@ Here’s how it compares:
    git clone https://github.com/Padletut/SegmeCam.git
    cd SegmeCam
    ```
-2. **Build with Bazel**:  
+2. **Build & Run (Recommended)**:  
    ```bash
-   bazel build //...
+   ./scripts/run_segmecam_gui_gpu.sh --face
    ```
-3. **Run**:  
-   ```bash
-   ./bazel-bin/segmecam
-   ```
+   This script handles Bazel builds and launches the SegmeCam GUI with face segmentation enabled.
 
 > ⚠️ Requires GLIBC 2.38+ (Ubuntu 24.04+, Fedora 40+, Arch latest).  
 > Install `v4l2loopback-dkms` for virtual webcam output.
+
+## Building the Docker Image
+## Docker Permissions: Using the docker Group
+
+To run Docker commands without sudo, add your user to the docker group:
+
+```bash
+sudo usermod -aG docker $USER
+```
+
+After running this command, log out and log back in, or run:
+
+```bash
+newgrp docker
+```
+
+This reloads your group membership so you can use Docker without sudo.
+
+To build the SegmeCam Docker image, run the following command in the project root (where the Dockerfile is located):
+
+```bash
+docker compose build
+```
+
+## Running SegmeCam in Docker with GPU Support
+
+### NVIDIA GPU (nvidia-docker2 required)
+```bash
+   docker run --rm -it --gpus all \
+   --device /dev/video0:/dev/video0 \
+   --device /dev/video1:/dev/video1 \
+   -e DISPLAY=$DISPLAY \
+   -v /tmp/.X11-unix:/tmp/.X11-unix \
+   -v "$(pwd)":/workspace \
+   segmecam:latest
+```
+
+### Intel/AMD GPU (Mesa, DRI)
+```bash
+   docker run --rm -it \
+   --device /dev/video0:/dev/video0 \
+   --device /dev/video1:/dev/video1 \
+   --device /dev/dri:/dev/dri \
+   -e DISPLAY=$DISPLAY \
+   -v /tmp/.X11-unix:/tmp/.X11-unix \
+   -v "$(pwd)":/workspace \
+   segmecam:latest
+```
+
+> For NVIDIA, install [nvidia-docker2](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) and ensure host drivers are up to date.
+> For Intel/AMD, ensure Mesa and DRI devices are available on the host.
 
 ---
 
@@ -96,5 +141,21 @@ Here’s how it compares:
 ---
 
 ## 🙏 Credits
-Built with inspiration from [MediaPipe](https://ai.google.dev/edge/mediapipe).  
-Apache-2.0 License.
+
+SegmeCam builds on:
+
+- [TensorFlow Lite](https://ai.google.dev/edge/litert)
+- [MediaPipe Modles](https://ai.google.dev/edge/mediapipe/solutions/guide)
+- [SDL2](https://www.libsdl.org/)
+- [Dear ImGui](https://github.com/ocornut/imgui)
+- [OpenGL](https://www.opengl.org/)
+
+## 📜 License
+
+SegmeCam is licensed under the Apache-2.0 License.
+
+docker run --rm -it --gpus all   -e DISPLAY=$DISPLAY -e QT_X11_NO_MITSHM=1 -e XDG_RUNTIME_DIR=/tmp/xdg   -v /tmp/.X11-unix:/tmp/.X11-unix:ro   -v segmecam_profiles:/root/.config/segmecam   --device /dev/dri:/dev/dri --device /dev/video0:/dev/video0 --device /dev/video2:/dev/video2   --entrypoint /opt/segmecam/bin/SegmeCam   segmecam:prod   /opt/segmecam/graphs/face_and_seg_gpu_mask_cpu.pbtxt   /opt/segmecam/runfiles/mediapipe   0
+
+# To run the app directly after it has compiled with run_segmecam_gui_gpu.sh
+
+external/mediapipe$ bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu $HOME/segmecam/mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu $HOME/segmecam/bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu.runfiles 0
