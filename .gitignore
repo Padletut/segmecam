@@ -97,6 +97,7 @@ mediapipe/*.bzl
 mediapipe/*.tulsiproj/
 mediapipe/__init__.py
 mediapipe/examples/__init__.py
+CONTRIBUTING.md
 # Keep our custom segmecam code: mediapipe/examples/desktop/segmecam/
 
 # External dependencies and cache
