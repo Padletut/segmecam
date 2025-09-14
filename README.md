@@ -1,137 +1,161 @@
 # SegmeCam
 
-SegmeCam is a Linux desktop webcam app that uses MediaPipe Selfie Segmentation on the GPU and renders a real‑time preview via SDL2, OpenGL 3.3, and Dear ImGui. Current focus is high‑quality background effects with a simple, fast UI.
+This will create a fresh image named `segmecam:latest` for use with the run commands below.
+
+🎥 **SegmeCam** is an AI-powered Linux desktop webcam app that combines **Selfie Segmentation** and **Face Landmark Detection** for professional-grade real-time effects.  
+Built with **TensorFlow Lite** (TFLite), **SDL2**, **OpenGL 3.3**, and **Dear ImGui**, SegmeCam provides natural background blur, custom backgrounds, and precise beauty enhancements such as skin smoothing, makeup, and teeth whitening.
 
 ---
 
-## Features
-- Selfie segmentation (GPU) with CPU mask output
-- Background modes: None, Blur, Image, Solid Color
-- Realtime controls (blur strength, color, image loader)
-- OpenCV camera capture with V4L2 fallback
+## ✨ Features
+- 🤖 **Selfie Segmentation** – Accurate separation of person and background
+- 📍 **Face Landmark Detection** – 100+ keypoints for precise effects
+- 🖼️ **Background Control** – Blur, color, or custom image backgrounds
+- 💄 **Beauty Filters** – Skin smoothing, wrinkle-aware, makeup overlays
+- 😁 **Teeth Whitening** – Landmark-driven whitening masks
+- 👄 **Lip Refinement** – Subtle reshaping and coloring
+- 🎚️ **Realtime Controls** – Sliders and toggles powered by Dear ImGui
+- 🎥 **Virtual Webcam Output** – Works in Discord, OBS, Zoom, Teams
+- ⚡ **Optimized for Linux** – GPU-accelerated pipeline with TFLite XNNPACK
 
 ---
 
-## Tech Stack
-- MediaPipe (GPU calculators + graphs)
-- OpenCV (capture, image processing)
-- SDL2 + OpenGL 3.3 + Dear ImGui (UI/rendering)
-- Bazel (build inside the MediaPipe repo)
+## 🔍 Why SegmeCam?
+
+Unlike other Linux webcam apps, SegmeCam is a **complete AI camera suite**.  
+Here’s how it compares:
+
+| Feature | **SegmeCam** | OBS + BackgroundRemoval | Webcamoid | Zoom / Meet (Linux) |
+|---------|--------------|--------------------------|-----------|----------------------|
+| AI Selfie Segmentation | ✅ Yes (TFLite GPU) | ✅ Yes (plugin) | ❌ No | ✅ Yes (built-in) |
+| Background Blur/Replace | ✅ Blur, Color, Custom Image | ✅ Blur/Replace | ❌ No | ✅ Blur/Replace |
+| Face Landmark Detection | ✅ 100+ points | ❌ No | ❌ No | ❌ No |
+| Skin Smoothing | ✅ Wrinkle-aware filter | ❌ No | ❌ No | ❌ No |
+| Lip/Makeup Effects | ✅ Lip refiner, blush | ❌ No | ❌ No | ❌ No |
+| Teeth Whitening | ✅ Yes | ❌ No | ❌ No | ❌ No |
+| Virtual Webcam Output | ✅ v4l2loopback | ✅ OBS VirtualCam | ❌ No | ❌ No |
+| Open Source | ✅ Apache-2.0 | ✅ GPL | ✅ GPL | ❌ No |
+
+👉 SegmeCam is the **first all-in-one AI beauty + background app for Linux** 🚀
 
 ---
 
-## Project Layout
-- `src/segmecam_gui_gpu/`: App sources and BUILD file
-  - `segmecam_gui_gpu.cpp`: UI, camera, graph wiring
-  - `segmecam_composite.{h,cc}`: CPU mask decode + compositing
-- `mediapipe_graphs/`: Local graphs (e.g. `selfie_seg_gpu_mask_cpu.pbtxt`)
-- `scripts/`: Utilities
-  - `mediapipe_build_selfie_seg_gpu.sh`: Clone MediaPipe and build GUI example
-  - `run_segmecam_gui_gpu.sh`: Run the app (ensures runfiles/model)
-  - `clean.sh`: Remove local build artifacts
-- `external/`: External checkouts (e.g. `mediapipe/`) created by scripts
-- `BUILD` / `WORKSPACE` / `MODULE.bazel`: Minimal scaffolding for tooling
+## 🛠️ Tech Stack
+- **Core AI**: MediaPipe Selfie Segmentation + Face Landmarker (TFLite)
+- **Build System**: Bazel (TFLite, dependencies) + C++ project build
+- **Performance**: XNNPACK delegate, optional GPU delegate
+- **Computer Vision**: OpenCV (camera I/O, pre/post-processing)
+- **UI / Rendering**: SDL2 + OpenGL 3.3 + Dear ImGui
+- **Packaging**: AppImage & Flatpak
 
 ---
 
-## Build & Run
-> Tested on Ubuntu 22.04+ with system OpenGL drivers installed.
+## 🗺️ Roadmap
+- [x] ✅ Selfie segmentation with background blur/replace
+- [x] ✅ Face landmark detection (100+ keypoints)
+- [x] ✅ Teeth whitening via LAB masks
+- [x] ✅ Lip refinement / makeup overlay
+- [x] ✅ Wrinkle-aware skin smoothing
+- [ ] 🎭 Fun filters (masks, sunglasses, hats)
+- [x] ✅ Profile system for saving favorite presets
+- [x] ✅ Virtual webcam integration (v4l2loopback)
+- [ ] 📦 Flatpak release on Flathub
+- [ ] 🌐 Backend mode for streaming segmentation results
 
-### Prerequisites (Ubuntu/Debian)
+---
+
+## 🚀 Quick Start
+1. **Clone repo**:  
+   ```bash
+   git clone https://github.com/Padletut/SegmeCam.git
+   cd SegmeCam
+   ```
+2. **Build & Run (Recommended)**:  
+   ```bash
+   ./scripts/run_segmecam_gui_gpu.sh --face
+   ```
+   This script handles Bazel builds and launches the SegmeCam GUI with face segmentation enabled.
+
+> ⚠️ Requires GLIBC 2.38+ (Ubuntu 24.04+, Fedora 40+, Arch latest).  
+> Install `v4l2loopback-dkms` for virtual webcam output.
+
+## Building the Docker Image
+## Docker Permissions: Using the docker Group
+
+To run Docker commands without sudo, add your user to the docker group:
+
 ```bash
-sudo apt update
-sudo apt install -y build-essential git curl pkg-config bazel \
-  libopencv-dev libsdl2-dev libgl1-mesa-dev
+sudo usermod -aG docker $USER
 ```
 
-### One‑time setup
-1) Clone this repository and enter it:
+After running this command, log out and log back in, or run:
+
 ```bash
-git clone https://github.com/Padletut/SegmeCam.git
-cd SegmeCam
+newgrp docker
 ```
 
-2) (Optional) Place the model locally so builds/runs don’t fetch it:
+This reloads your group membership so you can use Docker without sudo.
+
+To build the SegmeCam Docker image, run the following command in the project root (where the Dockerfile is located):
+
 ```bash
-# Expected by our scripts; copied into MediaPipe tree when present
-mkdir -p models
-# Put the file at: models/selfie_segmenter.tflite
+docker compose build
 ```
 
-### Build
-```bash
-scripts/mediapipe_build_selfie_seg_gpu.sh
-```
-This script:
-- Clones `external/mediapipe` if missing
-- Ensures OpenCV is discoverable via `pkg-config`
-- Copies `models/selfie_segmenter.tflite` into MediaPipe if present
-- Builds the GPU selfie segmentation example and SegmeCam GUI target
+## Running SegmeCam in Docker with GPU Support
 
-### Link example into MediaPipe (first time only)
-If the example symlink does not exist yet, create it and rebuild:
+### NVIDIA GPU (nvidia-docker2 required)
 ```bash
-ln -s "$PWD/src/segmecam_gui_gpu" external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu
-scripts/mediapipe_build_selfie_seg_gpu.sh
+   docker run --rm -it --gpus all \
+   --device /dev/video0:/dev/video0 \
+   --device /dev/video1:/dev/video1 \
+   -e DISPLAY=$DISPLAY \
+   -v /tmp/.X11-unix:/tmp/.X11-unix \
+   -v "$(pwd)":/workspace \
+   segmecam:latest
 ```
 
-### Run
+### Intel/AMD GPU (Mesa, DRI)
 ```bash
-scripts/run_segmecam_gui_gpu.sh            # uses our default graph
-scripts/run_segmecam_gui_gpu.sh --rebuild  # force a clean rebuild/run
+   docker run --rm -it \
+   --device /dev/video0:/dev/video0 \
+   --device /dev/video1:/dev/video1 \
+   --device /dev/dri:/dev/dri \
+   -e DISPLAY=$DISPLAY \
+   -v /tmp/.X11-unix:/tmp/.X11-unix \
+   -v "$(pwd)":/workspace \
+   segmecam:latest
 ```
-The app accepts optional CLI args when run by Bazel:
-- `graph_path`: defaults to `mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt`
-- `resource_root_dir`: pass MediaPipe repo root if needed (default: `.`)
-- `camera_index`: default `0`
 
-Controls available in the UI:
-- Toggle mask visualization
-- Background mode: None / Blur / Image / Solid Color
-- Blur kernel size, color picker, image path loader
-- FPS and texture size overlay
-
-Face effects (optional):
-- Build/run with the combined graph to enable landmark-based effects:
-  - Graph: `mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt`
-  - Adds `multi_face_landmarks` stream used for lipstick, skin smoothing, teeth whitening
-  - If not present, the UI shows a notice and hides controls
+> For NVIDIA, install [nvidia-docker2](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) and ensure host drivers are up to date.
+> For Intel/AMD, ensure Mesa and DRI devices are available on the host.
 
 ---
 
-## Cleanup
-```bash
-scripts/clean.sh
-```
-Removes local binaries and Bazel outputs (`bazel-*`). External checkouts remain.
+## 🎯 Goals
+- Native **AI-powered background segmentation**
+- **Face landmark-based beauty filters** (skin smoothing, whitening, makeup)
+- Professional Linux alternative to Windows-only beauty camera apps
+- Optimized GPU-driven pipeline for **low CPU usage**
 
 ---
 
-## Troubleshooting
-- OpenCV not found: ensure `opencv4.pc` is visible to `pkg-config`. Set `PKG_CONFIG_PATH` (e.g. `/usr/local/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig`).
-- Camera won’t open: the app tries V4L2 first, then default backend. Check device permissions and index.
-- Blank/black preview: confirm GPU/GL drivers and that SDL2 + OpenGL packages are installed.
-- Model missing: place `models/selfie_segmenter.tflite` so the scripts can copy it to MediaPipe.
+## 🙏 Credits
 
----
-
-## Roadmap
-- [x] Real‑time selfie segmentation (GPU mask → CPU)
-- [x] Background blur / image / solid color compositing
-- [x] Face landmarks for beauty effects,anti-wrinkles,Lipstick effect
-- [x] Skin smoothing, teeth whitening, makeup
-- [ ] Profiles (save/load settings)
-- [x] Virtual webcam via v4l2loopback
-- [ ] Flatpak packaging
-
----
-
-## Credits
 SegmeCam builds on:
-- TensorFlow Lite / MediaPipe
-- SDL2
-- Dear ImGui
-- OpenGL
 
-## License
+- [TensorFlow Lite](https://ai.google.dev/edge/litert)
+- [MediaPipe Modles](https://ai.google.dev/edge/mediapipe/solutions/guide)
+- [SDL2](https://www.libsdl.org/)
+- [Dear ImGui](https://github.com/ocornut/imgui)
+- [OpenGL](https://www.opengl.org/)
+
+## 📜 License
+
 SegmeCam is licensed under the Apache-2.0 License.
+
+docker run --rm -it --gpus all   -e DISPLAY=$DISPLAY -e QT_X11_NO_MITSHM=1 -e XDG_RUNTIME_DIR=/tmp/xdg   -v /tmp/.X11-unix:/tmp/.X11-unix:ro   -v segmecam_profiles:/root/.config/segmecam   --device /dev/dri:/dev/dri --device /dev/video0:/dev/video0 --device /dev/video2:/dev/video2   --entrypoint /opt/segmecam/bin/SegmeCam   segmecam:prod   /opt/segmecam/graphs/face_and_seg_gpu_mask_cpu.pbtxt   /opt/segmecam/runfiles/mediapipe   0
+
+# To run the app directly after it has compiled with run_segmecam_gui_gpu.sh
+
+external/mediapipe$ bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu $HOME/segmecam/mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu $HOME/segmecam/bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu.runfiles 0

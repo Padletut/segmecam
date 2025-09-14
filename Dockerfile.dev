@@ -1,0 +1,19 @@
+# ===== SegmeCam — dev image (fast rebuilds, no compile on container start) =====
+# Keeps Bazel cache between builds via BuildKit cache mounts & compose volume.
+
+FROM nvidia/cuda:12.9.0-devel-ubuntu24.04
+ENV DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-lc"]
+
+RUN apt-get update && apt-get install -y --no-install-recommends     ca-certificates curl git git-lfs build-essential     python3 python3-pip     pkg-config cmake ninja-build     libopencv-dev ffmpeg     libsdl2-dev libgl1-mesa-dev libv4l-dev     libx11-dev libxext-dev libxrandr-dev libxi-dev libxinerama-dev libxcursor-dev libxfixes-dev     libgtk-3-0 libglib2.0-0     zlib1g-dev libzstd-dev liblzma-dev libxxhash-dev  && rm -rf /var/lib/apt/lists/*
+
+RUN curl -L https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-linux-amd64 -o /usr/local/bin/bazel  && chmod +x /usr/local/bin/bazel
+
+WORKDIR /app
+COPY . /app
+
+# Ensure MP example path exists
+RUN rm -rf /app/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu &&     mkdir -p /app/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu &&     cp -rf /app/src/segmecam_gui_gpu/. /app/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu/
+
+# Default command only runs the app (no compile at runtime). Build in Dockerfile step or via `docker compose build`.
+ENTRYPOINT ["/bin/bash", "-lc", "bazel build -c opt --cxxopt=-I/usr/include/opencv4 mediapipe/examples/desktop/segmecam_gui_gpu:segmecam_gui_gpu && /app/external/mediapipe/bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu /app/mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt /app/external/mediapipe/bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu.runfiles 0"]

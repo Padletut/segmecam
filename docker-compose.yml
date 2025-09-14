@@ -1,0 +1,27 @@
+services:
+  segmecam:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    image: segmecam:prod
+    entrypoint: ["/usr/local/bin/SegmeCam.sh"]
+    command: ["/opt/segmecam/graphs/face_and_seg_gpu_mask_cpu.pbtxt", "0"]
+    container_name: segmecam
+    gpus: all
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - XDG_RUNTIME_DIR=/tmp/xdg
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - /dev/dri:/dev/dri
+    devices:
+      - /dev/video0:/dev/video0
+      - /dev/video1:/dev/video1
+    stdin_open: true
+    tty: true
+    # override camera or graph if needed:
+    # command: ["/usr/local/bin/SegmeCam.sh", "/opt/segmecam/graphs/face_and_seg_gpu_mask_cpu.pbtxt", "0"]
+
+volumes:
+  bazel_cache:

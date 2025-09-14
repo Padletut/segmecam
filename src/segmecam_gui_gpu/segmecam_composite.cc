@@ -1,5 +1,9 @@
 #include "segmecam_composite.h"
 
+// Persistently remembered preferred channel when mask comes as 4xU8 (SRGBA).
+// This avoids per-frame channel switches that can look like flicker.
+static int g_rgba_mask_channel = -1; // 0=B,1=G,2=R,3=A
+
 cv::Mat DecodeMaskToU8(const mediapipe::ImageFrame& mask, bool* logged_once) {
   const int ch = mask.NumberOfChannels();
   const int bd = mask.ByteDepth();
@@ -20,15 +24,20 @@ cv::Mat DecodeMaskToU8(const mediapipe::ImageFrame& mask, bool* logged_once) {
     cv::Scalar mg = cv::mean(chm[1]);
     cv::Scalar mr = cv::mean(chm[2]);
     cv::Scalar ma = cv::mean(chm[3]);
-    int best = 0; double bestv = mb[0];
-    if (mg[0] > bestv) { best=1; bestv=mg[0]; }
-    if (mr[0] > bestv) { best=2; bestv=mr[0]; }
-    if (ma[0] > bestv) { best=3; bestv=ma[0]; }
+    int best = g_rgba_mask_channel;
+    if (best < 0) {
+      // Prefer alpha if it looks non-empty; otherwise fall back to brightest color channel
+      best = 0; double bestv = mb[0];
+      if (mg[0] > bestv) { best=1; bestv=mg[0]; }
+      if (mr[0] > bestv) { best=2; bestv=mr[0]; }
+      if (ma[0] > 5.0 && ma[0] >= bestv - 1e-3) { best=3; bestv=ma[0]; }
+      g_rgba_mask_channel = best;
+    }
     out = chm[best].clone();
     if (logged_once && !*logged_once) {
       std::cout << "Mask channels=4 byteDepth=1 means[B,G,R,A]="
                 << mb[0] << "," << mg[0] << "," << mr[0] << "," << ma[0]
-                << " chosen=" << (best==0?"B":best==1?"G":best==2?"R":"A")
+                << " chosen=" << (g_rgba_mask_channel==0?"B":g_rgba_mask_channel==1?"G":g_rgba_mask_channel==2?"R":"A")
                 << std::endl;
       *logged_once = true;
     }
@@ -83,6 +92,60 @@ cv::Mat CompositeBlurBackgroundBGR(const cv::Mat& frame_bgr,
   cv::Mat comp_u8; comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
   cv::Mat rgb; cv::cvtColor(comp_u8, rgb, cv::COLOR_BGR2RGB);
   return rgb;
+}
+
+cv::Mat CompositeBlurBackgroundBGR_Accel(const cv::Mat& frame_bgr,
+                                         const cv::Mat& mask_u8,
+                                         int blur_strength,
+                                         float feather_px,
+                                         bool use_ocl,
+                                         float scale) {
+  scale = std::clamp(scale, 0.4f, 1.0f);
+  if (!use_ocl && std::abs(scale - 1.0f) < 1e-3f) {
+    return CompositeBlurBackgroundBGR(frame_bgr, mask_u8, blur_strength, feather_px);
+  }
+  int k = blur_strength | 1;
+  // Optional downscale for speed
+  cv::Mat small_src;
+  if (std::abs(scale - 1.0f) < 1e-3f) small_src = frame_bgr;
+  else cv::resize(frame_bgr, small_src, cv::Size(), scale, scale, (scale >= 0.85f)?cv::INTER_LINEAR:cv::INTER_AREA);
+
+  if (!use_ocl) {
+    // CPU path but with background computed at reduced res
+    cv::Mat small_blur; cv::GaussianBlur(small_src, small_blur, cv::Size(k,k), 0);
+    cv::Mat blurred;
+    if (small_blur.size() != frame_bgr.size()) cv::resize(small_blur, blurred, frame_bgr.size(), 0,0, cv::INTER_LINEAR);
+    else blurred = small_blur;
+    // Normalized blend (same as baseline)
+    cv::Mat frame_f, blurred_f; frame_bgr.convertTo(frame_f, CV_32FC3, 1.0/255.0); blurred.convertTo(blurred_f, CV_32FC3, 1.0/255.0);
+    cv::Mat mask_f; mask_u8.convertTo(mask_f, CV_32FC1, 1.0/255.0);
+    int fks = (int)std::max(1.0f, feather_px) * 2 + 1; if (feather_px > 0.5f) cv::GaussianBlur(mask_f, mask_f, cv::Size(fks,fks), 0);
+    std::vector<cv::Mat> fch(3), bch(3), out(3); cv::split(frame_f, fch); cv::split(blurred_f, bch);
+    for (int i=0;i<3;++i) out[i] = fch[i].mul(mask_f) + bch[i].mul(1.0f - mask_f);
+    cv::Mat comp_f; cv::merge(out, comp_f); cv::Mat comp_u8; comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
+    cv::Mat rgb; cv::cvtColor(comp_u8, rgb, cv::COLOR_BGR2RGB); return rgb;
+  }
+  // OpenCL path via UMat
+  cv::UMat src_u; small_src.copyTo(src_u);
+  cv::UMat blur_u; cv::GaussianBlur(src_u, blur_u, cv::Size(k,k), 0);
+  cv::UMat blurred_u;
+  if (blur_u.size() != frame_bgr.size()) cv::resize(blur_u, blurred_u, frame_bgr.size(), 0,0, cv::INTER_LINEAR);
+  else blurred_u = blur_u;
+  cv::UMat frame_u; frame_bgr.copyTo(frame_u);
+  cv::UMat mask_u; mask_u8.copyTo(mask_u);
+  cv::UMat frame_f, blurred_f, mask_f; frame_u.convertTo(frame_f, CV_32FC3, 1.0/255.0); blurred_u.convertTo(blurred_f, CV_32FC3, 1.0/255.0);
+  mask_u.convertTo(mask_f, CV_32FC1, 1.0/255.0);
+  if (feather_px > 0.5f) {
+    int fks = (int)std::max(1.0f, feather_px) * 2 + 1; cv::GaussianBlur(mask_f, mask_f, cv::Size(fks,fks), 0);
+  }
+  std::vector<cv::UMat> ff(3), bf(3), out(3); cv::split(frame_f, ff); cv::split(blurred_f, bf);
+  cv::UMat one(mask_f.size(), mask_f.type()); one.setTo(1.0f);
+  cv::UMat inv; cv::subtract(one, mask_f, inv);
+  for (int i=0;i<3;++i) {
+    cv::UMat a,b; cv::multiply(ff[i], mask_f, a); cv::multiply(bf[i], inv, b); cv::add(a,b,out[i]);
+  }
+  cv::UMat comp_f; cv::merge(out, comp_f); cv::UMat comp_u8; comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
+  cv::Mat rgb; cv::cvtColor(comp_u8, rgb, cv::COLOR_BGR2RGB); return rgb;
 }
 
 

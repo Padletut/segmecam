@@ -21,6 +21,16 @@ cv::Mat CompositeBlurBackgroundBGR(const cv::Mat& frame_bgr,
                                    int blur_strength,
                                    float feather_px);
 
+// Optional accelerated/background-scaled path. If use_ocl=true and OpenCV has OpenCL,
+// uses UMat for heavy ops. If scale < 1.0, computes blurred background at reduced res
+// and upsamples for compositing (keeps normalized blend to avoid halos).
+cv::Mat CompositeBlurBackgroundBGR_Accel(const cv::Mat& frame_bgr,
+                                         const cv::Mat& mask_u8,
+                                         int blur_strength,
+                                         float feather_px,
+                                         bool use_ocl,
+                                         float scale);
+
 // Image background composite. bg_bgr must be same size or will be resized.
 cv::Mat CompositeImageBackgroundBGR(const cv::Mat& frame_bgr,
                                     const cv::Mat& mask_u8,

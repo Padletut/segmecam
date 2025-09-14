@@ -42,9 +42,15 @@ __pycache__/
 # Misc
 *.bak
 *.tmp
+*.orig
+*.rej
+*_old.cpp
+*_backup.*
 
 # Vendor/externals (fetched by scripts)
 external/mediapipe/
 external/imgui/
 third_party/tflite_c/lib/
 app-old-just-example.cc
+make_appimage.sh
+notes.txt

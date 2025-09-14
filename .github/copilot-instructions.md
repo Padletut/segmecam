@@ -1,55 +1,59 @@
 
-# Copilot Instructions for SegmeCam
+
+# 🧑‍💻 Copilot Instructions for SegmeCam
 
 ## Project Overview
-SegmeCam is an AI-powered Linux desktop web camera app built in C++ with Bazel. It combines real-time selfie segmentation and face landmark detection using TensorFlow Lite (TFLite) models, and provides advanced effects via OpenCV and custom rendering pipelines. The GUI is planned to use ImGui for controls and rendering.
+SegmeCam is a Linux-native AI webcam app built in C++17, using Bazel for builds. It combines real-time selfie segmentation and face landmark detection (TensorFlow Lite/MediaPipe), OpenGL/SDL2 rendering, and Dear ImGui for UI. The goal is professional beauty and background effects for Linux video calls and streaming.
 
-## Architecture & Key Components
-- **src/**: Main C++ source files. Entry point is `src/main.cpp`.
-- **include/**: Header files for modularization.
-- **WORKSPACE & BUILD**: Bazel build configuration. All builds and dependencies are managed here.
-- **AI Models**: TFLite models for segmentation and landmark detection (see README for details).
-- **Rendering/UI**: ImGui (planned) for real-time controls and effects.
+## Architecture & Major Components
+- `engine/` – AI inference (TFLite models, mask processing)
+- `render/` – OpenGL passes (blur, smoothing, composition)
+- `ui/` – Dear ImGui panels & controls
+- `io/` – camera input (OpenCV/V4L2) + v4l2loopback output
+- Bazel `WORKSPACE` and `BUILD` files manage all builds and dependencies
+
 
 ## Developer Workflows
-- **Build the app:**
+- **Build & Run (Recommended):**
   ```bash
-  bazel build //segmecam:app
+  ./scripts/run_segmecam_gui_gpu.sh --face
   ```
-- **Build TFLite and delegates:**
+  This script handles Bazel builds and launches the SegmeCam GUI with face segmentation enabled.
+- **Manual Bazel Build (Advanced):**
   ```bash
-  bazel build -c opt //tensorflow/lite:libtensorflowlite.so //tensorflow/lite/delegates/xnnpack:xnnpack_delegate
-  ```
-- **Run the app:**
-  ```bash
-  ./bazel-bin/segmecam/app
+  bazel build //...
+  ./bazel-bin/segmecam
   ```
 - **Add dependencies:**
-  Use Bazel's WORKSPACE and BUILD files. For external libraries (OpenCV, ImGui, etc.), prefer Bazel rules or repository rules.
+  Use Bazel repository rules in `WORKSPACE` and update `BUILD` files. Do not switch to CMake or other build systems unless explicitly requested.
+- **Testing:**
+  Unit tests for engine utilities are encouraged; follow modular patterns.
 
-## Patterns & Conventions
-- All source code is in `src/`, headers in `include/`.
-- Bazel targets are defined in the top-level `BUILD` file.
-- External dependencies should be added via Bazel repository rules in `WORKSPACE`.
-- AI models are referenced as external files or downloaded via scripts (see README for future instructions).
-- Use C++17 or newer for all code.
+## Project-Specific Conventions
+- **Language:** C++17, default `clang-format` (LLVM style)
+- **Headers:** `.hpp` for headers, `.cpp` for implementation
+- **Naming:** `snake_case` for functions/vars, `CamelCase` for classes
+- **Modularity:** Each module has a single responsibility; avoid “god classes”
+- **Layering:** Keep `engine`, `render`, `ui`, and `io` responsibilities separate
+- **Linux-first:** Prioritize Linux compatibility; avoid Windows/Mac APIs unless requested
+- **Licensing:** Only Apache-2.0 compatible dependencies; avoid GPL
 
 ## Integration Points
-- **TensorFlow Lite**: Integrated via Bazel build; models loaded at runtime.
-- **OpenCV**: Used for image processing and blending.
-- **ImGui**: For GUI controls and rendering pipeline.
-- **Virtual Webcam Output**: Planned feature for integration with Linux webcam stack.
+- **TensorFlow Lite:** Integrated via Bazel; models loaded at runtime
+- **OpenCV:** For image processing and blending
+- **Dear ImGui:** For GUI controls and rendering pipeline
+- **v4l2loopback:** For virtual webcam output
 
 ## Example: Adding a New Effect
-1. Add C++ source in `src/` and header in `include/`.
-2. Update `BUILD` to include new files and dependencies.
-3. If using a new library, add its Bazel rule in `WORKSPACE`.
-4. Document usage in README.
+1. Add C++ source in the appropriate module directory and header in `include/`
+2. Update Bazel `BUILD` file to include new files and dependencies
+3. If using a new library, add its Bazel rule in `WORKSPACE`
+4. Document usage in README
 
 ## References
-- See `README.md` for feature roadmap, tech stack, and build instructions.
-- Key files: `src/main.cpp`, `WORKSPACE`, `BUILD`, `README.md`
+- See `README.md` for feature roadmap, tech stack, and build instructions
+- Key files: `engine/`, `render/`, `ui/`, `io/`, `WORKSPACE`, `BUILD`, `README.md`
 
 ---
 
-For questions or unclear conventions, check README or ask for clarification. Please suggest improvements if you find missing or outdated instructions.
+For unclear conventions or missing instructions, check README or AGENT.md, or ask for clarification. Suggest improvements if you find outdated or missing guidance.

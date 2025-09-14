@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+export HERMETIC_PYTHON_VERSION=3.12
 set -euo pipefail
 
 # Runs the SegmeCam GUI (GPU) from inside the MediaPipe repo using `bazel run`.
@@ -83,6 +84,12 @@ fi
 # Compute runfiles dir path (best-effort) for resource loading
 BIN_RUNFILES="$MP_DIR/bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu.runfiles"
 
+
+# Step 1: Run Bazel to fetch dependencies (if needed)
+echo "Running Bazel fetch to ensure dependencies are downloaded..."
+"$BAZEL" fetch mediapipe/examples/desktop/segmecam_gui_gpu:segmecam_gui_gpu || true
+
+# Step 3: Run Bazel build
 "$BAZEL" run -c opt \
   --action_env=PKG_CONFIG_PATH --repo_env=PKG_CONFIG_PATH \
   --cxxopt=-I/usr/include/opencv4 \
