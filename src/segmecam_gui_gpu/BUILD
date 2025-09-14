@@ -1,3 +1,6 @@
+# --- Custom C++ Toolchain registration (minimal example) ---
+filegroup(name = "empty")
+
 cc_library(
     name = "segmecam_composite",
     srcs = ["segmecam_composite.cc"],
@@ -88,6 +91,7 @@ cc_binary(
         "-DABSL_USES_STD_ANY=1",
         "-I/usr/include/opencv4",
         "-I/usr/include/SDL2",
+        "-I/usr/lib/gcc/x86_64-linux-gnu/13/include",
     ],
     linkopts = [
         "-lSDL2",

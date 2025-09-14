@@ -39,4 +39,12 @@ local_repository(
 #     strip_prefix = "tensorflow-2.16.1",
 # )
 
-# TODO: Add external dependencies (e.g., rules_cc, rules_qt, rules_imgui, etc.)
+
+# Example: Patch XNNPACK to disable AVX VNNI microkernels (workaround for unsupported instructions)
+http_archive(
+    name = "XNNPACK",
+    urls = ["https://github.com/google/XNNPACK/archive/refs/tags/v2022.12.22.tar.gz"],
+    strip_prefix = "XNNPACK-2022.12.22",
+    patches = ["//patches:xnnpack_disable_avxvnni.patch"],
+    patch_args = ["-p1"],
+)
