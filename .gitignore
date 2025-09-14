@@ -98,6 +98,8 @@ mediapipe/*.tulsiproj/
 mediapipe/__init__.py
 mediapipe/examples/__init__.py
 CONTRIBUTING.md
+Dockerfile.manylinux*
+.bazelisk
 # Keep our custom segmecam code: mediapipe/examples/desktop/segmecam/
 
 # External dependencies and cache
