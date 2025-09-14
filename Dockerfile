@@ -1,68 +1,82 @@
+# Copyright 2019 The MediaPipe Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-# SegmeCam Dockerfile
-# Builds and runs SegmeCam in a reproducible Linux environment
+FROM ubuntu:22.04
 
-FROM nvidia/cuda:12.9.0-devel-ubuntu24.04
+MAINTAINER <mediapipe@google.com>
+
+WORKDIR /io
+WORKDIR /mediapipe
+
 ENV DEBIAN_FRONTEND=noninteractive
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        gcc g++ \
+        ca-certificates \
+        curl \
+        ffmpeg \
+        git \
+        wget \
+        unzip \
+        nodejs \
+        npm \
+        python3-dev \
+        python3-opencv \
+        python3-pip \
+        libopencv-core-dev \
+        libopencv-highgui-dev \
+        libopencv-imgproc-dev \
+        libopencv-video-dev \
+        libopencv-calib3d-dev \
+        libopencv-features2d-dev \
+        software-properties-common && \
+    apt-get update && apt-get install -y openjdk-21-jdk && \
+    apt-get install -y mesa-common-dev libegl1-mesa-dev libgles2-mesa-dev && \
+    apt-get install -y mesa-utils && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
+# Install Clang 16
+RUN wget https://apt.llvm.org/llvm.sh
+RUN chmod +x llvm.sh
+RUN ./llvm.sh 16
+RUN ln -sf /usr/bin/clang-16 /usr/bin/clang
+RUN ln -sf /usr/bin/clang++-16 /usr/bin/clang++
+RUN ln -sf /usr/bin/clang-format-16 /usr/bin/clang-format
 
-# Install system dependencies and add-apt-repository
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    clang \
-    cmake \
-    git \
-    python3 \
-    python3-pip \
-    libopencv-dev \
-    libsdl2-dev \
-    libgl1-mesa-dev \
-    libv4l-dev \
-    libx11-dev \
-    libxext-dev \
-    libxrandr-dev \
-    libxi-dev \
-    libxinerama-dev \
-    libxcursor-dev \
-    libxfixes-dev \
-    curl \
-    gnupg \
-    software-properties-common \
-    wget \
-    libnvidia-gl-575 \
-    && rm -rf /var/lib/apt/lists/*
+RUN pip3 install --upgrade setuptools
+RUN pip3 install wheel
+RUN pip3 install future
+RUN pip3 install absl-py "numpy<2" jax[cpu] opencv-contrib-python protobuf==3.20.1
+RUN pip3 install six==1.14.0
+RUN pip3 install tensorflow
+RUN pip3 install tf_slim
 
-# Install Bazel (official method)
-RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor >bazel.gpg \
-    && mv bazel.gpg /etc/apt/trusted.gpg.d/ \
-    && echo "deb [arch=amd64] https://storage.googleapis.com/bazel-apt stable jdk1.8" > /etc/apt/sources.list.d/bazel.list \
-    && apt-get update && apt-get install -y bazel
+RUN ln -s /usr/bin/python3 /usr/bin/python
 
-# Optional: libv4l2loopback-dev
-RUN apt-get update && apt-get install -y tzdata v4l2loopback-dkms v4l2loopback-utils && \
-    ln -fs /usr/share/zoneinfo/Europe/Oslo /etc/localtime && dpkg-reconfigure -f noninteractive tzdata
+# Install bazel
+ARG BAZEL_VERSION=7.4.1
+RUN mkdir /bazel && \
+    wget --no-check-certificate -O /bazel/installer.sh "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/b\
+azel-${BAZEL_VERSION}-installer-linux-x86_64.sh" && \
+    wget --no-check-certificate -O  /bazel/LICENSE.txt "https://raw.githubusercontent.com/bazelbuild/bazel/master/LICENSE" && \
+    chmod +x /bazel/installer.sh && \
+    /bazel/installer.sh  && \
+    rm -f /bazel/installer.sh
 
-# Set up workspace
-WORKDIR /workspace
+COPY . /mediapipe/
 
-# Copy main workspace
-COPY . /workspace
-
-# Ensure external/ is copied (MediaPipe repo and dependencies)
-COPY external/ /workspace/external/
-
-# Copy SegmeCam source and BUILD file into MediaPipe examples directory for Bazel
-RUN rm -rf /workspace/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu && \
-    mkdir -p /workspace/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu && \
-    cp -rf /workspace/src/segmecam_gui_gpu/* /workspace/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu/
-#RUN ls -l /workspace/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu/
-
-ENV XDG_RUNTIME_DIR=/tmp/xdg
-
-# Set environment variables for NVIDIA OpenGL
-ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu/nvidia
-ENV __GLX_VENDOR_LIBRARY_NAME=nvidia
-
-# Entrypoint: build and run using the recommended script
-ENTRYPOINT ["/bin/bash", "./scripts/run_segmecam_gui_gpu.sh", "--face"]
+# If we want the docker image to contain the pre-built object_detection_offline_demo binary, do the following
+# RUN bazel build -c opt --define MEDIAPIPE_DISABLE_GPU=1 mediapipe/examples/desktop/demo:object_detection_tensorflow_demo

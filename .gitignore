@@ -22,6 +22,9 @@ segmecam_gui
 .DS_Store
 Thumbs.db
 
+# Generated UI config (user-specific)
+imgui.ini
+
 # AppImage and Flatpak packaging
 *.AppImage
 *.flatpak
@@ -88,6 +91,12 @@ mediapipe/examples/desktop/*.py
 mediapipe/examples/desktop/BUILD
 mediapipe/examples/desktop/README.md
 mediapipe/examples/desktop/__init__.py
+# MediaPipe infrastructure files
+mediapipe/BUILD
+mediapipe/*.bzl
+mediapipe/*.tulsiproj/
+mediapipe/__init__.py
+mediapipe/examples/__init__.py
 # Keep our custom segmecam code: mediapipe/examples/desktop/segmecam/
 
 # External dependencies and cache
