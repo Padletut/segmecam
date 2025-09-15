@@ -86,4 +86,4 @@ echo "Building SegmeCam GUI GPU demo (CPU mask output)..."
   --cxxopt=-I/usr/include/opencv4 \
   mediapipe/examples/desktop/segmecam:segmecam_gui_gpu
 
-echo "Built: bazel-bin/examples/desktop/segmecam/segmecam_gui_gpu"
+echo "Built: bazel-bin/mediapipe/examples/desktop/segmecam/segmecam_gui_gpu"
