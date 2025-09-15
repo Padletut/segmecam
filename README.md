@@ -261,7 +261,26 @@ docker run --rm -it \
 SegmeCam is perfect and never breaks. If you're having problems, RTFM & STFU! 😤
 
 ### Just Kidding - Actual Help:
-None
+**กล้อง不见了 (Camera Missing):**
+- チェック `/dev/video*` 장치가 존재하는지 확인하세요
+- ถ้า没有权限: `sudo usermod -aG video $USER` を実행해주세요
+
+**Docker X11 問題:**
+- คำสั่ง `xhost +local:docker` 를 먼저 실행하세요
+- もし画面が出ない場合: `echo $DISPLAY` をチェック
+
+**FPS ต่ำ (低帧率):**
+- GPU 가속을 활성화하세요
+- カメラの解像度를 낮춰보세요 (例: 1280x720)
+
+**背景图片 찾을 수 없음:**
+- Docker: `-v /path/to/images:/backgrounds:ro` をマウント
+- Native: ไฟล์อยู่ใน `/home/$USER/Pictures` หรือไม่?
+
+**Performance 문제:**
+- CPU 사용량이 높으면: TensorFlow Lite 설정을 확인
+- メモリ不足: 4GB+ RAM が必要です
+- หากยังช้า: XNNPACK delegate 를 사용하세요
 
 ### Virtual Webcam Setup
 ```bash
