@@ -29,10 +29,8 @@ MP_DIR="$ROOT_DIR/mediapipe"
 
 if [[ ! -d "$MP_DIR/mediapipe" ]]; then
   echo "MediaPipe repo not found at $MP_DIR" >&2
-  echo "Cloning MediaPipe from google-ai-edge..."
-  git clone --depth 1 https://github.com/google-ai-edge/mediapipe.git "$MP_DIR"
-  else
-  echo "MediaPipe already cloned at $MP_DIR"
+  echo "Please run scripts/mediapipe_build_selfie_seg_gpu.sh first." >&2
+  exit 1
 fi
 
 # Ensure model is placed where MP graphs expect it (copy, not symlink)
