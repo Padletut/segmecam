@@ -25,7 +25,7 @@ while [[ $# -gt 0 ]]; do
     *) ARGS+=("$1"); shift ;;
   esac
 done
-MP_DIR="$ROOT_DIR"
+MP_DIR="$ROOT_DIR/mediapipe"
 
 if [[ ! -d "$MP_DIR/mediapipe" ]]; then
   echo "MediaPipe repo not found at $MP_DIR" >&2
