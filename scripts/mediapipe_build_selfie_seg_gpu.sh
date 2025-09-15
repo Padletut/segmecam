@@ -10,11 +10,46 @@ MP_DIR="$ROOT_DIR"
 # Save SegmeCam files before cloning (if they exist)
 SEGMECAM_BACKUP_DIR="/tmp/segmecam_backup_$$"
 TRACKED_SEGMECAM_DIR="$ROOT_DIR/examples/desktop/segmecam"
+
+# Backup SegmeCam-specific files that should not be overwritten
+SEGMECAM_FILES=(
+  "README.md"
+  "scripts/"
+  "src/"
+  "mediapipe_graphs/"
+  "models/"
+  "assets/"
+  "include/"
+  "BUILD"
+  "WORKSPACE"
+  "MODULE.bazel"
+  "MODULE.bazel.lock"
+  ".gitignore"
+  "docker-compose.yml"
+  "Dockerfile"
+  "Dockerfile.dev"
+  "Dockerfile.prod"
+  "AGENT.md"
+  "notes.txt"
+  "requirements.txt"
+  "make_appimage.sh"
+  "imgui.ini"
+)
+
+echo "Backing up SegmeCam files..."
+mkdir -p "$SEGMECAM_BACKUP_DIR"
+
+# Backup SegmeCam source directory if it exists
 if [[ -d "$TRACKED_SEGMECAM_DIR" ]]; then
-  echo "Backing up existing SegmeCam source files..."
-  mkdir -p "$SEGMECAM_BACKUP_DIR"
   cp -rf "$TRACKED_SEGMECAM_DIR" "$SEGMECAM_BACKUP_DIR/"
 fi
+
+# Backup other SegmeCam files
+for file in "${SEGMECAM_FILES[@]}"; do
+  if [[ -e "$ROOT_DIR/$file" ]]; then
+    cp -rf "$ROOT_DIR/$file" "$SEGMECAM_BACKUP_DIR/"
+  fi
+done
 
 if [[ ! -d "$MP_DIR/.git" ]] || [[ ! -d "$MP_DIR/mediapipe/framework" ]]; then
   echo "Cloning MediaPipe from google-ai-edge..."
@@ -43,12 +78,24 @@ else
 fi
 
 # Restore SegmeCam files after cloning
-if [[ -d "$SEGMECAM_BACKUP_DIR/segmecam" ]]; then
-  echo "Restoring SegmeCam source files..."
-  mkdir -p "$MP_DIR/examples/desktop"
-  cp -rf "$SEGMECAM_BACKUP_DIR/segmecam" "$MP_DIR/examples/desktop/"
+if [[ -d "$SEGMECAM_BACKUP_DIR" ]]; then
+  echo "Restoring SegmeCam files..."
+  
+  # Restore SegmeCam source directory
+  if [[ -d "$SEGMECAM_BACKUP_DIR/segmecam" ]]; then
+    mkdir -p "$MP_DIR/examples/desktop"
+    cp -rf "$SEGMECAM_BACKUP_DIR/segmecam" "$MP_DIR/examples/desktop/"
+  fi
+  
+  # Restore other SegmeCam files
+  for file in "${SEGMECAM_FILES[@]}"; do
+    if [[ -e "$SEGMECAM_BACKUP_DIR/$file" ]]; then
+      cp -rf "$SEGMECAM_BACKUP_DIR/$file" "$MP_DIR/"
+    fi
+  done
+  
   rm -rf "$SEGMECAM_BACKUP_DIR"
-  echo "Restored SegmeCam source files"
+  echo "SegmeCam files restored"
 fi
 
 cd "$MP_DIR"
