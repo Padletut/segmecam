@@ -5,11 +5,11 @@ set -euo pipefail
 # Requires system deps (OpenGL/EGL, protobuf, etc.). This script uses Bazel.
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
-MP_DIR="$ROOT_DIR/mediapipe"
+MP_DIR="$ROOT_DIR"
 
 # Save SegmeCam files before cloning (if they exist)
 SEGMECAM_BACKUP_DIR="/tmp/segmecam_backup_$$"
-TRACKED_SEGMECAM_DIR="$ROOT_DIR/mediapipe/examples/desktop/segmecam"
+TRACKED_SEGMECAM_DIR="$ROOT_DIR/examples/desktop/segmecam"
 if [[ -d "$TRACKED_SEGMECAM_DIR" ]]; then
   echo "Backing up existing SegmeCam source files..."
   mkdir -p "$SEGMECAM_BACKUP_DIR"
