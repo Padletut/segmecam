@@ -16,8 +16,13 @@ if [[ -d "$TRACKED_SEGMECAM_DIR" ]]; then
   cp -rf "$TRACKED_SEGMECAM_DIR" "$SEGMECAM_BACKUP_DIR/"
 fi
 
-if [[ ! -d "$MP_DIR/.git" ]]; then
+if [[ ! -d "$MP_DIR/.git" ]] || [[ ! -d "$MP_DIR/mediapipe/framework" ]]; then
   echo "Cloning MediaPipe from google-ai-edge..."
+  # Remove any incomplete installation
+  if [[ -d "$MP_DIR" ]] && [[ ! -d "$MP_DIR/.git" ]]; then
+    echo "Removing incomplete MediaPipe installation..."
+    rm -rf "$MP_DIR"/*
+  fi
   # Clone to temporary directory to avoid nested structure
   TEMP_MP_DIR="/tmp/mediapipe_clone_$$"
   git clone --depth 1 https://github.com/google-ai-edge/mediapipe.git "$TEMP_MP_DIR"
