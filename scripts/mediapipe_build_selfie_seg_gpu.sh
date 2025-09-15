@@ -26,10 +26,16 @@ if [[ ! -d "$MP_DIR/.git" ]] || [[ ! -d "$MP_DIR/mediapipe/framework" ]]; then
   # Clone to temporary directory to avoid nested structure
   TEMP_MP_DIR="/tmp/mediapipe_clone_$$"
   git clone --depth 1 https://github.com/google-ai-edge/mediapipe.git "$TEMP_MP_DIR"
-  # Copy MediaPipe contents to project root
+    # Copy MediaPipe contents to project root
   echo "Copying MediaPipe contents to project root..."
   cp -rf "$TEMP_MP_DIR"/* "$MP_DIR/"
-  cp -rf "$TEMP_MP_DIR"/.* "$MP_DIR/" 2>/dev/null || true  # Copy hidden files, ignore errors
+  # Copy hidden files but exclude .git directory to preserve SegmeCam repository
+  for hidden_file in "$TEMP_MP_DIR"/.*; do
+    filename=$(basename "$hidden_file")
+    if [[ "$filename" != "." && "$filename" != ".." && "$filename" != ".git" ]]; then
+      cp -rf "$hidden_file" "$MP_DIR/" 2>/dev/null || true
+    fi
+  done
   rm -rf "$TEMP_MP_DIR"
   echo "MediaPipe copied to project root"
 else
