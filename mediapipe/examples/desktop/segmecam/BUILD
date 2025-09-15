@@ -38,9 +38,21 @@ cc_library(
     srcs = ["vcam.cc"],
     hdrs = ["vcam.h"],
     includes = ["."],
-    deps = [
-        "//mediapipe/framework/port:opencv_core",
-        "//mediapipe/framework/port:opencv_imgproc",
+    deps = [],
+    copts = ["-I/usr/include/opencv4"],
+    linkopts = ["-lopencv_core", "-lopencv_imgproc"],
+)
+
+cc_library(
+    name = "gpu_detector",
+    srcs = ["gpu_detector.cpp"],
+    hdrs = ["gpu_detector.h"],
+    includes = ["."],
+    deps = [],
+    linkopts = [
+        "-lEGL",
+        "-lGL",
+        "-ldl",
     ],
 )
 
@@ -59,6 +71,7 @@ cc_binary(
         ":segmecam_face_effects",
         ":presets",
         ":vcam",
+        ":gpu_detector",
         "//mediapipe/framework:calculator_graph",
         "//mediapipe/framework/formats:image_frame",
         "//mediapipe/framework/formats:landmark_cc_proto",

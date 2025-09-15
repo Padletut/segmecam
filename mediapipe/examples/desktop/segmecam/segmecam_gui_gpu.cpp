@@ -31,6 +31,7 @@
 #include "presets.h"
 #include "vcam.h"
 #include "cam_enum.h"
+#include "gpu_detector.h"
 #include <linux/videodev2.h>
 #include "mediapipe/tasks/cc/vision/face_landmarker/face_landmarks_connections.h"
 #include <fcntl.h>
@@ -56,7 +57,8 @@ static void MatToImageFrame(const cv::Mat& src_bgr, std::unique_ptr<mp::ImageFra
 }
 
 int main(int argc, char** argv) {
-  std::string graph_path = "mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt";  // default: segmentation only
+  std::string graph_path = "mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt";  // default: GPU segmentation
+  std::string cpu_graph_path = "mediapipe_graphs/selfie_seg_cpu_min.pbtxt";    // fallback: CPU segmentation
   std::string resource_root_dir = ".";  // MediaPipe repo root or Bazel runfiles
   int cam_index = 0;
   std::vector<CameraDesc> cam_list = EnumerateCameras();
@@ -66,6 +68,77 @@ int main(int argc, char** argv) {
   if (argc > 2) resource_root_dir = argv[2];
   if (argc > 3) cam_index = std::atoi(argv[3]);
 
+  // 🎮 Early GPU Detection to choose optimal graph
+  std::cout << "🔍 Detecting GPU capabilities..." << std::endl;
+  
+  // Check for testing environment variables
+  bool force_cpu = (std::getenv("SEGMECAM_FORCE_CPU") != nullptr);
+  bool force_no_nvidia = (std::getenv("SEGMECAM_NO_NVIDIA") != nullptr);
+  bool force_no_mesa = (std::getenv("SEGMECAM_NO_MESA") != nullptr);
+  
+  GPUCapabilities gpu_caps;
+  if (force_cpu) {
+    std::cout << "🧪 TESTING MODE: Forced CPU-only via SEGMECAM_FORCE_CPU" << std::endl;
+    gpu_caps.backend = GPUBackend::CPU_ONLY;
+    gpu_caps.environment = GPUDetector::DetectEnvironment();
+    gpu_caps.vendor = "CPU (Forced)";
+    gpu_caps.egl_available = false;
+    gpu_caps.opengl_available = false;
+  } else {
+    gpu_caps = GPUDetector::DetectGPUCapabilitiesForTesting(force_no_nvidia, force_no_mesa);
+    if (force_no_nvidia) std::cout << "🧪 TESTING MODE: NVIDIA disabled via SEGMECAM_NO_NVIDIA" << std::endl;
+    if (force_no_mesa) std::cout << "🧪 TESTING MODE: Mesa disabled via SEGMECAM_NO_MESA" << std::endl;
+  }
+  
+  std::cout << "🖥️  Environment: " << 
+    (gpu_caps.environment == RuntimeEnvironment::FLATPAK ? "Flatpak" :
+     gpu_caps.environment == RuntimeEnvironment::DOCKER ? "Docker" : "Native") << std::endl;
+  
+  std::cout << "🎮 GPU Backend: " << 
+    (gpu_caps.backend == GPUBackend::NVIDIA_EGL ? "NVIDIA EGL" :
+     gpu_caps.backend == GPUBackend::MESA_EGL ? "Mesa EGL" :
+     gpu_caps.backend == GPUBackend::AMD_RADEON ? "AMD Radeon" :
+     gpu_caps.backend == GPUBackend::INTEL_GPU ? "Intel GPU" : "CPU Only") << std::endl;
+  
+  bool use_gpu = (gpu_caps.backend != GPUBackend::CPU_ONLY);
+  
+  // 📊 Choose appropriate graph based on GPU availability  
+  // Respect the original graph choice - only fall back to CPU graph if forced CPU mode
+  std::string final_graph_path;
+  if (force_cpu) {
+    // Only use CPU graph when explicitly forced
+    final_graph_path = cpu_graph_path;
+  } else {
+    // Use the selected graph (could be face graph, tasks graph, etc.)
+    final_graph_path = graph_path;
+  }
+  
+  // Ensure we can find the CPU graph (adjust path relative to working directory)
+  if (force_cpu && !std::filesystem::exists(final_graph_path)) {
+    // Try with different path prefixes
+    std::vector<std::string> possible_paths = {
+      "/home/padletut/segmecam/" + cpu_graph_path,
+      resource_root_dir + "/" + cpu_graph_path,
+      cpu_graph_path
+    };
+    
+    for (const auto& path : possible_paths) {
+      if (std::filesystem::exists(path)) {
+        final_graph_path = path;
+        break;
+      }
+    }
+  }
+  
+  std::cout << "📊 Using graph: " << final_graph_path << std::endl;
+  
+  // If GPU was initially detected but we want to handle potential runtime failures,
+  // we can add a retry mechanism here if needed
+  if (use_gpu) {
+    std::cout << "🚀 Setting up optimal EGL path for GPU..." << std::endl;
+    GPUDetector::SetupOptimalEGLPath(gpu_caps);
+  }
+
   // If running under Bazel, point MediaPipe resource loader to runfiles.
   const char* rf = std::getenv("RUNFILES_DIR");
   if (rf && *rf) {
@@ -74,21 +147,47 @@ int main(int argc, char** argv) {
     absl::SetFlag(&FLAGS_resource_root_dir, resource_root_dir);
   }
 
-  auto cfg_text_or = LoadTextFile(graph_path);
-  if (!cfg_text_or.ok()) { std::fprintf(stderr, "Failed to read graph: %s\n", graph_path.c_str()); return 1; }
+  auto cfg_text_or = LoadTextFile(final_graph_path);
+  if (!cfg_text_or.ok()) { std::fprintf(stderr, "Failed to read graph: %s\n", final_graph_path.c_str()); return 1; }
   mp::CalculatorGraphConfig config = mp::ParseTextProtoOrDie<mp::CalculatorGraphConfig>(cfg_text_or.value());
 
   mp::CalculatorGraph graph;
   { auto st = graph.Initialize(config); if (!st.ok()) { std::fprintf(stderr, "Initialize failed: %s\n", st.message().data()); return 2; } }
-  // Provide GPU resources BEFORE StartRun
-  {
+  
+  // Provide GPU resources BEFORE StartRun (only if using GPU graph)
+  if (use_gpu) {
+    std::cout << "🚀 Setting up GPU acceleration..." << std::endl;
+    
     auto or_gpu = mediapipe::GpuResources::Create();
-    if (!or_gpu.ok()) { std::fprintf(stderr, "GpuResources::Create failed: %s\n", or_gpu.status().message().data()); return 2; }
+    if (!or_gpu.ok()) { 
+      std::fprintf(stderr, "⚠️  GpuResources::Create failed: %s\n", or_gpu.status().message().data());
+      std::fprintf(stderr, "❌ Cannot fallback after graph initialization. Please restart.\n");
+      return 2;
+    }
     auto st = graph.SetGpuResources(std::move(or_gpu.value()));
-    if (!st.ok()) { std::fprintf(stderr, "SetGpuResources failed: %s\n", st.message().data()); return 2; }
+    if (!st.ok()) { 
+      std::fprintf(stderr, "⚠️  SetGpuResources failed: %s\n", st.message().data());
+      std::fprintf(stderr, "❌ Cannot fallback after graph initialization. Please restart.\n");
+      return 2;
+    }
+    std::cout << "✅ GPU acceleration enabled successfully!" << std::endl;
+  } else {
+    std::cout << "💻 Running in CPU-only mode" << std::endl;
   }
-  auto mask_poller_or = graph.AddOutputStreamPoller("segmentation_mask_cpu");
-  if (!mask_poller_or.ok()) { std::fprintf(stderr, "Graph does not produce 'segmentation_mask_cpu'\n"); return 3; }
+  
+  // 📡 Setup output stream pollers (different names for different graph types)
+  std::string mask_stream_name;
+  if (force_cpu) {
+    mask_stream_name = "segmentation_mask";  // CPU-only graph output
+  } else {
+    mask_stream_name = "segmentation_mask_cpu";  // GPU graph with CPU mask output
+  }
+  
+  auto mask_poller_or = graph.AddOutputStreamPoller(mask_stream_name);
+  if (!mask_poller_or.ok()) { 
+    std::fprintf(stderr, "Graph does not produce '%s'\n", mask_stream_name.c_str()); 
+    return 3; 
+  }
   mp::OutputStreamPoller mask_poller = std::move(mask_poller_or.value());
   // Try to attach landmarks poller (optional)
   bool has_landmarks = true;
