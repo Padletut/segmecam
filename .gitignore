@@ -124,6 +124,10 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Documentation (can be regenerated)
+docs/
+mediapipe/docs/
+
 # MediaPipe specific files
 build_android_examples.sh
 build_desktop_examples.sh
