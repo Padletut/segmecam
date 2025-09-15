@@ -16,6 +16,9 @@ Built with **TensorFlow Lite** (TFLite), **SDL2**, **OpenGL 3.3**, and **Dear Im
 - 🎥 **Virtual Webcam Output** – Works in Discord, OBS, Zoom, Teams
 - ⚡ **Optimized for Linux** – GPU-accelerated pipeline with TFLite XNNPACK
 
+![SegmeCam Interface](SCScreenshot.png)
+*SegmeCam in action: Real-time face landmark detection (468 points) with AI-powered background segmentation and beauty controls*
+
 ---
 
 ## 🔍 Why SegmeCam?
@@ -283,6 +286,17 @@ SegmeCam is perfect and never breaks. If you're having problems, RTFM & STFU! �
 - หากยังช้า: XNNPACK delegate 를 사용하세요
 
 ### Virtual Webcam Setup
+
+**Easy Setup (Recommended):**
+```bash
+# Use the provided script for automatic setup
+./scripts/setup_vcam.sh --label SegmeCam --video-nr 9
+
+# Or with persistence across reboots
+sudo ./scripts/setup_vcam.sh --label SegmeCam --video-nr 9 --persist
+```
+
+**Manual Setup:**
 ```bash
 # Load v4l2loopback module
 sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="SegmeCam"
