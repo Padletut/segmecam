@@ -13,9 +13,14 @@ bazel-*
 app
 segmecam_gui
 
-# External dependencies (fetched by build scripts)
-external/
-mediapipe/
+
+# Keep only our SegmeCam code in MediaPipe examples
+mediapipe/*
+!mediapipe/examples/
+mediapipe/examples/*
+!mediapipe/examples/desktop/
+mediapipe/examples/desktop/*
+!mediapipe/examples/desktop/segmecam/
 
 # Third-party prebuilt binaries
 third_party/prebuilts/

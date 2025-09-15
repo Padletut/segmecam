@@ -7,11 +7,29 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 MP_DIR="$ROOT_DIR/mediapipe"
 
+# Save SegmeCam files before cloning (if they exist)
+SEGMECAM_BACKUP_DIR="/tmp/segmecam_backup_$$"
+TRACKED_SEGMECAM_DIR="$ROOT_DIR/mediapipe/examples/desktop/segmecam"
+if [[ -d "$TRACKED_SEGMECAM_DIR" ]]; then
+  echo "Backing up existing SegmeCam source files..."
+  mkdir -p "$SEGMECAM_BACKUP_DIR"
+  cp -rf "$TRACKED_SEGMECAM_DIR" "$SEGMECAM_BACKUP_DIR/"
+fi
+
 if [[ ! -d "$MP_DIR/.git" ]]; then
   echo "Cloning MediaPipe from google-ai-edge..."
   git clone --depth 1 https://github.com/google-ai-edge/mediapipe.git "$MP_DIR"
 else
   echo "MediaPipe already cloned at $MP_DIR"
+fi
+
+# Restore SegmeCam files after cloning
+if [[ -d "$SEGMECAM_BACKUP_DIR/segmecam" ]]; then
+  echo "Restoring SegmeCam source files..."
+  mkdir -p "$MP_DIR/mediapipe/examples/desktop"
+  cp -rf "$SEGMECAM_BACKUP_DIR/segmecam" "$MP_DIR/mediapipe/examples/desktop/"
+  rm -rf "$SEGMECAM_BACKUP_DIR"
+  echo "Restored SegmeCam source files"
 fi
 
 cd "$MP_DIR"
@@ -44,18 +62,6 @@ if [[ -f "$LOCAL_MODEL" ]]; then
   echo "Copied model to $MP_MODEL_PATH"
 else
   echo "Note: $LOCAL_MODEL not found; graphs will try to download or you can place it manually." >&2
-fi
-
-# Copy SegmeCam source files to MediaPipe examples directory
-SEGMECAM_SRC_DIR="$ROOT_DIR/src/segmecam_gui_gpu"
-MP_SEGMECAM_DIR="$MP_DIR/mediapipe/examples/desktop/segmecam"
-if [[ -d "$SEGMECAM_SRC_DIR" ]]; then
-  echo "Copying SegmeCam source files to MediaPipe examples..."
-  mkdir -p "$MP_SEGMECAM_DIR"
-  cp -rf "$SEGMECAM_SRC_DIR"/* "$MP_SEGMECAM_DIR/"
-  echo "Copied SegmeCam source to $MP_SEGMECAM_DIR"
-else
-  echo "Warning: SegmeCam source directory not found at $SEGMECAM_SRC_DIR" >&2
 fi
 
 # Copy SegmeCam graphs
