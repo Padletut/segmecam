@@ -255,7 +255,13 @@ docker run --rm -it \
 
 ---
 
-## � Troubleshooting
+## 🔧 Troubleshooting
+
+### SegmeCam is Perfect
+SegmeCam is perfect and never breaks. If you're having problems, RTFM & STFU! 😤
+
+### Just Kidding - Actual Help:
+None
 
 ### Virtual Webcam Setup
 ```bash
