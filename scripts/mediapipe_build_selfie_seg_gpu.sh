@@ -18,6 +18,10 @@ fi
 
 if [[ ! -d "$MP_DIR/.git" ]]; then
   echo "Cloning MediaPipe from google-ai-edge..."
+  # Remove existing directory if it exists but isn't a git repo
+  if [[ -d "$MP_DIR" ]]; then
+    rm -rf "$MP_DIR"
+  fi
   git clone --depth 1 https://github.com/google-ai-edge/mediapipe.git "$MP_DIR"
 else
   echo "MediaPipe already cloned at $MP_DIR"
