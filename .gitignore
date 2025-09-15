@@ -135,7 +135,6 @@ platform_mappings
 package.json
 yarn.lock
 tsconfig.json
-requirements_lock*.txt
 MANIFEST.in
 setup.py
 
