@@ -45,6 +45,13 @@ Here’s how it compares:
   - Copyright: Google LLC
   - Model Card: [MediaPipe Selfie Segmentation](https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Selfie%20Segmentation.pdf)
 
+- **MediaPipe Face Landmark Model**
+  - Source: [Google MediaPipe](https://developers.google.com/mediapipe/solutions/vision/face_landmarker)
+  - License: Apache License 2.0
+  - Copyright: Google LLC
+  - Model Card: [MediaPipe Face Mesh V2](https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Face%20Mesh%20V2.pdf)
+  - Used for: 468-point face landmarks, beauty effects, facial feature detection
+
 ---
 
 ## 📋 Prerequisites
