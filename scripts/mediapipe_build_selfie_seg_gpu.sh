@@ -72,16 +72,6 @@ else
   echo "Note: $LOCAL_MODEL not found; graphs will try to download or you can place it manually." >&2
 fi
 
-# Copy SegmeCam graphs
-SEGMECAM_GRAPHS_DIR="$ROOT_DIR/mediapipe_graphs"
-MP_GRAPHS_DIR="$MP_DIR/mediapipe_graphs"
-if [[ -d "$SEGMECAM_GRAPHS_DIR" ]]; then
-  echo "Copying SegmeCam graph files..."
-  mkdir -p "$MP_GRAPHS_DIR"
-  cp -rf "$SEGMECAM_GRAPHS_DIR"/* "$MP_GRAPHS_DIR/"
-  echo "Copied SegmeCam graphs to $MP_GRAPHS_DIR"
-fi
-
 echo "Preparing Bazelisk (to honor .bazelversion)..."
 BAZELISK="$MP_DIR/.bazelisk"
 if [[ ! -x "$BAZELISK" ]]; then
