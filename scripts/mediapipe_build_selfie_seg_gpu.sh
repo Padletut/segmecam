@@ -97,7 +97,7 @@ echo "Building SegmeCam GUI GPU demo (CPU mask output)..."
   --action_env=PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
   --repo_env=PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
   --cxxopt=-I/usr/include/opencv4 \
-  mediapipe/examples/desktop/segmecam_gui_gpu:segmecam_gui_gpu
+  mediapipe/examples/desktop/segmecam:segmecam_gui_gpu
 
 echo "Built: bazel-bin/mediapipe/examples/desktop/selfie_segmentation/selfie_segmentation_gpu"
-echo "Built: bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu"
+echo "Built: bazel-bin/mediapipe/examples/desktop/segmecam/segmecam_gui_gpu"
