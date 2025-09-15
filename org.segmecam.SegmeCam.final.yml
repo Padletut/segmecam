@@ -43,9 +43,28 @@ modules:
       # Install graph files
       - mkdir -p /app/share/segmecam/mediapipe_graphs
       - cp selfie_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
+      - cp face_and_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
+      - cp face_tasks_and_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
       
       # Create symlink for graphs in working directory
       - ln -sf /app/share/segmecam/mediapipe_graphs /app/mediapipe_graphs
+      
+      # Create MediaPipe runfiles structure
+      - mkdir -p /app/mediapipe_runfiles
+      - cp MANIFEST /app/mediapipe_runfiles/
+      - cp _repo_mapping /app/mediapipe_runfiles/
+      - cp -r mediapipe /app/mediapipe_runfiles/
+      - cp -r external /app/mediapipe_runfiles/
+      
+      # Create mediapipe/external symlink inside runfiles for model resolution
+      - ln -sf /app/mediapipe_runfiles/external /app/mediapipe_runfiles/mediapipe/external
+      
+      # Fix permissions for all copied files
+      - chmod -R u+w /app/mediapipe_runfiles/
+      
+      # Create MediaPipe external model directory and install face landmarker model
+      - mkdir -p /app/mediapipe/external/com_google_mediapipe_face_landmarker_task/file
+      - cp face_landmarker.task /app/mediapipe/external/com_google_mediapipe_face_landmarker_task/file/downloaded
       
       # Install desktop integration
       - install -Dm644 org.segmecam.SegmeCam.desktop /app/share/applications/org.segmecam.SegmeCam.desktop
@@ -53,18 +72,37 @@ modules:
       - install -Dm644 SegmeCam.png /app/share/icons/hicolor/256x256/apps/org.segmecam.SegmeCam.png
       
     sources:
+      # Application binary and wrapper
       - type: file
-        path: bazel-bin/mediapipe/examples/desktop/segmecam/segmecam_gui_gpu
+        path: segmecam_gui_gpu
+        dest-filename: segmecam_gui_gpu
       - type: file
         path: segmecam-wrapper-nvidia.sh
+      
+      # Desktop integration files
       - type: file
         path: org.segmecam.SegmeCam.desktop
       - type: file
         path: org.segmecam.SegmeCam.appdata.xml
       - type: file
         path: assets/SegmeCam.png
-      - type: dir
-        path: flatpak-bundle
+      
+      # MediaPipe graphs
       - type: file
         path: mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt
         dest-filename: selfie_seg_gpu_mask_cpu.pbtxt
+      - type: file
+        path: mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt
+        dest-filename: face_and_seg_gpu_mask_cpu.pbtxt
+      - type: file
+        path: mediapipe_graphs/face_tasks_and_seg_gpu_mask_cpu.pbtxt
+        dest-filename: face_tasks_and_seg_gpu_mask_cpu.pbtxt
+      
+      # Models and dependencies
+      - type: file
+        path: models/tasks/face_landmarker.task
+        dest-filename: face_landmarker.task
+      - type: dir
+        path: runfiles
+      - type: dir
+        path: flatpak-bundle

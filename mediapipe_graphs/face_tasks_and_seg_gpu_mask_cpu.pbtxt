@@ -1,9 +1,9 @@
 # Combined GPU selfie segmentation with CPU mask and Tasks Face Landmarker (latest .task model).
 
 input_stream: "input_video"                 # ImageFrame (CPU)
-  output_stream: "segmentation_mask_cpu"       # ImageFrame (1ch)
-  output_stream: "multi_face_landmarks"        # std::vector<NormalizedLandmarkList>
-  output_stream: "face_rects"                  # std::vector<NormalizedRect>
+output_stream: "segmentation_mask_cpu"       # ImageFrame (1ch)
+output_stream: "multi_face_landmarks"        # std::vector<NormalizedLandmarkList>
+output_stream: "face_rects"                  # std::vector<NormalizedRect>
 
 node {
   calculator: "FlowLimiterCalculator"
@@ -40,28 +40,27 @@ node {
 }
 
 # Tasks Face Landmarker with model asset bundle (.task). Use the http_file runfile path.
-  node {
-    calculator: "mediapipe.tasks.vision.face_landmarker.FaceLandmarkerGraph"
-    input_stream: "IMAGE:input_image"
-    output_stream: "NORM_LANDMARKS:multi_face_landmarks"
-    output_stream: "FACE_RECTS:face_rects"
-    options: {
-      [mediapipe.tasks.vision.face_landmarker.proto.FaceLandmarkerGraphOptions.ext]: {
-        base_options: {
-          model_asset: { file_name: "mediapipe/external/com_google_mediapipe_face_landmarker_task/file/downloaded" }
-          acceleration { gpu {} }
-          gpu_origin: TOP_LEFT
-          use_stream_mode: true
-        }
-        face_detector_graph_options: {
-          min_detection_confidence: 0.5
-          num_faces: 1
-        }
-        face_landmarks_detector_graph_options: {
-          min_detection_confidence: 0.5
-        }
-        min_tracking_confidence: 0.5
+node {
+  calculator: "mediapipe.tasks.vision.face_landmarker.FaceLandmarkerGraph"
+  input_stream: "IMAGE:input_image"
+  output_stream: "NORM_LANDMARKS:multi_face_landmarks"
+  output_stream: "FACE_RECTS:face_rects"
+  options: {
+    [mediapipe.tasks.vision.face_landmarker.proto.FaceLandmarkerGraphOptions.ext]: {
+      base_options: {
+        model_asset: { file_name: "mediapipe/external/com_google_mediapipe_face_landmarker_task/file/downloaded" }
+        acceleration { gpu {} }
+        gpu_origin: TOP_LEFT
+        use_stream_mode: true
       }
+      face_detector_graph_options: {
+        min_detection_confidence: 0.5
+        num_faces: 1
+      }
+      face_landmarks_detector_graph_options: {
+        min_detection_confidence: 0.5
+      }
+      min_tracking_confidence: 0.5
     }
   }
 }

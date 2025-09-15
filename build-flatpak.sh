@@ -17,11 +17,11 @@ flatpak install -y flathub org.freedesktop.Platform//23.08 org.freedesktop.Sdk//
 
 # Build the Flatpak
 echo "Building Flatpak package..."
-flatpak-builder --force-clean build-dir org.segmecam.SegmeCam.yml
+flatpak-builder --force-clean build-dir org.segmecam.SegmeCam.final.yml
 
 # Install locally for testing
 echo "Installing locally for testing..."
-flatpak-builder --user --install --force-clean build-dir org.segmecam.SegmeCam.yml
+flatpak-builder --user --install --force-clean build-dir org.segmecam.SegmeCam.final.yml
 
 # Install with debug symbols
 echo "Installing debug symbols..."
