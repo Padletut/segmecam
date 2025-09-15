@@ -62,7 +62,9 @@ imgui.ini
 *.tflite
 *.onnx
 *.pb
-models/
+
+# Allow specific Apache 2.0 licensed models
+!models/selfie_segmenter.tflite
 
 # Logs
 *.log

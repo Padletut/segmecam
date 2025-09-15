@@ -36,6 +36,15 @@ Here’s how it compares:
 
 👉 SegmeCam is the **first all-in-one AI beauty + background app for Linux** 🚀
 
+## 📄 Third-Party Components
+
+### AI Models
+- **MediaPipe Selfie Segmentation Model**
+  - Source: [Google MediaPipe](https://developers.google.com/mediapipe/solutions/vision/image_segmenter)
+  - License: Apache License 2.0
+  - Copyright: Google LLC
+  - Model Card: [MediaPipe Selfie Segmentation](https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Selfie%20Segmentation.pdf)
+
 ---
 
 ## 📋 Prerequisites
@@ -152,11 +161,17 @@ bazel version
    cd SegmeCam
    ```
 
-2. **Build & Run**:  
+2. **Build MediaPipe & Dependencies**:  
+   ```bash
+   ./scripts/mediapipe_build_selfie_seg_gpu.sh
+   ```
+   This script clones MediaPipe from google-ai-edge and builds all dependencies.
+
+3. **Run SegmeCam**:  
    ```bash
    ./scripts/run_segmecam_gui_gpu.sh --face
    ```
-   This script handles Bazel builds and launches SegmeCam with face segmentation enabled.
+   This script launches SegmeCam with face segmentation enabled.
 
 ### Docker Build & Run
 
