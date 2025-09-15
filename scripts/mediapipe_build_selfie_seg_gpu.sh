@@ -30,8 +30,8 @@ fi
 # Restore SegmeCam files after cloning
 if [[ -d "$SEGMECAM_BACKUP_DIR/segmecam" ]]; then
   echo "Restoring SegmeCam source files..."
-  mkdir -p "$MP_DIR/mediapipe/examples/desktop"
-  cp -rf "$SEGMECAM_BACKUP_DIR/segmecam" "$MP_DIR/mediapipe/examples/desktop/"
+  mkdir -p "$MP_DIR/examples/desktop"
+  cp -rf "$SEGMECAM_BACKUP_DIR/segmecam" "$MP_DIR/examples/desktop/"
   rm -rf "$SEGMECAM_BACKUP_DIR"
   echo "Restored SegmeCam source files"
 fi

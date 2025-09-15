@@ -14,7 +14,7 @@ app
 segmecam_gui
 
 
-# Keep only our SegmeCam code in MediaPipe examples
+# Keep only our SegmeCam code in MediaPipe examples  
 mediapipe/*
 !mediapipe/examples/
 mediapipe/examples/*
