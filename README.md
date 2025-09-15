@@ -1,7 +1,7 @@
 # SegmeCam
 
 🎥 **SegmeCam** is an AI-powered Linux desktop webcam app that combines **Selfie Segmentation** and **Face Landmark Detection** for professional-grade real-time effects.  
-Built with **TensorFlow Lite** (TFLite), **SDL2**, **OpenGL 3.3**, and **Dear ImG- ถ้า没有权限: `sudo usermod -aG video $USER` を실행해주세요 (käyttöoikeudet puuttuu)i**, SegmeCam provides natural background blur, custom backgrounds, and precise beauty enhancements such as skin smoothing, makeup, and teeth whitening.
+Built with **TensorFlow Lite** (TFLite), **SDL2**, **OpenGL 3.3**, and **Dear ImGui**, SegmeCam provides natural background blur, custom backgrounds, and precise beauty enhancements such as skin smoothing, makeup, and teeth whitening.
 
 ---
 
