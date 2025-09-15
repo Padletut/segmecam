@@ -5,10 +5,7 @@ set -euo pipefail
 # Requires system deps (OpenGL/EGL, protobuf, etc.). This script uses Bazel.
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
-EXT_DIR="$ROOT_DIR/external"
-MP_DIR="$EXT_DIR/mediapipe"
-
-mkdir -p "$EXT_DIR"
+MP_DIR="$ROOT_DIR/mediapipe"
 
 if [[ ! -d "$MP_DIR/.git" ]]; then
   echo "Cloning MediaPipe from google-ai-edge..."
@@ -47,6 +44,28 @@ if [[ -f "$LOCAL_MODEL" ]]; then
   echo "Copied model to $MP_MODEL_PATH"
 else
   echo "Note: $LOCAL_MODEL not found; graphs will try to download or you can place it manually." >&2
+fi
+
+# Copy SegmeCam source files to MediaPipe examples directory
+SEGMECAM_SRC_DIR="$ROOT_DIR/src/segmecam_gui_gpu"
+MP_SEGMECAM_DIR="$MP_DIR/mediapipe/examples/desktop/segmecam"
+if [[ -d "$SEGMECAM_SRC_DIR" ]]; then
+  echo "Copying SegmeCam source files to MediaPipe examples..."
+  mkdir -p "$MP_SEGMECAM_DIR"
+  cp -rf "$SEGMECAM_SRC_DIR"/* "$MP_SEGMECAM_DIR/"
+  echo "Copied SegmeCam source to $MP_SEGMECAM_DIR"
+else
+  echo "Warning: SegmeCam source directory not found at $SEGMECAM_SRC_DIR" >&2
+fi
+
+# Copy SegmeCam graphs
+SEGMECAM_GRAPHS_DIR="$ROOT_DIR/mediapipe_graphs"
+MP_GRAPHS_DIR="$MP_DIR/mediapipe_graphs"
+if [[ -d "$SEGMECAM_GRAPHS_DIR" ]]; then
+  echo "Copying SegmeCam graph files..."
+  mkdir -p "$MP_GRAPHS_DIR"
+  cp -rf "$SEGMECAM_GRAPHS_DIR"/* "$MP_GRAPHS_DIR/"
+  echo "Copied SegmeCam graphs to $MP_GRAPHS_DIR"
 fi
 
 echo "Preparing Bazelisk (to honor .bazelversion)..."
