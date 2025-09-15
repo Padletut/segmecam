@@ -79,19 +79,11 @@ if [[ ! -x "$BAZELISK" ]]; then
   chmod +x "$BAZELISK"
 fi
 
-echo "Building selfie_segmentation GPU example with Bazelisk..."
-"$BAZELISK" build -c opt --define MEDIAPIPE_DISABLE_GPU=0 \
-  --action_env=PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
-  --repo_env=PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
-  --cxxopt=-I/usr/include/opencv4 \
-  mediapipe/examples/desktop/selfie_segmentation:selfie_segmentation_gpu
-
 echo "Building SegmeCam GUI GPU demo (CPU mask output)..."
 "$BAZELISK" build -c opt --define MEDIAPIPE_DISABLE_GPU=0 \
   --action_env=PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
   --repo_env=PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
   --cxxopt=-I/usr/include/opencv4 \
-  mediapipe/examples/desktop/segmecam:segmecam_gui_gpu
+  examples/desktop/segmecam:segmecam_gui_gpu
 
-echo "Built: bazel-bin/mediapipe/examples/desktop/selfie_segmentation/selfie_segmentation_gpu"
-echo "Built: bazel-bin/mediapipe/examples/desktop/segmecam/segmecam_gui_gpu"
+echo "Built: bazel-bin/examples/desktop/segmecam/segmecam_gui_gpu"
