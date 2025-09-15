@@ -1,7 +1,7 @@
 # SegmeCam
 
 🎥 **SegmeCam** is an AI-powered Linux desktop webcam app that combines **Selfie Segmentation** and **Face Landmark Detection** for professional-grade real-time effects.  
-Built with **TensorFlow Lite** (TFLite), **SDL2**, **OpenGL 3.3**, and **Dear ImGui**, SegmeCam provides natural background blur, custom backgrounds, and precise beauty enhancements such as skin smoothing, makeup, and teeth whitening.
+Built with **TensorFlow Lite** (TFLite), **SDL2**, **OpenGL 3.3**, and **Dear ImG- ถ้า没有权限: `sudo usermod -aG video $USER` を실행해주세요 (käyttöoikeudet puuttuu)i**, SegmeCam provides natural background blur, custom backgrounds, and precise beauty enhancements such as skin smoothing, makeup, and teeth whitening.
 
 ---
 
@@ -261,23 +261,23 @@ docker run --rm -it \
 SegmeCam is perfect and never breaks. If you're having problems, RTFM & STFU! 😤
 
 ### Just Kidding - Actual Help:
-**กล้อง不见了 (Camera Missing):**
-- チェック `/dev/video*` 장치가 존재하는지 확인하세요
+**กล้อง不见了 (Camera Missing / Kamera puuttuu):**
+- チェック `/dev/video*` 장치가 존재하는지 tarkista laitteet
 - ถ้า没有权限: `sudo usermod -aG video $USER` を実행해주세요
 
-**Docker X11 問題:**
-- คำสั่ง `xhost +local:docker` 를 먼저 실행하세요
-- もし画面が出ない場合: `echo $DISPLAY` をチェック
+**Docker X11 ongelma:**
+- คำสั่ง `xhost +local:docker` 를 먼저 실행하세요 ensin aja komento
+- もし画面が出ない경우: `echo $DISPLAY` をチェック (näyttö ei toimi ollenkaan)
 
-**FPS ต่ำ (低帧率):**
+**FPS ต่ำ (低帧率 / matala ruudunpäivitys):**
 - GPU 가속을 활성화하세요
 - カメラの解像度를 낮춰보세요 (例: 1280x720)
 
-**背景图片 찾을 수 없음:**
+**背景图片 찾을 수 없음 (taustakuva ei löydy):**
 - Docker: `-v /path/to/images:/backgrounds:ro` をマウント
 - Native: ไฟล์อยู่ใน `/home/$USER/Pictures` หรือไม่?
 
-**Performance 문제:**
+**Performance 문제 (suorituskykyongelma):**
 - CPU 사용량이 높으면: TensorFlow Lite 설정을 확인
 - メモリ不足: 4GB+ RAM が必要です
 - หากยังช้า: XNNPACK delegate 를 사용하세요
