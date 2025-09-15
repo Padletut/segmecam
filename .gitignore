@@ -65,7 +65,8 @@ mediapipe/tasks/
 mediapipe/util/
 mediapipe/modules/
 mediapipe/graphs/
-mediapipe/model_maker/
+mediapipe/model_maker/python/
+mediapipe/model_maker/models/
 mediapipe/web/
 mediapipe/examples/android/
 mediapipe/examples/coral/
