@@ -281,7 +281,7 @@ v4l2-ctl --list-devices
 SegmeCam builds on:
 
 - [TensorFlow Lite](https://ai.google.dev/edge/litert)
-- [MediaPipe Modles](https://ai.google.dev/edge/mediapipe/solutions/guide)
+- [MediaPipe Models](https://ai.google.dev/edge/mediapipe/solutions/guide)
 - [SDL2](https://www.libsdl.org/)
 - [Dear ImGui](https://github.com/ocornut/imgui)
 - [OpenGL](https://www.opengl.org/)
