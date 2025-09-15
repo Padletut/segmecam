@@ -1,0 +1,42 @@
+app-id: org.segmecam.SegmeCam
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+
+command: segmecam_gui_gpu
+
+finish-args:
+  - --socket=x11
+  - --share=ipc
+  - --device=dri
+  - --socket=pulseaudio
+  - --device=all
+  - --filesystem=xdg-pictures:ro
+  - --filesystem=home:ro
+
+modules:
+  - name: segmecam
+    buildsystem: simple
+    build-commands:
+      # Copy all required libraries from the host system
+      - mkdir -p /app/lib
+      - cp -P /usr/lib/x86_64-linux-gnu/libopencv_*.so.* /app/lib/ || echo "OpenCV libs not found, continuing..."
+      - cp -P /lib/x86_64-linux-gnu/libSDL2-2.0.so.0 /app/lib/ || echo "SDL2 lib not found, continuing..."
+      
+      # Install the binary
+      - install -Dm755 segmecam_gui_gpu /app/bin/segmecam_gui_gpu
+      
+      # Install desktop integration
+      - install -Dm644 org.segmecam.SegmeCam.desktop /app/share/applications/org.segmecam.SegmeCam.desktop
+      - install -Dm644 org.segmecam.SegmeCam.appdata.xml /app/share/metainfo/org.segmecam.SegmeCam.appdata.xml
+      - install -Dm644 SegmeCam.png /app/share/icons/hicolor/256x256/apps/org.segmecam.SegmeCam.png
+      
+    sources:
+      - type: file
+        path: bazel-bin/mediapipe/examples/desktop/segmecam/segmecam_gui_gpu
+      - type: file
+        path: org.segmecam.SegmeCam.desktop
+      - type: file
+        path: org.segmecam.SegmeCam.appdata.xml
+      - type: file
+        path: assets/SegmeCam.png

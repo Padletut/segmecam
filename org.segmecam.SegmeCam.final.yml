@@ -1,0 +1,70 @@
+app-id: org.segmecam.SegmeCam
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+
+command: segmecam-wrapper-nvidia.sh
+
+finish-args:
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --share=ipc
+  - --device=dri
+  - --device=shm
+  - --device=all
+  - --socket=pulseaudio
+  - --filesystem=xdg-pictures:ro
+  - --filesystem=home:ro
+  - --filesystem=/tmp
+  - --filesystem=host
+  - --share=network
+  - --env=LD_LIBRARY_PATH=/app/lib
+  - --env=DISPLAY=:0
+  - --env=MESA_GL_VERSION_OVERRIDE=3.3
+  - --env=MESA_GLSL_VERSION_OVERRIDE=330
+  - --env=QT_X11_NO_MITSHM=1
+  - --filesystem=/tmp/.X11-unix
+  - --share=network
+
+modules:
+  - name: segmecam
+    buildsystem: simple
+    build-commands:
+      # Create lib directory and install libraries
+      - mkdir -p /app/lib
+      - cp lib/* /app/lib/
+      
+      # Install the wrapper script
+      - install -Dm755 segmecam-wrapper-nvidia.sh /app/bin/segmecam-wrapper-nvidia.sh
+      
+      # Install the binary
+      - install -Dm755 segmecam_gui_gpu /app/bin/segmecam_gui_gpu
+      
+      # Install graph files
+      - mkdir -p /app/share/segmecam/mediapipe_graphs
+      - cp selfie_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
+      
+      # Create symlink for graphs in working directory
+      - ln -sf /app/share/segmecam/mediapipe_graphs /app/mediapipe_graphs
+      
+      # Install desktop integration
+      - install -Dm644 org.segmecam.SegmeCam.desktop /app/share/applications/org.segmecam.SegmeCam.desktop
+      - install -Dm644 org.segmecam.SegmeCam.appdata.xml /app/share/metainfo/org.segmecam.SegmeCam.appdata.xml
+      - install -Dm644 SegmeCam.png /app/share/icons/hicolor/256x256/apps/org.segmecam.SegmeCam.png
+      
+    sources:
+      - type: file
+        path: bazel-bin/mediapipe/examples/desktop/segmecam/segmecam_gui_gpu
+      - type: file
+        path: segmecam-wrapper-nvidia.sh
+      - type: file
+        path: org.segmecam.SegmeCam.desktop
+      - type: file
+        path: org.segmecam.SegmeCam.appdata.xml
+      - type: file
+        path: assets/SegmeCam.png
+      - type: dir
+        path: flatpak-bundle
+      - type: file
+        path: mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt
+        dest-filename: selfie_seg_gpu_mask_cpu.pbtxt

@@ -57,6 +57,7 @@ imgui.ini
 # AppImage and Flatpak packaging
 *.AppImage
 *.flatpak
+.flatpak-builder/
 
 # Model files and large assets (customize as needed)
 *.tflite

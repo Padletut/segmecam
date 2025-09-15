@@ -1,0 +1,16 @@
+[Desktop Entry]
+Name=SegmeCam
+Comment=AI-powered Linux webcam with beauty filters and background effects
+Comment[th]=แอปกล้องเว็บแคม Linux ที่ขับเคลื่อนด้วย AI พร้อมฟิลเตอร์ความงามและเอฟเฟกต์พื้นหลัง
+Comment[zh]=AI驱动的Linux网络摄像头，具有美颜滤镜和背景效果
+Comment[ja]=美容フィルターと背景効果を備えたAI駆動のLinuxウェブカメラ
+Comment[ko]=뷰티 필터와 배경 효과가 있는 AI 기반 Linux 웹캠
+Comment[fi]=AI-käyttöinen Linux-verkkokamera kauneussuodattimilla ja taustaefekteillä
+Exec=segmecam_gui_gpu
+Icon=org.segmecam.SegmeCam
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;Graphics;
+Keywords=camera;webcam;ai;beauty;filters;background;segmentation;
+StartupNotify=true
+MimeType=
