@@ -18,17 +18,17 @@ fi
 
 if [[ ! -d "$MP_DIR/.git" ]]; then
   echo "Cloning MediaPipe from google-ai-edge..."
-  # Remove existing directory if it exists but isn't a git repo
-  if [[ -d "$MP_DIR" ]]; then
-    rm -rf "$MP_DIR"
-  fi
   # Clone to temporary directory to avoid nested structure
   TEMP_MP_DIR="/tmp/mediapipe_clone_$$"
   git clone --depth 1 https://github.com/google-ai-edge/mediapipe.git "$TEMP_MP_DIR"
-  # Move contents to final location
-  mv "$TEMP_MP_DIR" "$MP_DIR"
+  # Copy MediaPipe contents to project root
+  echo "Copying MediaPipe contents to project root..."
+  cp -rf "$TEMP_MP_DIR"/* "$MP_DIR/"
+  cp -rf "$TEMP_MP_DIR"/.* "$MP_DIR/" 2>/dev/null || true  # Copy hidden files, ignore errors
+  rm -rf "$TEMP_MP_DIR"
+  echo "MediaPipe copied to project root"
 else
-  echo "MediaPipe already cloned at $MP_DIR"
+  echo "MediaPipe already exists at project root"
 fi
 
 # Restore SegmeCam files after cloning
