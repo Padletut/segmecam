@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Clone MediaPipe and build the selfie_segmentation GPU desktop example.
+# Clone MediaPipe from google-ai-edge and build the selfie_segmentation GPU desktop example.
 # Requires system deps (OpenGL/EGL, protobuf, etc.). This script uses Bazel.
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
@@ -11,8 +11,8 @@ MP_DIR="$EXT_DIR/mediapipe"
 mkdir -p "$EXT_DIR"
 
 if [[ ! -d "$MP_DIR/.git" ]]; then
-  echo "Cloning MediaPipe..."
-  git clone --depth 1 https://github.com/google/mediapipe.git "$MP_DIR"
+  echo "Cloning MediaPipe from google-ai-edge..."
+  git clone --depth 1 https://github.com/google-ai-edge/mediapipe.git "$MP_DIR"
 else
   echo "MediaPipe already cloned at $MP_DIR"
 fi

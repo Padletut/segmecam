@@ -25,10 +25,11 @@ while [[ $# -gt 0 ]]; do
     *) ARGS+=("$1"); shift ;;
   esac
 done
-MP_DIR="$ROOT_DIR"
+MP_DIR="$ROOT_DIR/external/mediapipe"
 
 if [[ ! -d "$MP_DIR/mediapipe" ]]; then
   echo "MediaPipe repo not found at $MP_DIR" >&2
+  echo "Run scripts/mediapipe_build_selfie_seg_gpu.sh first to clone and build MediaPipe" >&2
   exit 1
 fi
 

@@ -1,4 +1,5 @@
 # SegmeCam .gitignore
+
 # Bazel build outputs
 bazel-*
 /.bazelignore
@@ -11,6 +12,29 @@ bazel-*
 *.out
 app
 segmecam_gui
+
+# External dependencies (fetched by build scripts)
+external/
+mediapipe/
+
+# Third-party prebuilt binaries
+third_party/prebuilts/
+
+# MediaPipe build files (when cloned to root)
+.bazelisk
+CONTRIBUTING.md
+Dockerfile.manylinux*
+MANIFEST.in
+build_*.sh
+find_models.sh
+run_llm_inference.sh
+setup_*.sh
+platform_mappings
+package.json
+setup.py
+tsconfig.json
+yarn.lock
+docs/
 
 # Editor/IDE files
 .vscode/
@@ -42,6 +66,13 @@ models/
 __pycache__/
 *.pyc
 
+# Build artifacts
+build/
+dist/
+
+# Cache directories
+.cache/
+
 # Misc
 *.bak
 *.tmp
@@ -50,120 +81,7 @@ __pycache__/
 *_old.cpp
 *_backup.*
 
-# Vendor/externals (fetched by scripts) - NOW AT ROOT LEVEL
-# Bazel build artifacts
-bazel-*
-
-# MediaPipe framework - ignore the bulk of it, keep only our custom code
-mediapipe/calculators/
-mediapipe/framework/
-mediapipe/gpu/
-mediapipe/java/
-mediapipe/objc/
-mediapipe/python/
-# Exclude most tasks except the vision components we need for SegmeCam
-mediapipe/tasks/*
-!mediapipe/tasks/cc/
-mediapipe/tasks/cc/*
-!mediapipe/tasks/cc/vision/
-mediapipe/tasks/cc/vision/*
-!mediapipe/tasks/cc/vision/face_landmarker/
-!mediapipe/tasks/cc/vision/face_detector/
-mediapipe/util/
-# Exclude most modules except the ones we need for SegmeCam
-mediapipe/modules/*
-!mediapipe/modules/selfie_segmentation/
-!mediapipe/modules/face_landmark/
-!mediapipe/modules/face_detection/
-# Exclude most graphs except the ones we need for SegmeCam  
-mediapipe/graphs/*
-!mediapipe/graphs/selfie_segmentation/
-!mediapipe/graphs/face_mesh/
-mediapipe/model_maker/python/
-mediapipe/model_maker/models/
-mediapipe/web/
-mediapipe/examples/android/
-mediapipe/examples/coral/
-mediapipe/examples/ios/
-mediapipe/examples/desktop/autoflip/
-mediapipe/examples/desktop/face_detection/
-mediapipe/examples/desktop/face_mesh/
-mediapipe/examples/desktop/hair_segmentation/
-mediapipe/examples/desktop/hand_tracking/
-mediapipe/examples/desktop/hello_world/
-mediapipe/examples/desktop/holistic_tracking/
-mediapipe/examples/desktop/iris_tracking/
-mediapipe/examples/desktop/media_sequence/
-mediapipe/examples/desktop/object_detection/
-mediapipe/examples/desktop/object_detection_3d/
-mediapipe/examples/desktop/object_tracking/
-mediapipe/examples/desktop/pose_tracking/
-mediapipe/examples/desktop/selfie_segmentation/
-mediapipe/examples/desktop/template_matching/
-mediapipe/examples/desktop/youtube8m/
-mediapipe/examples/desktop/*.cc
-mediapipe/examples/desktop/*.py
-mediapipe/examples/desktop/BUILD
-mediapipe/examples/desktop/README.md
-mediapipe/examples/desktop/__init__.py
-# MediaPipe infrastructure files
-mediapipe/BUILD
-mediapipe/*.bzl
-mediapipe/*.tulsiproj/
-mediapipe/__init__.py
-mediapipe/examples/__init__.py
-CONTRIBUTING.md
-Dockerfile.manylinux*
-.bazelisk
-# Keep our custom segmecam code: mediapipe/examples/desktop/segmecam/
-
-# External dependencies and cache
-external/
-.cache/
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Build artifacts
-build/
-dist/
-*.o
-*.so
-*.a
-
-# System files
-.DS_Store
-Thumbs.db
-
-# Documentation (can be regenerated)
-docs/
-mediapipe/docs/
-
-# MediaPipe specific files
-build_android_examples.sh
-build_desktop_examples.sh
-build_ios_examples.sh
-find_models.sh
-run_llm_inference.sh
-setup_android_sdk_and_ndk.sh
-setup_opencv.sh
-platform_mappings
-package.json
-yarn.lock
-tsconfig.json
-MANIFEST.in
-setup.py
-
-# External dependency libs (large binaries)
-external/imgui/
-third_party/tflite_c/lib/
-third_party/npm/
-third_party/prebuilts/
-
-# Old files
+# Old/temporary files
 app-old-just-example.cc
 make_appimage.sh
 notes.txt
