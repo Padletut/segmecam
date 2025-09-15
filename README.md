@@ -315,7 +315,7 @@ v4l2-ctl --list-devices
 
 ---
 
-## �🙏 Credits
+## 🙏 Credits
 
 SegmeCam builds on:
 
