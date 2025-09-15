@@ -63,8 +63,15 @@ mediapipe/objc/
 mediapipe/python/
 mediapipe/tasks/
 mediapipe/util/
-mediapipe/modules/
-mediapipe/graphs/
+# Exclude most modules except the ones we need for SegmeCam
+mediapipe/modules/*
+!mediapipe/modules/selfie_segmentation/
+!mediapipe/modules/face_landmark/
+!mediapipe/modules/face_detection/
+# Exclude most graphs except the ones we need for SegmeCam  
+mediapipe/graphs/*
+!mediapipe/graphs/selfie_segmentation/
+!mediapipe/graphs/face_mesh/
 mediapipe/model_maker/python/
 mediapipe/model_maker/models/
 mediapipe/web/
