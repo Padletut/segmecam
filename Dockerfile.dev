@@ -12,8 +12,7 @@ RUN curl -L https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/baz
 WORKDIR /app
 COPY . /app
 
-# Ensure MP example path exists
-RUN rm -rf /app/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu &&     mkdir -p /app/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu &&     cp -rf /app/src/segmecam_gui_gpu/. /app/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu/
+# Source code is now at /app/mediapipe/examples/desktop/segmecam/ - no copying needed
 
-# Default command only runs the app (no compile at runtime). Build in Dockerfile step or via `docker compose build`.
-ENTRYPOINT ["/bin/bash", "-lc", "bazel build -c opt --cxxopt=-I/usr/include/opencv4 mediapipe/examples/desktop/segmecam_gui_gpu:segmecam_gui_gpu && /app/external/mediapipe/bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu /app/mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt /app/external/mediapipe/bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu.runfiles 0"]
+# Default command builds and runs the app using new MediaPipe workspace structure
+ENTRYPOINT ["/bin/bash", "-lc", "bazel build -c opt --cxxopt=-I/usr/include/opencv4 //mediapipe/examples/desktop/segmecam:segmecam_gui_gpu && ./bazel-bin/mediapipe/examples/desktop/segmecam/segmecam_gui_gpu /app/mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt ./bazel-bin/mediapipe/examples/desktop/segmecam/segmecam_gui_gpu.runfiles 0"]

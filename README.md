@@ -1,7 +1,5 @@
 # SegmeCam
 
-This will create a fresh image named `segmecam:latest` for use with the run commands below.
-
 🎥 **SegmeCam** is an AI-powered Linux desktop webcam app that combines **Selfie Segmentation** and **Face Landmark Detection** for professional-grade real-time effects.  
 Built with **TensorFlow Lite** (TFLite), **SDL2**, **OpenGL 3.3**, and **Dear ImGui**, SegmeCam provides natural background blur, custom backgrounds, and precise beauty enhancements such as skin smoothing, makeup, and teeth whitening.
 
@@ -40,6 +38,87 @@ Here’s how it compares:
 
 ---
 
+## 📋 Prerequisites
+
+### System Requirements
+- **Linux Distribution**: Ubuntu 24.04+, Fedora 40+, Arch Linux (latest)
+- **GLIBC**: 2.38+ required
+- **GPU**: NVIDIA (CUDA 12.9+) or Intel/AMD (Mesa drivers)
+- **Memory**: 4GB+ RAM recommended
+
+### Dependencies
+```bash
+# Ubuntu/Debian
+sudo apt update && sudo apt install -y \
+    ca-certificates curl git git-lfs build-essential \
+    python3 python3-pip \
+    pkg-config cmake ninja-build \
+    v4l2loopback-dkms \
+    libopencv-dev ffmpeg \
+    libsdl2-dev libgl1-mesa-dev libv4l-dev \
+    libx11-dev libxext-dev libxrandr-dev libxi-dev \
+    libxinerama-dev libxcursor-dev libxfixes-dev \
+    libgtk-3-0 libglib2.0-0 \
+    zlib1g-dev libzstd-dev liblzma-dev libxxhash-dev \
+    rsync
+
+# Fedora
+sudo dnf install -y \
+    ca-certificates curl git git-lfs \
+    gcc gcc-c++ make python3 python3-pip \
+    pkg-config cmake ninja-build \
+    v4l2loopback \
+    opencv-devel ffmpeg-devel \
+    SDL2-devel mesa-libGL-devel libv4l-devel \
+    libX11-devel libXext-devel libXrandr-devel libXi-devel \
+    libXinerama-devel libXcursor-devel libXfixes-devel \
+    gtk3-devel glib2-devel \
+    zlib-devel libzstd-devel xz-devel xxhash-devel \
+    rsync
+
+# Arch Linux
+sudo pacman -S \
+    ca-certificates curl git git-lfs base-devel \
+    python python-pip \
+    pkg-config cmake ninja \
+    v4l2loopback-dkms \
+    opencv ffmpeg \
+    sdl2 mesa libv4l \
+    libx11 libxext libxrandr libxi \
+    libxinerama libxcursor libxfixes \
+    gtk3 glib2 \
+    zlib zstd xz xxhash \
+    rsync
+```
+
+### Docker Setup (Optional)
+If using Docker, install Docker and add your user to the docker group:
+```bash
+# Install Docker (Ubuntu/Debian)
+sudo apt install -y docker.io docker-compose
+
+# Add user to docker group (avoid sudo)
+sudo usermod -aG docker $USER
+newgrp docker  # Reload group membership
+
+# For NVIDIA GPU support
+sudo apt install -y nvidia-docker2
+sudo systemctl restart docker
+```
+
+### Bazel Installation (Required for Native Build)
+```bash
+# Install Bazelisk (recommended - automatically manages Bazel versions)
+curl -L https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-linux-amd64 -o bazelisk
+chmod +x bazelisk
+sudo mv bazelisk /usr/local/bin/bazel
+
+# Verify installation
+bazel version
+```
+
+---
+
 ## 🛠️ Tech Stack
 - **Core AI**: MediaPipe Selfie Segmentation + Face Landmarker (TFLite)
 - **Build System**: Bazel (TFLite, dependencies) + C++ project build
@@ -65,70 +144,84 @@ Here’s how it compares:
 ---
 
 ## 🚀 Quick Start
+
+### Native Build (Recommended)
 1. **Clone repo**:  
    ```bash
    git clone https://github.com/Padletut/SegmeCam.git
    cd SegmeCam
    ```
-2. **Build & Run (Recommended)**:  
+
+2. **Build & Run**:  
    ```bash
    ./scripts/run_segmecam_gui_gpu.sh --face
    ```
-   This script handles Bazel builds and launches the SegmeCam GUI with face segmentation enabled.
+   This script handles Bazel builds and launches SegmeCam with face segmentation enabled.
 
-> ⚠️ Requires GLIBC 2.38+ (Ubuntu 24.04+, Fedora 40+, Arch latest).  
-> Install `v4l2loopback-dkms` for virtual webcam output.
+### Docker Build & Run
 
-## Building the Docker Image
-## Docker Permissions: Using the docker Group
-
-To run Docker commands without sudo, add your user to the docker group:
-
+#### Build Docker Image
 ```bash
-sudo usermod -aG docker $USER
+# Development image (faster rebuilds)
+docker build -f Dockerfile.dev -t segmecam:dev .
+
+# Production image (optimized)
+docker build -f Dockerfile.prod -t segmecam:prod .
 ```
 
-After running this command, log out and log back in, or run:
+#### Run with Docker
 
+**NVIDIA GPU:**
 ```bash
-newgrp docker
+# Allow X11 access for Docker container
+xhost +local:docker
+
+docker run --rm -it --gpus all \
+  --device /dev/video0:/dev/video0 \
+  --device /dev/video2:/dev/video2 \
+  -e DISPLAY=$DISPLAY \
+  -e QT_X11_NO_MITSHM=1 \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+  -v segmecam_profiles:/root/.config/segmecam \
+  segmecam:prod
+
+# Restore X11 security after use (optional)
+# xhost -local:docker
+
+# To use custom background images, mount your images directory:
+xhost +local:docker
+docker run --rm -it --gpus all \
+  --device /dev/video0:/dev/video0 \
+  --device /dev/video2:/dev/video2 \
+  -e DISPLAY=$DISPLAY \
+  -e QT_X11_NO_MITSHM=1 \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+  -v segmecam_profiles:/root/.config/segmecam \
+  -v ~/Pictures:/backgrounds:ro \
+  segmecam:prod
 ```
 
-This reloads your group membership so you can use Docker without sudo.
-
-To build the SegmeCam Docker image, run the following command in the project root (where the Dockerfile is located):
-
+**Intel/AMD GPU:**
 ```bash
-docker compose build
+# Allow X11 access for Docker container
+xhost +local:docker
+
+docker run --rm -it \
+  --device /dev/video0:/dev/video0 \
+  --device /dev/video2:/dev/video2 \
+  --device /dev/dri:/dev/dri \
+  -e DISPLAY=$DISPLAY \
+  -e QT_X11_NO_MITSHM=1 \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+  -v segmecam_profiles:/root/.config/segmecam \
+  segmecam:prod
 ```
 
-## Running SegmeCam in Docker with GPU Support
+> **Docker Limitations**: 
+> - **Custom background images**: Docker container cannot access host files by default. To use custom backgrounds, mount your images directory: `-v /path/to/your/images:/images:ro`
+> - **File picker**: Will only show files inside the container. Consider using the native build for full file system access.
 
-### NVIDIA GPU (nvidia-docker2 required)
-```bash
-   docker run --rm -it --gpus all \
-   --device /dev/video0:/dev/video0 \
-   --device /dev/video1:/dev/video1 \
-   -e DISPLAY=$DISPLAY \
-   -v /tmp/.X11-unix:/tmp/.X11-unix \
-   -v "$(pwd)":/workspace \
-   segmecam:latest
-```
-
-### Intel/AMD GPU (Mesa, DRI)
-```bash
-   docker run --rm -it \
-   --device /dev/video0:/dev/video0 \
-   --device /dev/video1:/dev/video1 \
-   --device /dev/dri:/dev/dri \
-   -e DISPLAY=$DISPLAY \
-   -v /tmp/.X11-unix:/tmp/.X11-unix \
-   -v "$(pwd)":/workspace \
-   segmecam:latest
-```
-
-> For NVIDIA, install [nvidia-docker2](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) and ensure host drivers are up to date.
-> For Intel/AMD, ensure Mesa and DRI devices are available on the host.
+> **Note**: Ensure virtual webcam is set up: `sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="SegmeCam"`
 
 ---
 
@@ -140,7 +233,28 @@ docker compose build
 
 ---
 
-## 🙏 Credits
+## � Troubleshooting
+
+### Virtual Webcam Setup
+```bash
+# Load v4l2loopback module
+sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="SegmeCam"
+
+# Verify virtual camera
+v4l2-ctl --list-devices
+```
+
+### Common Issues
+- **"Camera not found"**: Check `/dev/video*` devices exist
+- **"Permission denied"**: Add user to `video` group: `sudo usermod -aG video $USER`
+- **Docker X11 issues**: Run `xhost +local:docker` before docker run
+- **Low FPS**: Enable GPU acceleration and check camera supports desired resolution/FPS
+- **Custom backgrounds in Docker**: Mount host directory with `-v /path/to/images:/backgrounds:ro` and access files via `/backgrounds/` in the container
+- **File picker shows empty in Docker**: Container can only see mounted volumes, not host filesystem
+
+---
+
+## �🙏 Credits
 
 SegmeCam builds on:
 
@@ -153,9 +267,3 @@ SegmeCam builds on:
 ## 📜 License
 
 SegmeCam is licensed under the Apache-2.0 License.
-
-docker run --rm -it --gpus all   -e DISPLAY=$DISPLAY -e QT_X11_NO_MITSHM=1 -e XDG_RUNTIME_DIR=/tmp/xdg   -v /tmp/.X11-unix:/tmp/.X11-unix:ro   -v segmecam_profiles:/root/.config/segmecam   --device /dev/dri:/dev/dri --device /dev/video0:/dev/video0 --device /dev/video2:/dev/video2   --entrypoint /opt/segmecam/bin/SegmeCam   segmecam:prod   /opt/segmecam/graphs/face_and_seg_gpu_mask_cpu.pbtxt   /opt/segmecam/runfiles/mediapipe   0
-
-# To run the app directly after it has compiled with run_segmecam_gui_gpu.sh
-
-external/mediapipe$ bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu $HOME/segmecam/mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu $HOME/segmecam/bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu.runfiles 0

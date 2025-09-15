@@ -113,10 +113,18 @@ int main(int argc, char** argv) {
   auto open_capture = [&](int idx, int w, int h){
     cv::VideoCapture c(idx, cv::CAP_V4L2);
     if (c.isOpened() && w>0 && h>0) {
+      std::cout << "Opening camera " << idx << " with resolution: " << w << "x" << h << std::endl;
       c.set(cv::CAP_PROP_FRAME_WIDTH, w);
       c.set(cv::CAP_PROP_FRAME_HEIGHT, h);
       c.set(cv::CAP_PROP_FRAME_WIDTH, w);
       c.set(cv::CAP_PROP_FRAME_HEIGHT, h);
+      
+      // Verify what was actually set
+      double actual_w = c.get(cv::CAP_PROP_FRAME_WIDTH);
+      double actual_h = c.get(cv::CAP_PROP_FRAME_HEIGHT);
+      double actual_fps = c.get(cv::CAP_PROP_FPS);
+      std::cout << "Camera opened with: " << (int)actual_w << "x" << (int)actual_h 
+                << " @ " << actual_fps << " FPS" << std::endl;
     }
     return c;
   };
@@ -170,7 +178,28 @@ int main(int argc, char** argv) {
   std::string current_cam_path = (!cam_list.empty()?cam_list[ui_cam_idx].path:std::string());
   if (!current_cam_path.empty() && init_w>0 && init_h>0) {
     ui_fps_opts = EnumerateFPS(current_cam_path, init_w, init_h);
-    if (!ui_fps_opts.empty()) ui_fps_idx = (int)ui_fps_opts.size()-1;
+    if (!ui_fps_opts.empty()) {
+      ui_fps_idx = (int)ui_fps_opts.size()-1;
+      
+      // Show available FPS options
+      std::cout << "Available FPS options for " << init_w << "x" << init_h << ": ";
+      for (size_t i = 0; i < ui_fps_opts.size(); ++i) {
+        if (i > 0) std::cout << ", ";
+        std::cout << ui_fps_opts[i];
+      }
+      std::cout << " (selected: " << ui_fps_opts[ui_fps_idx] << ")" << std::endl;
+      
+      // Apply initial FPS setting
+      if (cap.isOpened()) {
+        double initial_fps = (double)ui_fps_opts[ui_fps_idx];
+        std::cout << "Setting initial camera FPS to: " << initial_fps << std::endl;
+        cap.set(cv::CAP_PROP_FPS, initial_fps);
+        
+        // Verify what was actually set
+        double actual_fps = cap.get(cv::CAP_PROP_FPS);
+        std::cout << "Camera initial actual FPS: " << actual_fps << std::endl;
+      }
+    }
   }
   // Camera control ranges
   CtrlRange r_brightness, r_contrast, r_saturation, r_gain, r_sharpness, r_zoom, r_focus;
@@ -422,7 +451,19 @@ int main(int argc, char** argv) {
         cap = open_capture(new_idx, wh.first, wh.second);
         if (!cap.isOpened()) cap.open(new_idx);
         if (!ui_fps_opts.empty()) {
-          double fpsv = (double)ui_fps_opts[ui_fps_idx]; cap.set(cv::CAP_PROP_FPS, fpsv);
+          double fpsv = (double)ui_fps_opts[ui_fps_idx]; 
+          std::cout << "Available FPS options: ";
+          for (size_t i = 0; i < ui_fps_opts.size(); ++i) {
+            if (i > 0) std::cout << ", ";
+            std::cout << ui_fps_opts[i];
+          }
+          std::cout << " (selected: " << (int)fpsv << ")" << std::endl;
+          std::cout << "Setting camera FPS to: " << fpsv << std::endl;
+          cap.set(cv::CAP_PROP_FPS, fpsv);
+          
+          // Verify what was actually set
+          double actual_fps = cap.get(cv::CAP_PROP_FPS);
+          std::cout << "Camera actual FPS: " << actual_fps << std::endl;
         }
         refresh_ctrls();
         apply_default_ctrls();
@@ -1000,7 +1041,12 @@ int main(int argc, char** argv) {
             current_cam_path = cam_list[ui_cam_idx].path;
             if (!ui_fps_opts.empty()) {
               double fps = (double)ui_fps_opts[ui_fps_idx];
+              std::cout << "Setting camera FPS to: " << fps << std::endl;
               cap.set(cv::CAP_PROP_FPS, fps);
+              
+              // Verify what was actually set
+              double actual_fps = cap.get(cv::CAP_PROP_FPS);
+              std::cout << "Camera actual FPS: " << actual_fps << std::endl;
             }
             refresh_ctrls();
             apply_default_ctrls();
