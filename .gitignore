@@ -61,7 +61,14 @@ mediapipe/gpu/
 mediapipe/java/
 mediapipe/objc/
 mediapipe/python/
-mediapipe/tasks/
+# Exclude most tasks except the vision components we need for SegmeCam
+mediapipe/tasks/*
+!mediapipe/tasks/cc/
+mediapipe/tasks/cc/*
+!mediapipe/tasks/cc/vision/
+mediapipe/tasks/cc/vision/*
+!mediapipe/tasks/cc/vision/face_landmarker/
+!mediapipe/tasks/cc/vision/face_detector/
 mediapipe/util/
 # Exclude most modules except the ones we need for SegmeCam
 mediapipe/modules/*
