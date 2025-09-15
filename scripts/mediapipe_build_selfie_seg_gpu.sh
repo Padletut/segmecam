@@ -22,7 +22,11 @@ if [[ ! -d "$MP_DIR/.git" ]]; then
   if [[ -d "$MP_DIR" ]]; then
     rm -rf "$MP_DIR"
   fi
-  git clone --depth 1 https://github.com/google-ai-edge/mediapipe.git "$MP_DIR"
+  # Clone to temporary directory to avoid nested structure
+  TEMP_MP_DIR="/tmp/mediapipe_clone_$$"
+  git clone --depth 1 https://github.com/google-ai-edge/mediapipe.git "$TEMP_MP_DIR"
+  # Move contents to final location
+  mv "$TEMP_MP_DIR" "$MP_DIR"
 else
   echo "MediaPipe already cloned at $MP_DIR"
 fi
@@ -30,8 +34,8 @@ fi
 # Restore SegmeCam files after cloning
 if [[ -d "$SEGMECAM_BACKUP_DIR/segmecam" ]]; then
   echo "Restoring SegmeCam source files..."
-  mkdir -p "$ROOT_DIR/examples/desktop"
-  cp -rf "$SEGMECAM_BACKUP_DIR/segmecam" "$ROOT_DIR/examples/desktop/"
+  mkdir -p "$MP_DIR/examples/desktop"
+  cp -rf "$SEGMECAM_BACKUP_DIR/segmecam" "$MP_DIR/examples/desktop/"
   rm -rf "$SEGMECAM_BACKUP_DIR"
   echo "Restored SegmeCam source files"
 fi
