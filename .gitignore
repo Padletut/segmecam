@@ -56,7 +56,10 @@ imgui.ini
 
 # AppImage and Flatpak packaging
 *.AppImage
-*.flatpak
+*.flatpak*
+/flatpak*
+/repo
+/runfiles
 
 # Model files and large assets (customize as needed)
 *.tflite
@@ -92,3 +95,12 @@ dist/
 app-old-just-example.cc
 make_appimage.sh
 notes.txt
+build-flatpak-local.sh
+build-flatpak-working.sh
+ldd-copy-all.sh
+org.segmecam.SegmeCam.Sandboxed.appdata.xml
+org.segmecam.SegmeCam.Sandboxed.desktop
+org.segmecam.SegmeCam.sandboxed.yml
+segmecam_gui_gpu
+segmecam-wrapper-nvidia.sh.backup
+segmecam-wrapper-software-fallback.sh
