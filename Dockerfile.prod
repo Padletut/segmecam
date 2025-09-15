@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1.7-labs
 # ===== SegmeCam (face+seg) — production image =====
-# Bygger én gang med Bazel, pakker med runfiles + eksakte .so-avhengigheter.
-# Runtime er slank og stabil (ingen OpenCV-ABI-mismatch).
+# Builds once with Bazel, packages with runfiles + exact .so dependencies.
+# Runtime is lean and stable (no OpenCV ABI mismatch).
 
 # ---------- Builder ----------
 FROM nvidia/cuda:12.9.0-devel-ubuntu24.04 AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-lc"]
 
-# Base deps for bygging (dev-headere, OpenCV dev etc.)
+# Base deps for building (dev headers, OpenCV dev etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl git git-lfs build-essential \
     python3 python3-pip \
@@ -21,71 +21,63 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rsync \
  && rm -rf /var/lib/apt/lists/*
 
-# Bazelisk (matcher Bazel til MediaPipe)
+# Bazelisk (matches Bazel to MediaPipe)
 RUN curl -L https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-linux-amd64 -o /usr/local/bin/bazel \
  && chmod +x /usr/local/bin/bazel
 
 WORKDIR /app
 
-# Ta med hele repoet (sørg for en fornuftig .dockerignore i prosjektet)
+# Copy the entire repo (ensure a reasonable .dockerignore in the project)
 COPY . /app/
 
-# Legg koden under mediapipe/examples/desktop som forventet av BUILD-targetet ditt
-RUN rm -rf /app/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu && \
-    mkdir -p /app/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu && \
-    cp -a /app/src/segmecam_gui_gpu/. /app/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu/
+# Source code is now at /app/mediapipe/examples/desktop/segmecam/ - no copying needed
 
-# Sikre at BUILD finnes
-RUN test -f /app/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu/BUILD || \
-    (echo "ERROR: Missing BUILD in segmecam_gui_gpu"; ls -la /app/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu; exit 1)
+# Ensure BUILD exists
+RUN test -f /app/mediapipe/examples/desktop/segmecam/BUILD || \
+    (echo "ERROR: Missing BUILD in segmecam"; ls -la /app/mediapipe/examples/desktop/segmecam; exit 1)
 
-# Hent LFS-blobs i submodule (hvis brukt)
-RUN git -C /app/external/mediapipe lfs install || true && git -C /app/external/mediapipe lfs pull || true
+# Fetch LFS blobs in MediaPipe (if used)
+RUN git -C /app/mediapipe lfs install || true && git -C /app/mediapipe lfs pull || true
 
-# Fjern eventuell gammel custom toolchain (Bazel 7/8) og ukjent CPU-flag
-RUN awk 'BEGIN{skip=0} /cc_toolchain\(/ && /name *= *"linux_x86_64_toolchain"/ {skip=1} skip && /^\)/ {skip=0; next} skip {next} {print}' \
-  /app/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu/BUILD \
-  | awk 'BEGIN{skip=0} /toolchain\(/ && /name *= *"cc_toolchain_for_linux_x86_64"/ {skip=1} skip && /^\)/ {skip=0; next} skip {next} {print}' \
-  > /tmp/BUILD.patched && mv /tmp/BUILD.patched /app/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu/BUILD && \
-  sed -i 's/-mno-vpdpbssd//g' /app/external/mediapipe/mediapipe/examples/desktop/segmecam_gui_gpu/BUILD || true
+# No need to patch BUILD file - using new structure
 
-# Bygg og kopier artefakter i EN RUN (cache-mount for Bazel)
-WORKDIR /app/external/mediapipe
+# Build and copy artifacts in ONE RUN (cache-mount for Bazel)
+WORKDIR /app/mediapipe
 RUN --mount=type=cache,target=/root/.cache/bazel bash -lc '\
   set -euo pipefail && \
-  # Bygg
+  # Build
   bazel build -c opt --cxxopt=-I/usr/include/opencv4 \
-    //mediapipe/examples/desktop/segmecam_gui_gpu:segmecam_gui_gpu && \
-  # Finn binær og runfiles
+    //mediapipe/examples/desktop/segmecam:segmecam_gui_gpu && \
+  # Find binary and runfiles
   ROOT="$(bazel info execution_root)" && \
-  REL="$(bazel cquery --compilation_mode=opt --output=files //mediapipe/examples/desktop/segmecam_gui_gpu:segmecam_gui_gpu | head -n1)" && \
+  REL="$(bazel cquery --compilation_mode=opt --output=files //mediapipe/examples/desktop/segmecam:segmecam_gui_gpu | head -n1)" && \
   BIN="${ROOT}/${REL}" && \
   RF_DIR="${BIN}.runfiles" && \
   echo "BIN=$BIN" && echo "RF_DIR=$RF_DIR" && \
   test -f "$BIN" && test -d "$RF_DIR" && \
-  # Opprett målmapper
-  install -d /opt/segmecam/bin /opt/segmecam/runfiles/mediapipe /opt/segmecam/graphs /opt/segmecam/scripts && \
-  # Kopiér binær
+  # Create target directories
+  install -d /opt/segmecam/bin /opt/segmecam/runfiles /opt/segmecam/graphs /opt/segmecam/scripts && \
+  # Copy binary
   cp -f "$BIN" /opt/segmecam/bin/SegmeCam && \
-  # Flat ut runfiles: kopier INNHOLDET av ${RF_DIR}/mediapipe til /opt/segmecam/runfiles/mediapipe
-  cp -aL "${RF_DIR}/mediapipe/." /opt/segmecam/runfiles/mediapipe/ && \
+  # Flatten runfiles: copy CONTENTS of ${RF_DIR}/mediapipe to /opt/segmecam/runfiles directly
+  cp -aL "${RF_DIR}/mediapipe/." /opt/segmecam/runfiles/ && \
   echo "Sanity: list tflite under /opt/segmecam/runfiles/mediapipe/modules" && \
-  find /opt/segmecam/runfiles/mediapipe/mediapipe/modules -maxdepth 2 -type f -name "*.tflite" | sed -n "1,120p" && \
-  # Må finnes som ekte filer (ikke symlinks)
-  test -f /opt/segmecam/runfiles/mediapipe/mediapipe/modules/selfie_segmentation/selfie_segmentation.tflite && \
-  test -f /opt/segmecam/runfiles/mediapipe/mediapipe/modules/face_landmark/face_landmark_with_attention.tflite && \
-  test -f /opt/segmecam/runfiles/mediapipe/mediapipe/modules/face_detection/face_detection_short_range.tflite && \
-  test ! -L /opt/segmecam/runfiles/mediapipe/mediapipe/modules/selfie_segmentation/selfie_segmentation.tflite && \
-  test ! -L /opt/segmecam/runfiles/mediapipe/mediapipe/modules/face_landmark/face_landmark_with_attention.tflite && \
-  test ! -L /opt/segmecam/runfiles/mediapipe/mediapipe/modules/face_detection/face_detection_short_range.tflite \
+  find /opt/segmecam/runfiles/mediapipe/modules -maxdepth 2 -type f -name "*.tflite" | sed -n "1,120p" && \
+  # Must exist as real files (not symlinks)
+  test -f /opt/segmecam/runfiles/mediapipe/modules/selfie_segmentation/selfie_segmentation.tflite && \
+  test -f /opt/segmecam/runfiles/mediapipe/modules/face_landmark/face_landmark_with_attention.tflite && \
+  test -f /opt/segmecam/runfiles/mediapipe/modules/face_detection/face_detection_short_range.tflite && \
+  test ! -L /opt/segmecam/runfiles/mediapipe/modules/selfie_segmentation/selfie_segmentation.tflite && \
+  test ! -L /opt/segmecam/runfiles/mediapipe/modules/face_landmark/face_landmark_with_attention.tflite && \
+  test ! -L /opt/segmecam/runfiles/mediapipe/modules/face_detection/face_detection_short_range.tflite \
 '
 
-# Kopiér grafer + skript fra prosjektrota
+# Copy graphs + scripts from project root
 WORKDIR /app
 RUN cp -a /app/mediapipe_graphs/*.pbtxt /opt/segmecam/graphs/ && \
     cp -a /app/scripts/. /opt/segmecam/scripts/
 
-# Pakk med eksakte .so-avhengigheter som binæren linker mot (unngå ABI-mismatch i runtime)
+# Package with exact .so dependencies that the binary links against (avoid ABI mismatch in runtime)
 RUN mkdir -p /opt/segmecam/lib && \
     DEPS="$(ldd /opt/segmecam/bin/SegmeCam | awk '/=> \//{print $3}')" && \
     echo "Copying deps:" && echo "$DEPS" && \
@@ -97,7 +89,7 @@ FROM nvidia/cuda:12.9.0-runtime-ubuntu24.04 AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-lc"]
 
-# Kun runtime-avhengigheter (IKKE opencv her → vi bruker medpakkede .so fra builder)
+# Only runtime dependencies (NO opencv here → we use packaged .so from builder)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libgl1 \
@@ -110,15 +102,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgtk-3-0 libglib2.0-0 \
  && rm -rf /var/lib/apt/lists/*
 
-# Kopiér alt fra builder
+# Copy everything from builder
 COPY --from=builder /opt/segmecam /opt/segmecam
 
-# Søkestier: bruk medpakkede libs før systemets
+# Search paths: use packaged libs before system's
 ENV LD_LIBRARY_PATH="/opt/segmecam/lib/lib/x86_64-linux-gnu:/opt/segmecam/lib/usr/lib/x86_64-linux-gnu:/opt/segmecam/lib/lib:/opt/segmecam/lib/usr/lib:/opt/segmecam/lib:${LD_LIBRARY_PATH}"
 ENV QT_X11_NO_MITSHM=1 XDG_RUNTIME_DIR=/tmp/xdg __GLX_VENDOR_LIBRARY_NAME=nvidia
 
 WORKDIR /opt/segmecam
 
-# Gjør startskriptet ditt til ENTRYPOINT (du har lagt det i ./scripts i repoet)
+# Make your startup script the ENTRYPOINT (you've placed it in ./scripts in the repo)
 RUN chmod +x /opt/segmecam/scripts/SegmeCam.sh
 ENTRYPOINT ["/opt/segmecam/scripts/SegmeCam.sh"]

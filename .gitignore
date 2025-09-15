@@ -1,4 +1,5 @@
 # SegmeCam .gitignore
+
 # Bazel build outputs
 bazel-*
 /.bazelignore
@@ -12,6 +13,34 @@ bazel-*
 app
 segmecam_gui
 
+
+# Keep only our SegmeCam code in MediaPipe examples  
+mediapipe/*
+!mediapipe/examples/
+mediapipe/examples/*
+!mediapipe/examples/desktop/
+mediapipe/examples/desktop/*
+!mediapipe/examples/desktop/segmecam/
+
+# Third-party prebuilt binaries
+third_party/prebuilts/
+
+# MediaPipe build files (when cloned to root)
+.bazelisk
+CONTRIBUTING.md
+Dockerfile.manylinux*
+MANIFEST.in
+build_*.sh
+find_models.sh
+run_llm_inference.sh
+setup_*.sh
+platform_mappings
+package.json
+setup.py
+tsconfig.json
+yarn.lock
+docs/
+
 # Editor/IDE files
 .vscode/
 .idea/
@@ -22,6 +51,9 @@ segmecam_gui
 .DS_Store
 Thumbs.db
 
+# Generated UI config (user-specific)
+imgui.ini
+
 # AppImage and Flatpak packaging
 *.AppImage
 *.flatpak
@@ -30,7 +62,9 @@ Thumbs.db
 *.tflite
 *.onnx
 *.pb
-models/
+
+# Allow specific Apache 2.0 licensed models
+!models/selfie_segmenter.tflite
 
 # Logs
 *.log
@@ -38,6 +72,13 @@ models/
 # Python cache (if any scripts)
 __pycache__/
 *.pyc
+
+# Build artifacts
+build/
+dist/
+
+# Cache directories
+.cache/
 
 # Misc
 *.bak
@@ -47,10 +88,7 @@ __pycache__/
 *_old.cpp
 *_backup.*
 
-# Vendor/externals (fetched by scripts)
-external/mediapipe/
-external/imgui/
-third_party/tflite_c/lib/
+# Old/temporary files
 app-old-just-example.cc
 make_appimage.sh
 notes.txt

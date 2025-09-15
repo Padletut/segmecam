@@ -1,20 +1,54 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Clone MediaPipe and build the selfie_segmentation GPU desktop example.
+# Clone MediaPipe from google-ai-edge and build the selfie_segmentation GPU desktop example.
 # Requires system deps (OpenGL/EGL, protobuf, etc.). This script uses Bazel.
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
-EXT_DIR="$ROOT_DIR/external"
-MP_DIR="$EXT_DIR/mediapipe"
+MP_DIR="$ROOT_DIR"
 
-mkdir -p "$EXT_DIR"
+# Save SegmeCam files before cloning (if they exist)
+SEGMECAM_BACKUP_DIR="/tmp/segmecam_backup_$$"
+TRACKED_SEGMECAM_DIR="$ROOT_DIR/examples/desktop/segmecam"
+if [[ -d "$TRACKED_SEGMECAM_DIR" ]]; then
+  echo "Backing up existing SegmeCam source files..."
+  mkdir -p "$SEGMECAM_BACKUP_DIR"
+  cp -rf "$TRACKED_SEGMECAM_DIR" "$SEGMECAM_BACKUP_DIR/"
+fi
 
-if [[ ! -d "$MP_DIR/.git" ]]; then
-  echo "Cloning MediaPipe..."
-  git clone --depth 1 https://github.com/google/mediapipe.git "$MP_DIR"
+if [[ ! -d "$MP_DIR/.git" ]] || [[ ! -d "$MP_DIR/mediapipe/framework" ]]; then
+  echo "Cloning MediaPipe from google-ai-edge..."
+  # Remove any incomplete installation
+  if [[ -d "$MP_DIR" ]] && [[ ! -d "$MP_DIR/.git" ]]; then
+    echo "Removing incomplete MediaPipe installation..."
+    rm -rf "$MP_DIR"/*
+  fi
+  # Clone to temporary directory to avoid nested structure
+  TEMP_MP_DIR="/tmp/mediapipe_clone_$$"
+  git clone --depth 1 https://github.com/google-ai-edge/mediapipe.git "$TEMP_MP_DIR"
+    # Copy MediaPipe contents to project root
+  echo "Copying MediaPipe contents to project root..."
+  cp -rf "$TEMP_MP_DIR"/* "$MP_DIR/"
+  # Copy hidden files but exclude .git directory to preserve SegmeCam repository
+  for hidden_file in "$TEMP_MP_DIR"/.*; do
+    filename=$(basename "$hidden_file")
+    if [[ "$filename" != "." && "$filename" != ".." && "$filename" != ".git" ]]; then
+      cp -rf "$hidden_file" "$MP_DIR/" 2>/dev/null || true
+    fi
+  done
+  rm -rf "$TEMP_MP_DIR"
+  echo "MediaPipe copied to project root"
 else
-  echo "MediaPipe already cloned at $MP_DIR"
+  echo "MediaPipe already exists at project root"
+fi
+
+# Restore SegmeCam files after cloning
+if [[ -d "$SEGMECAM_BACKUP_DIR/segmecam" ]]; then
+  echo "Restoring SegmeCam source files..."
+  mkdir -p "$MP_DIR/examples/desktop"
+  cp -rf "$SEGMECAM_BACKUP_DIR/segmecam" "$MP_DIR/examples/desktop/"
+  rm -rf "$SEGMECAM_BACKUP_DIR"
+  echo "Restored SegmeCam source files"
 fi
 
 cd "$MP_DIR"
@@ -56,19 +90,11 @@ if [[ ! -x "$BAZELISK" ]]; then
   chmod +x "$BAZELISK"
 fi
 
-echo "Building selfie_segmentation GPU example with Bazelisk..."
-"$BAZELISK" build -c opt --define MEDIAPIPE_DISABLE_GPU=0 \
-  --action_env=PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
-  --repo_env=PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
-  --cxxopt=-I/usr/include/opencv4 \
-  mediapipe/examples/desktop/selfie_segmentation:selfie_segmentation_gpu
-
 echo "Building SegmeCam GUI GPU demo (CPU mask output)..."
 "$BAZELISK" build -c opt --define MEDIAPIPE_DISABLE_GPU=0 \
   --action_env=PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
   --repo_env=PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
   --cxxopt=-I/usr/include/opencv4 \
-  mediapipe/examples/desktop/segmecam_gui_gpu:segmecam_gui_gpu
+  mediapipe/examples/desktop/segmecam:segmecam_gui_gpu
 
-echo "Built: bazel-bin/mediapipe/examples/desktop/selfie_segmentation/selfie_segmentation_gpu"
-echo "Built: bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu"
+echo "Built: bazel-bin/mediapipe/examples/desktop/segmecam/segmecam_gui_gpu"

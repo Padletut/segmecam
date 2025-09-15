@@ -25,10 +25,11 @@ while [[ $# -gt 0 ]]; do
     *) ARGS+=("$1"); shift ;;
   esac
 done
-MP_DIR="$ROOT_DIR/external/mediapipe"
+MP_DIR="$ROOT_DIR"
 
-if [[ ! -d "$MP_DIR/.git" ]]; then
+if [[ ! -d "$MP_DIR/mediapipe" ]]; then
   echo "MediaPipe repo not found at $MP_DIR" >&2
+  echo "Please run scripts/mediapipe_build_selfie_seg_gpu.sh first." >&2
   exit 1
 fi
 
@@ -82,16 +83,15 @@ if [[ "$REBUILD" == true ]]; then
 fi
 
 # Compute runfiles dir path (best-effort) for resource loading
-BIN_RUNFILES="$MP_DIR/bazel-bin/mediapipe/examples/desktop/segmecam_gui_gpu/segmecam_gui_gpu.runfiles"
-
+BIN_RUNFILES="$MP_DIR/bazel-bin/mediapipe/examples/desktop/segmecam/segmecam_gui_gpu.runfiles"
 
 # Step 1: Run Bazel to fetch dependencies (if needed)
 echo "Running Bazel fetch to ensure dependencies are downloaded..."
-"$BAZEL" fetch mediapipe/examples/desktop/segmecam_gui_gpu:segmecam_gui_gpu || true
+"$BAZEL" fetch mediapipe/examples/desktop/segmecam:segmecam_gui_gpu || true
 
 # Step 3: Run Bazel build
 "$BAZEL" run -c opt \
   --action_env=PKG_CONFIG_PATH --repo_env=PKG_CONFIG_PATH \
   --cxxopt=-I/usr/include/opencv4 \
-  mediapipe/examples/desktop/segmecam_gui_gpu:segmecam_gui_gpu -- \
+  mediapipe/examples/desktop/segmecam:segmecam_gui_gpu -- \
   "$GRAPH_PATH" "$BIN_RUNFILES" 0
