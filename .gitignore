@@ -12,6 +12,10 @@ bazel-*
 *.out
 app
 segmecam_gui
+segmecam_gui_gpu
+
+# Runtime/runfiles directories
+runfiles/
 
 
 # Keep only our SegmeCam code in MediaPipe examples  
@@ -58,6 +62,21 @@ imgui.ini
 *.AppImage
 *.flatpak
 .flatpak-builder/
+repo/
+
+# Temporary build scripts
+build-flatpak-local.sh
+build-flatpak-working.sh
+ldd-copy-all.sh
+test-*.sh
+
+# Development/backup files
+*.backup
+*-fallback.sh
+
+# Sandboxed variants (development)
+*.sandboxed.yml
+*.Sandboxed.*
 
 # Model files and large assets (customize as needed)
 *.tflite
@@ -66,6 +85,9 @@ imgui.ini
 
 # Allow specific Apache 2.0 licensed models
 !models/selfie_segmenter.tflite
+
+# Additional model directories  
+models/tasks/
 
 # Logs
 *.log
