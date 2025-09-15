@@ -122,8 +122,6 @@ dist/
 # System files
 .DS_Store
 Thumbs.db
-third_party/
-docs/
 
 # MediaPipe specific files
 build_android_examples.sh
@@ -141,9 +139,11 @@ requirements_lock*.txt
 MANIFEST.in
 setup.py
 
-# External dependency libs
+# External dependency libs (large binaries)
 external/imgui/
 third_party/tflite_c/lib/
+third_party/npm/
+third_party/prebuilts/
 
 # Old files
 app-old-just-example.cc
