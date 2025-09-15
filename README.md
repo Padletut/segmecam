@@ -16,7 +16,7 @@ Built with **TensorFlow Lite** (TFLite), **SDL2**, **OpenGL 3.3**, and **Dear Im
 - 🎥 **Virtual Webcam Output** – Works in Discord, OBS, Zoom, Teams
 - ⚡ **Optimized for Linux** – GPU-accelerated pipeline with TFLite XNNPACK
 
-![SegmeCam Interface](SCScreenshot.png)
+![SegmeCam Interface](assets/SCScreenshot.png)
 *SegmeCam in action: Real-time face landmark detection (468 points) with AI-powered background segmentation and beauty controls*
 
 ---
