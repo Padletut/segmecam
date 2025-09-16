@@ -115,3 +115,14 @@ dist/
 app-old-just-example.cc
 make_appimage.sh
 notes.txt
+build-flatpak-local.sh
+build-flatpak-working.sh
+ldd-copy-all.sh
+org.segmecam.SegmeCam.Sandboxed.appdata.xml
+org.segmecam.SegmeCam.Sandboxed.desktop
+org.segmecam.SegmeCam.sandboxed.yml
+segmecam_gui_gpu
+segmecam-wrapper-nvidia.sh.backup
+segmecam-wrapper-software-fallback.sh
+SegmeCam-Face-Direct.desktop
+install-desktop-shortcuts.sh
