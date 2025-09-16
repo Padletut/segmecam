@@ -7,8 +7,8 @@ echo "🎮 GPU: NVIDIA RTX 3080 Ti"
 # Choose graph based on arguments (like the native script)
 if [[ "$*" == *"--face"* ]]; then
     echo "🎭 Face landmarks mode enabled"
-    echo "📊 Using face_tasks_and_seg_gpu_mask_cpu.pbtxt graph..."
-    GRAPH_PATH="/app/share/segmecam/mediapipe_graphs/face_tasks_and_seg_gpu_mask_cpu.pbtxt"
+    echo "📊 Using face_and_seg_gpu_mask_cpu.pbtxt graph (classic FaceMesh)..."
+    GRAPH_PATH="/app/share/segmecam/mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt"
     # Remove --face from arguments
     set -- "${@/--face/}"
     # Filter out any empty arguments that might remain
