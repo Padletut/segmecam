@@ -1,6 +1,13 @@
 
 
-# 🧑‍💻 Copilot Instructions for SegmeCam
+# 🧑‍💻 Copilot Instructions ## Project-Specific Conventions
+- **Language:** C++17, default `clang-format` (LLVM style)
+- **Headers:** `.h` for headers in `include/` directory, `.cpp` for implementation in `src/`
+- **Naming:** `snake_case` for functions/vars, `CamelCase` for classes
+- **Modularity:** Each module has a single responsibility; avoid "god classes"
+- **Layering:** Keep `engine`, `render`, `ui`, and `io` responsibilities separate
+- **Linux-first:** Prioritize Linux compatibility; avoid Windows/Mac APIs unless requested
+- **Licensing:** Only Apache-2.0 compatible dependencies; avoid GPLeCam
 
 ## Project Overview
 SegmeCam is a Linux-native AI webcam app built in C++17, using Bazel for builds. It combines real-time selfie segmentation and face landmark detection (TensorFlow Lite/MediaPipe), OpenGL/SDL2 rendering, and Dear ImGui for UI. The goal is professional beauty and background effects for Linux video calls and streaming.
@@ -50,10 +57,19 @@ SegmeCam is a Linux-native AI webcam app built in C++17, using Bazel for builds.
 3. If using a new library, add its Bazel rule in `WORKSPACE`
 4. Document usage in README
 
+## Refactoring Guidelines
+- **Modular Architecture:** Follow the step-by-step plan in `REFACTOR.md` for breaking down monolithic code
+- **Phase-by-Phase:** Complete one refactoring phase at a time with thorough testing before proceeding
+- **Testing Strategy:** After each phase, verify identical functionality, performance, and user experience
+- **Rollback Safety:** Keep git commits small and focused per phase to enable easy rollback if needed
+- **Component Isolation:** Each module should have clear responsibilities and minimal dependencies
+- **Performance Preservation:** Maintain or improve performance characteristics during refactoring
+
 ## References
 - See `README.md` for feature roadmap, tech stack, and build instructions
+- See `REFACTOR.md` for detailed modular architecture refactoring plan
 - Key files: `engine/`, `render/`, `ui/`, `io/`, `WORKSPACE`, `BUILD`, `README.md`
 
 ---
 
-For unclear conventions or missing instructions, check README or AGENT.md, or ask for clarification. Suggest improvements if you find outdated or missing guidance.
+For unclear conventions or missing instructions, check README, REFACTOR.md, or AGENT.md, or ask for clarification. Suggest improvements if you find outdated or missing guidance.
