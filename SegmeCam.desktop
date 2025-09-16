@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SegmeCam
+Comment=AI-powered webcam with selfie segmentation and background effects
+Exec=/home/padletut/segmecam/scripts/run_segmecam_gui_gpu.sh
+Icon=/home/padletut/segmecam/assets/SegmeCam.png
+Terminal=false
+Categories=AudioVideo;Photography;
+Keywords=webcam;camera;AI;segmentation;background;video;streaming;
+StartupNotify=true
+StartupWMClass=segmecam_gui_gpu
+Path=/home/padletut/segmecam

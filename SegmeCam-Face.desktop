@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SegmeCam (Face Landmarks)
+Comment=AI webcam with face landmarks detection and selfie segmentation
+Exec=/home/padletut/segmecam/scripts/run_segmecam_gui_gpu.sh --face
+Icon=/home/padletut/segmecam/assets/SegmeCam.png
+Terminal=false
+Categories=AudioVideo;Photography;
+Keywords=webcam;camera;AI;segmentation;face;landmarks;video;streaming;
+StartupNotify=true
+StartupWMClass=segmecam_gui_gpu
+Path=/home/padletut/segmecam

@@ -87,7 +87,7 @@ test-*.sh
 !models/selfie_segmenter.tflite
 
 # Additional model directories  
-models/tasks/
+!models/tasks/
 
 # Logs
 *.log

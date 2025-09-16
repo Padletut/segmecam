@@ -38,7 +38,10 @@ cc_library(
     srcs = ["vcam.cc"],
     hdrs = ["vcam.h"],
     includes = ["."],
-    deps = [],
+    deps = [
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+    ],
     copts = ["-I/usr/include/opencv4"],
     linkopts = ["-lopencv_core", "-lopencv_imgproc"],
 )
