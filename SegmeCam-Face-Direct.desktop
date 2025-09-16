@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SegmeCam Face (Direct)
+Comment=AI webcam with face landmarks (direct binary)
+Exec=/home/padletut/segmecam/bazel-bin/mediapipe/examples/desktop/segmecam/segmecam_gui_gpu /home/padletut/segmecam/mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt
+Icon=/home/padletut/segmecam/assets/SegmeCam.png
+Terminal=false
+Categories=AudioVideo;Photography;
+Keywords=webcam;camera;AI;segmentation;face;landmarks;video;streaming;
+StartupNotify=true
+StartupWMClass=segmecam_gui_gpu
+Path=/home/padletut/segmecam
