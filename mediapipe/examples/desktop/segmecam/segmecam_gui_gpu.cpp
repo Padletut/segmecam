@@ -1165,7 +1165,10 @@ int main(int argc, char** argv) {
           std::vector<const char*> items; for (auto& n: profile_names) items.push_back(n.c_str());
           if (ui_profile_idx < -1 || ui_profile_idx >= (int)profile_names.size()) ui_profile_idx = -1;
           ImGui::Combo("Select", &ui_profile_idx, items.data(), (int)items.size()); ImGui::SameLine();
-          if (ImGui::Button("Load##prof") && ui_profile_idx>=0) { load_profile(profile_names[ui_profile_idx]); }
+          if (ImGui::Button("Load##prof") && ui_profile_idx>=0) { 
+            load_profile(profile_names[ui_profile_idx]); 
+            std::snprintf(profile_name_buf, sizeof(profile_name_buf), "%s", profile_names[ui_profile_idx].c_str());
+          }
         }
         ImGui::InputText("Name", profile_name_buf, sizeof(profile_name_buf));
         if (ImGui::Button("Save##prof")) {
