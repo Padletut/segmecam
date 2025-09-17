@@ -1,47 +1,78 @@
 
 
-# 🧑‍💻 Copilot Instructions ## Project-Specific Conventions
-- **Language:** C++17, default `clang-format` (LLVM style)
-- **Headers:** `.h` for headers in `include/` directory, `.cpp` for implementation in `src/`
-- **Naming:** `snake_case` for functions/vars, `CamelCase` for classes
-- **Modularity:** Each module has a single responsibility; avoid "god classes"
-- **Layering:** Keep `engine`, `render`, `ui`, and `io` responsibilities separate
-- **Linux-first:** Prioritize Linux compatibility; avoid Windows/Mac APIs unless requested
-- **Licensing:** Only Apache-2.0 compatible dependencies; avoid GPLeCam
+# 🧑‍💻 SegmeCam AI Coding Instructions
 
-## Project Overview
-SegmeCam is a Linux-native AI webcam app built in C++17, using Bazel for builds. It combines real-time selfie segmentation and face landmark detection (TensorFlow Lite/MediaPipe), OpenGL/SDL2 rendering, and Dear ImGui for UI. The goal is professional beauty and background effects for Linux video calls and streaming.
+## Core Architecture - Phase 1-8 Modular System
+SegmeCam uses a **modular manager architecture** at `mediapipe/examples/desktop/segmecam/` replacing the original monolithic design:
 
-## Architecture & Major Components
-- `engine/` – AI inference (TFLite models, mask processing)
-- `render/` – OpenGL passes (blur, smoothing, composition)
-- `ui/` – Dear ImGui panels & controls
-- `io/` – camera input (OpenCV/V4L2) + v4l2loopback output
-- Bazel `WORKSPACE` and `BUILD` files manage all builds and dependencies
+- **Main Application** (`src/application/application.cpp`) - Main lifecycle, coordinates all managers
+- **CameraManager** (`src/camera/camera_manager.cpp`) - V4L2 capture, device enumeration, vcam output
+- **MediaPipeManager** (`src/mediapipe_manager/mediapipe_manager.cpp`) - AI inference graphs, GPU detection
+- **RenderManager** (`src/render/render_manager.cpp`) - SDL2/OpenGL context, texture management
+- **EffectsManager** (`src/effects/effects_manager.cpp`) - Beauty effects, background processing
+- **UIManager** (`src/ui/ui_manager_enhanced.cpp`) - ImGui panels, event handling
+- **ConfigManager** (`src/config/config_manager.cpp`) - Profile persistence, settings validation
+
+## Critical Build Commands ⚠️ ALWAYS USE THE BUILD SCRIPT ⚠️
+```bash
+# 🚨 PRIMARY BUILD & RUN WORKFLOW - USE THIS 100% OF THE TIME! 🚨
+./scripts/run_segmecam_gui_gpu.sh --face
+
+# 🚨 NEVER use manual bazel commands for building the main app! 🚨
+# 🚨 ALWAYS use the build script above! 🚨
+
+# Individual manager testing ONLY (Phase 1-7 validation)
+bazel build -c opt --action_env=PKG_CONFIG_PATH --repo_env=PKG_CONFIG_PATH --cxxopt=-I/usr/include/opencv4 //mediapipe/examples/desktop/segmecam:effects_manager_test
+
+# Essential flags for ALL builds
+--action_env=PKG_CONFIG_PATH --repo_env=PKG_CONFIG_PATH --cxxopt=-I/usr/include/opencv4
+```
+
+## ⚠️ CRITICAL BUILD RULE ⚠️
+**NEVER use manual `bazel build` or `bazel run` commands for the main application!**
+**ALWAYS use `./scripts/run_segmecam_gui_gpu.sh --face`**
+**This script handles all proper paths, arguments, and configurations automatically!**
+
+## Project-Specific Patterns
+- **Header/Source**: `.h` in `include/`, `.cpp` in `src/` with matching subdirectories
+- **Manager Pattern**: Each manager is self-contained with `Initialize()`, lifecycle methods, and clear responsibilities
+- **Forward Declarations**: Use `std::unique_ptr<class ManagerName>` in headers to avoid circular includes
+- **Bazel Targets**: Each manager has corresponding `cc_library` in BUILD with specific deps
 
 
-## Developer Workflows
-- **Build & Run (Recommended):**
-  ```bash
-  ./scripts/run_segmecam_gui_gpu.sh --face
-  ```
-  This script handles Bazel builds and launches the SegmeCam GUI with face segmentation enabled.
-- **Manual Bazel Build (Advanced):**
-  ```bash
-  bazel build //...
-  ./bazel-bin/segmecam
-  ```
-- **Add dependencies:**
-  Use Bazel repository rules in `WORKSPACE` and update `BUILD` files. Do not switch to CMake or other build systems unless explicitly requested.
-- **Testing:**
-  Unit tests for engine utilities are encouraged; follow modular patterns.
+## MediaPipe Integration Specifics
+- **Graph Selection**: `segmecam_gui_gpu.cpp.backup` contains reference monolithic implementation
+- **GPU Detection**: `gpu_detector.h` handles NVIDIA/Mesa capability assessment
+- **Graph Paths**: Use `mediapipe_graphs/` with fallback from GPU→CPU graphs
+- **Calculator Dependencies**: Include specific MediaPipe calculators in BUILD files, not generic deps
+
+## Manager Dependencies & Known Issues
+- **OpenCV Conflicts**: MediaPipe's `opencv_core_inc.h` conflicts with system OpenCV headers
+  - **Workaround**: Use MediaPipe's OpenCV port (`//mediapipe/framework/port:opencv_core`) not system OpenCV
+- **Missing Protobuf Types**: Some MediaPipe calculators require additional deps in BUILD files
+  - **Example**: `ConstantSidePacketCalculatorOptions` needs proper calculator dependencies
+  - **Solution**: Add missing calculator targets to binary deps in BUILD file
+- **Manager Testing**: Each manager has dedicated test binary (e.g., `effects_manager_test`)
+- **Partial Integration**: Some managers temporarily disabled in `application.cpp` - see comments
+
+## AppState & Data Flow
+- **Central State**: `app_state.h` contains 50+ beauty/background parameters shared across managers
+- **Profile System**: `ConfigManager` handles YAML persistence to `~/.config/segmecam/`
+- **Beauty Presets**: `presets.h` defines Natural/Light/Medium/Heavy effect combinations
+- **Virtual Camera**: `vcam.h` manages v4l2loopback output for video calls
+
+## Development Anti-Patterns
+- ❌ Don't add system OpenCV deps - use MediaPipe ports
+- ❌ Don't modify monolithic `segmecam_gui_gpu.cpp` - it's reference only
+- ❌ Don't create "god classes" - follow manager single-responsibility pattern
+- ❌ Don't skip `--action_env=PKG_CONFIG_PATH` flags in builds
 
 ## Project-Specific Conventions
 - **Language:** C++17, default `clang-format` (LLVM style)
-- **Headers:** `.hpp` for headers, `.cpp` for implementation
+- **Headers:** `.h` for headers, `.cpp` for implementation
 - **Naming:** `snake_case` for functions/vars, `CamelCase` for classes
-- **Modularity:** Each module has a single responsibility; avoid “god classes”
-- **Layering:** Keep `engine`, `render`, `ui`, and `io` responsibilities separate
+- **Modularity:** Each module has a single responsibility; avoid "god classes"
+- **Layering:** Keep `application`, `engine`, `render`, `ui`, and `io` responsibilities separate
 - **Linux-first:** Prioritize Linux compatibility; avoid Windows/Mac APIs unless requested
 - **Licensing:** Only Apache-2.0 compatible dependencies; avoid GPL
 
@@ -58,7 +89,7 @@ SegmeCam is a Linux-native AI webcam app built in C++17, using Bazel for builds.
 4. Document usage in README
 
 ## Refactoring Guidelines
-- **Modular Architecture:** Follow the step-by-step plan in `REFACTOR.md` for breaking down monolithic code
+- **Modular Architecture:** Follow the step-by-step plan in `AGENTS.md` for breaking down monolithic code
 - **Phase-by-Phase:** Complete one refactoring phase at a time with thorough testing before proceeding
 - **Testing Strategy:** After each phase, verify identical functionality, performance, and user experience
 - **Rollback Safety:** Keep git commits small and focused per phase to enable easy rollback if needed
@@ -67,9 +98,9 @@ SegmeCam is a Linux-native AI webcam app built in C++17, using Bazel for builds.
 
 ## References
 - See `README.md` for feature roadmap, tech stack, and build instructions
-- See `REFACTOR.md` for detailed modular architecture refactoring plan
-- Key files: `engine/`, `render/`, `ui/`, `io/`, `WORKSPACE`, `BUILD`, `README.md`
+- See `AGENTS.md` for detailed modular architecture refactoring plan
+- Key files: `application/`, `camera/`, `render/`, `ui/`, `effects/`, `WORKSPACE`, `BUILD`, `README.md`
 
 ---
 
-For unclear conventions or missing instructions, check README, REFACTOR.md, or AGENT.md, or ask for clarification. Suggest improvements if you find outdated or missing guidance.
+For unclear conventions or missing instructions, check README, AGENTS.md, or AGENT.md, or ask for clarification. Suggest improvements if you find outdated or missing guidance.

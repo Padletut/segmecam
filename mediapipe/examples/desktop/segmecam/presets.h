@@ -11,6 +11,7 @@ struct BeautyState {
   int blur_strength = 25;     // odd kernel
   float feather_px = 2.0f;
   bool show_mask = false;
+  float solid_color[3] = {0.0f, 0.0f, 0.0f}; // RGB 0..1 for solid background
 
   // Skin smoothing core
   bool fx_skin = false;
@@ -55,6 +56,10 @@ struct BeautyState {
   bool fx_teeth = false;
   float fx_teeth_strength = 0.5f;
   float fx_teeth_margin = 3.0f;
+  
+  // Auto processing scale
+  bool auto_processing_scale = true; // Default enabled for better performance
+  float target_fps = 14.5f;
 };
 
 // idx: 0=Default, 1=Natural, 2=Studio, 3=Glam, 4=Meeting
