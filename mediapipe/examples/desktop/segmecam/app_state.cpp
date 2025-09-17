@@ -18,7 +18,6 @@ void AppState::SaveToProfile(cv::FileStorage& fs) const {
   fs << "use_opencl" << (int)use_opencl;
   fs << "fx_skin_wrinkle" << (int)fx_skin_wrinkle << "fx_skin_smile_boost" << fx_skin_smile_boost << "fx_skin_squint_boost" << fx_skin_squint_boost
       << "fx_skin_forehead_boost" << fx_skin_forehead_boost << "fx_skin_wrinkle_gain" << fx_skin_wrinkle_gain
-      << "dbg_wrinkle_mask" << (int)dbg_wrinkle_mask << "dbg_wrinkle_stats" << (int)dbg_wrinkle_stats
       << "fx_wrinkle_suppress_lower" << (int)fx_wrinkle_suppress_lower << "fx_wrinkle_lower_ratio" << fx_wrinkle_lower_ratio
       << "fx_wrinkle_ignore_glasses" << (int)fx_wrinkle_ignore_glasses << "fx_wrinkle_glasses_margin" << fx_wrinkle_glasses_margin
       << "fx_wrinkle_keep_ratio" << fx_wrinkle_keep_ratio << "fx_wrinkle_custom_scales" << (int)fx_wrinkle_custom_scales
@@ -72,7 +71,7 @@ void AppState::LoadFromProfile(const cv::FileNode& root) {
   fx_adv_scale = ReadFloat(root["fx_adv_scale"], fx_adv_scale);
   fx_adv_detail_preserve = ReadFloat(root["fx_adv_detail_preserve"], fx_adv_detail_preserve);
   
-  use_opencl = ReadInt(root["use_opencl"], use_opencl);
+  use_opencl = ReadInt(root["use_opencl"], 1) != 0; // Default to enabled
   
   // Wrinkle settings
   fx_skin_wrinkle = ReadInt(root["fx_skin_wrinkle"], fx_skin_wrinkle);
@@ -80,8 +79,6 @@ void AppState::LoadFromProfile(const cv::FileNode& root) {
   fx_skin_squint_boost = ReadFloat(root["fx_skin_squint_boost"], fx_skin_squint_boost);
   fx_skin_forehead_boost = ReadFloat(root["fx_skin_forehead_boost"], fx_skin_forehead_boost);
   fx_skin_wrinkle_gain = ReadFloat(root["fx_skin_wrinkle_gain"], fx_skin_wrinkle_gain);
-  dbg_wrinkle_mask = ReadInt(root["dbg_wrinkle_mask"], dbg_wrinkle_mask);
-  dbg_wrinkle_stats = ReadInt(root["dbg_wrinkle_stats"], dbg_wrinkle_stats);
   fx_wrinkle_suppress_lower = ReadInt(root["fx_wrinkle_suppress_lower"], fx_wrinkle_suppress_lower);
   fx_wrinkle_lower_ratio = ReadFloat(root["fx_wrinkle_lower_ratio"], fx_wrinkle_lower_ratio);
   fx_wrinkle_ignore_glasses = ReadInt(root["fx_wrinkle_ignore_glasses"], fx_wrinkle_ignore_glasses);
