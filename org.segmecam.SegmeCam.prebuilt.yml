@@ -25,7 +25,7 @@ modules:
     buildsystem: simple
     build-commands:
       # Copy the actual binary
-      - install -Dm755 segmecam_gui_gpu /app/bin/segmecam_gui_gpu
+      - install -Dm755 segmecam_gui_gpu /app/bin/segmecam
       
       # Install assets and models
       - mkdir -p /app/share/segmecam
@@ -39,8 +39,8 @@ modules:
       
     sources:
       - type: file
-        path: bazel-bin/mediapipe/examples/desktop/segmecam/segmecam_gui_gpu
-        dest-filename: segmecam_gui_gpu
+        path: bazel-bin/mediapipe/examples/desktop/segmecam/segmecam
+        dest-filename: segmecam
       - type: dir
         path: models
       - type: dir  

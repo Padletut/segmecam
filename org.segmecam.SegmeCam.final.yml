@@ -32,7 +32,24 @@ modules:
     build-commands:
       # Create lib directory and install libraries
       - mkdir -p /app/lib
-      - cp lib/* /app/lib/
+      
+      # Copy our local lib files first (should contain GLU libraries)
+      - cp -v lib/* /app/lib/ || echo "Failed to copy lib files"
+
+      # Copy libraries from the flatpak-bundle directory
+      - cp flatpak-bundle/lib/* /app/lib/ || true
+      
+      # Also install GLU library from the build system
+      - |
+        if [ -f /usr/lib/x86_64-linux-gnu/libGLU.so.1 ]; then
+          cp -v /usr/lib/x86_64-linux-gnu/libGLU.so* /app/lib/
+          echo "Copied system GLU libraries to /app/lib/"
+        else
+          echo "System GLU libraries not found"
+        fi
+        
+      # List what we actually have in /app/lib
+      - ls -la /app/lib/ | grep GLU || echo "No GLU libraries found in /app/lib/"
       
       # Install the wrapper script
       - install -Dm755 segmecam-wrapper-nvidia.sh /app/bin/segmecam-wrapper-nvidia.sh
@@ -106,3 +123,5 @@ modules:
         path: runfiles
       - type: dir
         path: flatpak-bundle
+      - type: dir
+        path: lib

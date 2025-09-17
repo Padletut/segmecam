@@ -62,12 +62,12 @@ imgui.ini
 *.AppImage
 *.flatpak
 .flatpak-builder/
+flatpak-bundle/
 repo/
 
 # Temporary build scripts
 build-flatpak-local.sh
 build-flatpak-working.sh
-ldd-copy-all.sh
 test-*.sh
 
 # Development/backup files
