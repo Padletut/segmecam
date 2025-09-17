@@ -126,3 +126,6 @@ segmecam-wrapper-nvidia.sh.backup
 segmecam-wrapper-software-fallback.sh
 SegmeCam-Face-Direct.desktop
 install-desktop-shortcuts.sh
+flatpak-bundle/libGLU.so.1
+flatpak-bundle/lib/libGLU.so.1
+flatpak-bundle/lib/libGLU.so.1.3.1

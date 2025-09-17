@@ -51,13 +51,9 @@ modules:
       
       # Create MediaPipe runfiles structure
       - mkdir -p /app/mediapipe_runfiles
-      - cp MANIFEST /app/mediapipe_runfiles/
-      - cp _repo_mapping /app/mediapipe_runfiles/
-      - cp -r mediapipe /app/mediapipe_runfiles/
-      - cp -r external /app/mediapipe_runfiles/
       
       # Create mediapipe/external symlink inside runfiles for model resolution
-      - ln -sf /app/mediapipe_runfiles/external /app/mediapipe_runfiles/mediapipe/external
+      #- ln -sf /app/mediapipe_runfiles/external /app/mediapipe_runfiles/mediapipe/external
       
       # Fix permissions for all copied files
       - chmod -R u+w /app/mediapipe_runfiles/
@@ -65,11 +61,19 @@ modules:
       # Create MediaPipe external model directory and install face landmarker model
       - mkdir -p /app/mediapipe/external/com_google_mediapipe_face_landmarker_task/file
       - cp face_landmarker.task /app/mediapipe/external/com_google_mediapipe_face_landmarker_task/file/downloaded
+
+      # Ensure mediapipe tflite models is installed to the expected path
+      - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/selfie_segmentation
+      - cp selfie_segmenter.tflite /app/mediapipe_runfiles/mediapipe/modules/selfie_segmentation/selfie_segmentation.tflite
+      - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/face_landmark
+      - cp face_landmarker.tflite /app/mediapipe_runfiles/mediapipe/modules/face_landmark/face_landmark_with_attention.tflite
+      - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/face_detection
+      - cp face_detection_short_range.tflite /app/mediapipe_runfiles/mediapipe/modules/face_detection/face_detection_short_range.tflite
       
       # Install desktop integration
       - install -Dm644 org.segmecam.SegmeCam.desktop /app/share/applications/org.segmecam.SegmeCam.desktop
       - install -Dm644 org.segmecam.SegmeCam.appdata.xml /app/share/metainfo/org.segmecam.SegmeCam.appdata.xml
-      - install -Dm644 SegmeCam.png /app/share/icons/hicolor/256x256/apps/org.segmecam.SegmeCam.png
+      - install -Dm644 scai_logo.png /app/share/icons/hicolor/256x256/apps/org.segmecam.SegmeCam.png
       
     sources:
       # Application binary (updated for modular architecture)
@@ -85,7 +89,7 @@ modules:
       - type: file
         path: org.segmecam.SegmeCam.appdata.xml
       - type: file
-        path: assets/SegmeCam.png
+        path: assets/scai_logo.png
       
       # MediaPipe graphs
       - type: file
@@ -102,7 +106,21 @@ modules:
       - type: file
         path: models/tasks/face_landmarker.task
         dest-filename: face_landmarker.task
+
       - type: dir
-        path: runfiles
+        path: mediapipe_runfiles
       - type: dir
         path: flatpak-bundle
+
+      # Selfie segmentation model
+      - type: file
+        path: models/selfie_segmenter.tflite
+        dest-filename: selfie_segmenter.tflite
+
+      # Face landmarker tflite models (assuming they are in models/)
+      - type: file
+        path: models/face_landmark_with_attention.tflite
+        dest-filename: face_landmarker.tflite
+      - type: file
+        path: models/face_detection_short_range.tflite
+        dest-filename: face_detection_short_range.tflite
