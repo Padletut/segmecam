@@ -42,8 +42,8 @@ echo "🎮 Mesa driver: $MESA_LOADER_DRIVER_OVERRIDE"
 # Try to run with explicit graph first
 if [ ! -f "mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt" ]; then
     echo "📁 Graph file not found, running without arguments..."
-    exec /app/bin/segmecam_gui_gpu "$@"
+    exec /app/bin/segmecam "$@"
 else
     echo "📊 Using selfie_seg_gpu_mask_cpu.pbtxt graph..."
-    exec /app/bin/segmecam_gui_gpu mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt "$@"
+    exec /app/bin/segmecam mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt "$@"
 fi
