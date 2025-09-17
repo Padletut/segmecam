@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
+
 set -euo pipefail
+
+# Ensure running as root before parsing arguments
+if [[ $EUID -ne 0 ]]; then
+  if command -v sudo >/dev/null 2>&1; then
+    exec sudo "$0" "$@"
+  else
+    echo "Please run as root or install sudo." >&2
+    exit 1
+  fi
+fi
 
 LABEL="SegmeCam"
 VIDEO_NR=9
@@ -33,15 +44,6 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown arg: $1"; usage; exit 1;;
   esac
 done
-
-if [[ $EUID -ne 0 ]]; then
-  if command -v sudo >/dev/null 2>&1; then
-    exec sudo "$0" "$@"
-  else
-    echo "Please run as root or install sudo." >&2
-    exit 1
-  fi
-fi
 
 # Unload if loaded, ignore errors
 modprobe -r v4l2loopback 2>/dev/null || true
