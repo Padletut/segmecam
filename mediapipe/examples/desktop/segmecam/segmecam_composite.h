@@ -37,7 +37,21 @@ cv::Mat CompositeImageBackgroundBGR(const cv::Mat& frame_bgr,
                                     const cv::Mat& mask_u8,
                                     const cv::Mat& bg_bgr);
 
+// Optimized image background composite with scale optimization and caching.
+cv::Mat CompositeImageBackgroundBGR_Accel(const cv::Mat& frame_bgr,
+                                          const cv::Mat& mask_u8,
+                                          const cv::Mat& bg_bgr,
+                                          bool use_ocl,
+                                          float scale);
+
 // Solid color background composite.
 cv::Mat CompositeSolidBackgroundBGR(const cv::Mat& frame_bgr,
                                     const cv::Mat& mask_u8,
                                     const cv::Scalar& bgr);
+
+// Optimized solid color background composite with scale optimization and caching.
+cv::Mat CompositeSolidBackgroundBGR_Accel(const cv::Mat& frame_bgr,
+                                          const cv::Mat& mask_u8,
+                                          const cv::Scalar& bgr,
+                                          bool use_ocl,
+                                          float scale);

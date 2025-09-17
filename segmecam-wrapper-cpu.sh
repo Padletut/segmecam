@@ -19,5 +19,5 @@ export GALLIUM_DRIVER=llvmpipe
 # Use CPU-only MediaPipe graph
 echo "📊 Using selfie_seg_cpu_min.pbtxt graph..."
 
-# Launch with CPU graph
-exec /app/bin/segmecam_gui --graph=/app/share/mediapipe_graphs/selfie_seg_cpu_min.pbtxt "$@"
+# Launch with CPU graph (updated for modular architecture)
+exec /app/bin/segmecam --graph=/app/share/mediapipe_graphs/selfie_seg_cpu_min.pbtxt "$@"

@@ -17,8 +17,8 @@ struct AppState {
   int64_t frame_id = 0;
   bool dbg_composite_rgb = false;
   
-  // OpenCL acceleration
-  bool use_opencl = false;
+  // OpenCL acceleration  
+  bool use_opencl = true; // Enable by default if available
   bool opencl_available = false;
   
   // Performance logging
@@ -31,8 +31,16 @@ struct AppState {
   uint32_t perf_sum_frames = 0;
   bool perf_logged_caps = false;
   
+  // Auto processing scale
+  bool auto_processing_scale = true; // Enabled by default - now stable with conservative adjustments
+  float target_fps = 14.5f;
+  float current_fps = 0.0f;
+  float auto_scale_last_adjustment = 0.0f;
+  uint32_t auto_scale_last_time_ms = 0;
+  bool auto_scale_enabled = false;
+  
   // Background mode: 0=None, 1=Blur, 2=Image, 3=Solid Color
-  int bg_mode = 0;
+  int bg_mode = 1; // Default to Blur mode to show segmentation effects
   cv::Mat bg_image; // background image (BGR)
   char bg_path_buf[512] = {0};
   float solid_color[3] = {0.0f, 0.0f, 0.0f}; // RGB 0..1
@@ -51,7 +59,7 @@ struct AppState {
   float fx_skin_edge = 12.0f;
   
   // Advanced processing scale
-  float fx_adv_scale = 1.0f; // 0.5..1.0
+  float fx_adv_scale = 0.8f; // 0.5..1.0 - Default to 0.8 for better performance
   float fx_adv_detail_preserve = 0.18f; // 0..0.5, re-inject hi-freq after upsample
   
   // Wrinkle reduction
@@ -60,8 +68,6 @@ struct AppState {
   float fx_skin_squint_boost = 0.5f;
   float fx_skin_forehead_boost = 0.8f;
   float fx_skin_wrinkle_gain = 1.5f;
-  bool dbg_wrinkle_mask = false;
-  bool dbg_wrinkle_stats = true;
   bool fx_wrinkle_suppress_lower = true;
   float fx_wrinkle_lower_ratio = 0.45f;
   bool fx_wrinkle_ignore_glasses = true;
@@ -112,9 +118,15 @@ struct AppState {
   bool running = true;
   bool vsync_on = true;
   
+  // Camera info for status display
+  int camera_width = 0;
+  int camera_height = 0;
+  int camera_fps = 0;
+  
   // Virtual camera
   segmecam::VCam vcam;
   int ui_vcam_idx = 0;
+  std::string virtual_camera_path = "/dev/video20"; // Default path
   
   // Profile management
   int ui_profile_idx = -1;

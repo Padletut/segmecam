@@ -26,6 +26,6 @@ export NVIDIA_DRIVER_CAPABILITIES=all
 # Use the exact working EGL path from original release
 export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/GL/nvidia-580-82-07/lib:/usr/lib/x86_64-linux-gnu"
 
-# Execute the binary with graph path as first argument (like native script)
-# Pattern: segmecam_gui_gpu GRAPH_PATH BIN_RUNFILES camera_id
-exec /app/bin/segmecam_gui_gpu "$GRAPH_PATH" "/app/mediapipe_runfiles" 0 "$@"
+# Execute the modular architecture binary with graph path as first argument
+# Pattern: segmecam GRAPH_PATH BIN_RUNFILES camera_id
+exec /app/bin/segmecam "$GRAPH_PATH" "/app/mediapipe_runfiles" 0 "$@"
