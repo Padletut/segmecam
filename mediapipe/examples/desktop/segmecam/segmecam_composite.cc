@@ -26,11 +26,13 @@ cv::Mat DecodeMaskToU8(const mediapipe::ImageFrame& mask, bool* logged_once) {
     cv::Scalar ma = cv::mean(chm[3]);
     int best = g_rgba_mask_channel;
     if (best < 0) {
-      // Prefer alpha if it looks non-empty; otherwise fall back to brightest color channel
+      // Find the channel with the highest mean value (most likely to contain segmentation data)
+      // Prefer non-alpha channels over alpha channel to avoid blue tint issues
       best = 0; double bestv = mb[0];
       if (mg[0] > bestv) { best=1; bestv=mg[0]; }
       if (mr[0] > bestv) { best=2; bestv=mr[0]; }
-      if (ma[0] > 5.0 && ma[0] >= bestv - 1e-3) { best=3; bestv=ma[0]; }
+      // Only use alpha if it's significantly better than color channels
+      if (ma[0] > bestv + 10.0) { best=3; bestv=ma[0]; }
       g_rgba_mask_channel = best;
     }
     out = chm[best].clone();
@@ -123,7 +125,20 @@ cv::Mat CompositeBlurBackgroundBGR_Accel(const cv::Mat& frame_bgr,
     std::vector<cv::Mat> fch(3), bch(3), out(3); cv::split(frame_f, fch); cv::split(blurred_f, bch);
     for (int i=0;i<3;++i) out[i] = fch[i].mul(mask_f) + bch[i].mul(1.0f - mask_f);
     cv::Mat comp_f; cv::merge(out, comp_f); cv::Mat comp_u8; comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
-    cv::Mat rgb; cv::cvtColor(comp_u8, rgb, cv::COLOR_BGR2RGB); return rgb;
+    cv::Mat rgb; cv::cvtColor(comp_u8, rgb, cv::COLOR_BGR2RGB);
+    
+    // Debug output for blur composite
+    static int blur_debug_count = 0;
+    blur_debug_count++;
+    if (blur_debug_count <= 2 && !comp_u8.empty() && !rgb.empty()) {
+        cv::Vec3b bgr_pixel = comp_u8.at<cv::Vec3b>(comp_u8.rows/2, comp_u8.cols/2);
+        cv::Vec3b rgb_pixel = rgb.at<cv::Vec3b>(rgb.rows/2, rgb.cols/2);
+        std::cout << "🔍 BLUR COMPOSITE " << blur_debug_count << " - BGR result: [" 
+                  << (int)bgr_pixel[0] << "," << (int)bgr_pixel[1] << "," << (int)bgr_pixel[2] 
+                  << "] -> RGB output: [" << (int)rgb_pixel[0] << "," << (int)rgb_pixel[1] << "," << (int)rgb_pixel[2] << "]" << std::endl;
+    }
+    
+    return rgb;
   }
   // OpenCL path via UMat
   cv::UMat src_u; small_src.copyTo(src_u);
@@ -145,7 +160,9 @@ cv::Mat CompositeBlurBackgroundBGR_Accel(const cv::Mat& frame_bgr,
     cv::UMat a,b; cv::multiply(ff[i], mask_f, a); cv::multiply(bf[i], inv, b); cv::add(a,b,out[i]);
   }
   cv::UMat comp_f; cv::merge(out, comp_f); cv::UMat comp_u8; comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
-  cv::Mat rgb; cv::cvtColor(comp_u8, rgb, cv::COLOR_BGR2RGB); return rgb;
+  cv::Mat comp_bgr; comp_u8.copyTo(comp_bgr);
+  cv::Mat rgb; cv::cvtColor(comp_bgr, rgb, cv::COLOR_BGR2RGB);
+  return rgb;
 }
 
 
@@ -176,5 +193,198 @@ cv::Mat CompositeSolidBackgroundBGR(const cv::Mat& frame_bgr,
   cv::Mat comp_f; cv::merge(cch, comp_f);
   cv::Mat comp_u8; comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
   cv::Mat rgb; cv::cvtColor(comp_u8, rgb, cv::COLOR_BGR2RGB);
+  return rgb;
+}
+
+// Optimized image background composite with scale optimization and caching
+cv::Mat CompositeImageBackgroundBGR_Accel(const cv::Mat& frame_bgr,
+                                          const cv::Mat& mask_u8,
+                                          const cv::Mat& bg_bgr,
+                                          bool use_ocl,
+                                          float scale) {
+  // Static cache for resized background images
+  static cv::Mat cached_bg_resized;
+  static cv::Size cached_frame_size;
+  static cv::Mat cached_bg_original;
+  static bool cache_valid = false;
+  static int debug_call_count = 0;
+  
+  debug_call_count++;
+  
+  scale = std::clamp(scale, 0.4f, 1.0f);
+  
+  // Debug first few calls to show optimization status
+  if (debug_call_count <= 3) {
+    std::cout << "🚀 IMAGE BG ACCEL " << debug_call_count << " - scale=" << scale 
+              << " opencl=" << use_ocl << " frame=" << frame_bgr.cols << "x" << frame_bgr.rows << std::endl;
+  }
+  
+  // Check if we can use cached background
+  bool need_resize = false;
+  if (!cache_valid || 
+      cached_frame_size != frame_bgr.size() ||
+      cached_bg_original.data != bg_bgr.data ||
+      cached_bg_original.size() != bg_bgr.size()) {
+    need_resize = true;
+    cache_valid = true;
+    cached_frame_size = frame_bgr.size();
+    cached_bg_original = bg_bgr.clone(); // Store copy for comparison
+    if (debug_call_count <= 3) {
+      std::cout << "🔄 IMAGE BG CACHE MISS - resizing background" << std::endl;
+    }
+  } else if (debug_call_count <= 3) {
+    std::cout << "✅ IMAGE BG CACHE HIT - using cached background" << std::endl;
+  }
+  
+  // Resize background if needed
+  if (need_resize) {
+    cv::resize(bg_bgr, cached_bg_resized, frame_bgr.size(), 0, 0, cv::INTER_LINEAR);
+  }
+  
+  // If scale optimization is disabled or OpenCL not available, use standard path
+  if (!use_ocl && std::abs(scale - 1.0f) < 1e-3f) {
+    return CompositeImageBackgroundBGR(frame_bgr, mask_u8, cached_bg_resized);
+  }
+  
+  // Scale optimization: work at reduced resolution for compositing
+  cv::Mat small_frame, small_mask, small_bg;
+  if (std::abs(scale - 1.0f) < 1e-3f) {
+    small_frame = frame_bgr;
+    small_mask = mask_u8;
+    small_bg = cached_bg_resized;
+  } else {
+    cv::resize(frame_bgr, small_frame, cv::Size(), scale, scale, 
+               (scale >= 0.85f) ? cv::INTER_LINEAR : cv::INTER_AREA);
+    cv::resize(mask_u8, small_mask, small_frame.size(), 0, 0, cv::INTER_LINEAR);
+    cv::resize(cached_bg_resized, small_bg, small_frame.size(), 0, 0, cv::INTER_LINEAR);
+  }
+  
+  // Perform compositing at reduced scale
+  cv::Mat frame_f, bg_f;
+  small_frame.convertTo(frame_f, CV_32FC3, 1.0/255.0);
+  small_bg.convertTo(bg_f, CV_32FC3, 1.0/255.0);
+  cv::Mat mask_f;
+  small_mask.convertTo(mask_f, CV_32FC1, 1.0/255.0);
+  
+  std::vector<cv::Mat> fch, bch, cch;
+  cv::split(frame_f, fch);
+  cv::split(bg_f, bch);
+  cch.resize(3);
+  
+  for (int i = 0; i < 3; ++i) {
+    cch[i] = fch[i].mul(mask_f) + bch[i].mul(1.0 - mask_f);
+  }
+  
+  cv::Mat comp_f;
+  cv::merge(cch, comp_f);
+  cv::Mat comp_u8;
+  comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
+  
+  // Upscale result if needed
+  cv::Mat final_comp;
+  if (comp_u8.size() != frame_bgr.size()) {
+    cv::resize(comp_u8, final_comp, frame_bgr.size(), 0, 0, cv::INTER_LINEAR);
+  } else {
+    final_comp = comp_u8;
+  }
+  
+  cv::Mat rgb;
+  cv::cvtColor(final_comp, rgb, cv::COLOR_BGR2RGB);
+  return rgb;
+}
+
+// Optimized solid color background composite with scale optimization and caching
+cv::Mat CompositeSolidBackgroundBGR_Accel(const cv::Mat& frame_bgr,
+                                          const cv::Mat& mask_u8,
+                                          const cv::Scalar& bgr,
+                                          bool use_ocl,
+                                          float scale) {
+  // Static cache for solid color matrices
+  static cv::Mat cached_solid_bg;
+  static cv::Size cached_size;
+  static cv::Scalar cached_color;
+  static bool cache_valid = false;
+  static int debug_call_count = 0;
+  
+  debug_call_count++;
+  
+  scale = std::clamp(scale, 0.4f, 1.0f);
+  
+  // Debug first few calls to show optimization status
+  if (debug_call_count <= 3) {
+    std::cout << "🚀 SOLID BG ACCEL " << debug_call_count << " - scale=" << scale 
+              << " opencl=" << use_ocl << " frame=" << frame_bgr.cols << "x" << frame_bgr.rows << std::endl;
+  }
+  
+  // Check if we can use cached solid background
+  bool need_create = false;
+  if (!cache_valid || 
+      cached_size != frame_bgr.size() ||
+      cached_color != bgr) {
+    need_create = true;
+    cache_valid = true;
+    cached_size = frame_bgr.size();
+    cached_color = bgr;
+    if (debug_call_count <= 3) {
+      std::cout << "🔄 SOLID BG CACHE MISS - creating solid matrix" << std::endl;
+    }
+  } else if (debug_call_count <= 3) {
+    std::cout << "✅ SOLID BG CACHE HIT - using cached matrix" << std::endl;
+  }
+  
+  // Create solid background if needed
+  if (need_create) {
+    cached_solid_bg = cv::Mat(frame_bgr.size(), CV_8UC3, bgr);
+  }
+  
+  // If scale optimization is disabled or OpenCL not available, use standard path
+  if (!use_ocl && std::abs(scale - 1.0f) < 1e-3f) {
+    return CompositeSolidBackgroundBGR(frame_bgr, mask_u8, bgr);
+  }
+  
+  // Scale optimization: work at reduced resolution for compositing
+  cv::Mat small_frame, small_mask, small_bg;
+  if (std::abs(scale - 1.0f) < 1e-3f) {
+    small_frame = frame_bgr;
+    small_mask = mask_u8;
+    small_bg = cached_solid_bg;
+  } else {
+    cv::resize(frame_bgr, small_frame, cv::Size(), scale, scale, 
+               (scale >= 0.85f) ? cv::INTER_LINEAR : cv::INTER_AREA);
+    cv::resize(mask_u8, small_mask, small_frame.size(), 0, 0, cv::INTER_LINEAR);
+    small_bg = cv::Mat(small_frame.size(), CV_8UC3, bgr);
+  }
+  
+  // Perform compositing at reduced scale
+  cv::Mat frame_f, bg_f;
+  small_frame.convertTo(frame_f, CV_32FC3, 1.0/255.0);
+  small_bg.convertTo(bg_f, CV_32FC3, 1.0/255.0);
+  cv::Mat mask_f;
+  small_mask.convertTo(mask_f, CV_32FC1, 1.0/255.0);
+  
+  std::vector<cv::Mat> fch, bch, cch;
+  cv::split(frame_f, fch);
+  cv::split(bg_f, bch);
+  cch.resize(3);
+  
+  for (int i = 0; i < 3; ++i) {
+    cch[i] = fch[i].mul(mask_f) + bch[i].mul(1.0 - mask_f);
+  }
+  
+  cv::Mat comp_f;
+  cv::merge(cch, comp_f);
+  cv::Mat comp_u8;
+  comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
+  
+  // Upscale result if needed
+  cv::Mat final_comp;
+  if (comp_u8.size() != frame_bgr.size()) {
+    cv::resize(comp_u8, final_comp, frame_bgr.size(), 0, 0, cv::INTER_LINEAR);
+  } else {
+    final_comp = comp_u8;
+  }
+  
+  cv::Mat rgb;
+  cv::cvtColor(final_comp, rgb, cv::COLOR_BGR2RGB);
   return rgb;
 }
