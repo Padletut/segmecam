@@ -85,6 +85,8 @@ test-*.sh
 
 # Allow specific Apache 2.0 licensed models
 !models/selfie_segmenter.tflite
+!models/face_detection_short_range.tflite
+!models/face_landmark_with_attention.tflite
 
 # Additional model directories  
 !models/tasks/
