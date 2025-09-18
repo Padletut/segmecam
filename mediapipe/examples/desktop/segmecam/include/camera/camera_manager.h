@@ -7,6 +7,18 @@
 #include <linux/videodev2.h>
 #include "cam_enum.h"
 
+// Forward declarations for GStreamer types (to avoid header dependencies)
+#ifdef __cplusplus
+extern "C" {
+#endif
+typedef struct _GstElement GstElement;
+typedef struct _GstAppSink GstAppSink;
+typedef struct _GMainLoop GMainLoop;
+typedef void* gpointer;
+#ifdef __cplusplus
+}
+#endif
+
 namespace segmecam {
 
 // Configuration for camera system
@@ -51,6 +63,7 @@ public:
     
     // Core lifecycle
     int Initialize(const CameraConfig& config);
+    int InitializeV4L2(const CameraConfig& config);
     void Cleanup();
     
     // Camera operations
@@ -156,7 +169,6 @@ private:
     CtrlRange r_autoexposure_, r_exposure_abs_;
     CtrlRange r_awb_, r_wb_temp_, r_backlight_, r_expo_dynfps_;
 
-#ifdef FLATPAK_BUILD
     // PipeWire/GStreamer specific members
     GstElement* pipeline_ = nullptr;
     GstElement* appsink_ = nullptr;
@@ -165,7 +177,6 @@ private:
     bool camera_permission_granted_ = false;
     cv::Mat current_frame_;
     std::mutex frame_mutex_;
-#endif
     
     // Helper methods
     cv::VideoCapture OpenCapture(int idx, int w, int h);
@@ -174,7 +185,6 @@ private:
     bool GetCtrl(const std::string& cam_path, uint32_t id, int32_t* value);
     void UpdateFPSOptions(const std::string& cam_path, int width, int height);
 
-#ifdef FLATPAK_BUILD
     // PipeWire/GStreamer specific methods
     bool InitializeGStreamer();
     void CleanupGStreamer();
@@ -184,7 +194,6 @@ private:
     void StopPipeWireCapture();
     static void OnNewSample(GstAppSink* sink, gpointer user_data);
     static void OnEOS(GstAppSink* sink, gpointer user_data);
-#endif
 };
 
 } // namespace segmecam

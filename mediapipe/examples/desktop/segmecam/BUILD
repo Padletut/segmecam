@@ -260,11 +260,7 @@ cc_library( # type: ignore
         "-I/usr/include/opencv4",
     ] + select({
         "//conditions:default": [],
-        ":flatpak_build": [
-            "-I/usr/include/gstreamer-1.0",
-            "-I/usr/include/glib-2.0",
-            "-I/usr/lib/x86_64-linux-gnu/glib-2.0/include",
-        ],
+        ":flatpak_build": [],
     }),
     linkopts = [
         "-lopencv_core",
@@ -280,10 +276,6 @@ cc_library( # type: ignore
             "-lgio-2.0",
             "-lportal",
         ],
-    }),
-    defines = select({
-        "//conditions:default": [],
-        ":flatpak_build": ["FLATPAK_BUILD"],
     }),
 )
 

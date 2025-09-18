@@ -14,9 +14,11 @@ ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 # --face              Use combined face+seg graph (default: selfie segmentation only)
 # --graph <path>      Use a specific graph path
 # --tasks             Use Tasks Face Landmarker + Seg graph
+# --flatpak           Build for Flatpak (enables FLATPAK_BUILD define)
 REBUILD=false
 USE_FACE=false
 USE_TASKS=false
+FLATPAK_BUILD=false
 CUSTOM_GRAPH=""
 ARGS=()
 while [[ $# -gt 0 ]]; do
@@ -25,6 +27,7 @@ while [[ $# -gt 0 ]]; do
     --face) USE_FACE=true; shift ;;
     --graph) CUSTOM_GRAPH="$2"; shift 2 ;;
     --tasks) USE_TASKS=true; shift ;;
+    --flatpak) FLATPAK_BUILD=true; shift ;;
     *) ARGS+=("$1"); shift ;;
   esac
 done
@@ -97,10 +100,15 @@ BIN_RUNFILES="$MP_DIR/bazel-bin/mediapipe/examples/desktop/segmecam/segmecam.run
 #"$BAZEL" fetch "$APP_TARGET" || true
 
 # Step 2: Run Bazel build and execute the modular application
-"$BAZEL" run -c opt \
-  --action_env=PKG_CONFIG_PATH --repo_env=PKG_CONFIG_PATH \
-  --cxxopt=-I/usr/include/opencv4 \
-  "$APP_TARGET" -- \
-  --graph_path="$GRAPH_PATH" \
-  --resource_root_dir="$BIN_RUNFILES" \
-  --camera_id=0
+BAZEL_CMD=("$BAZEL" run -c opt)
+if [[ "$FLATPAK_BUILD" == true ]]; then
+  BAZEL_CMD+=(--define FLATPAK_BUILD=true)
+fi
+BAZEL_CMD+=(--action_env=PKG_CONFIG_PATH --repo_env=PKG_CONFIG_PATH)
+BAZEL_CMD+=(--cxxopt=-I/usr/include/opencv4)
+BAZEL_CMD+=("$APP_TARGET" --)
+BAZEL_CMD+=(--graph_path="$GRAPH_PATH")
+BAZEL_CMD+=(--resource_root_dir="$BIN_RUNFILES")
+BAZEL_CMD+=(--camera_id=0)
+
+"${BAZEL_CMD[@]}"

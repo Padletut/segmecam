@@ -11,18 +11,20 @@ finish-args:
   - --share=ipc
   - --device=dri
   - --device=shm
-  - --device=all
+  # Removed --device=all for proper sandboxing
   - --socket=pulseaudio
+  - --socket=pipewire
   - --filesystem=xdg-pictures:ro
   - --filesystem=home:ro
   - --filesystem=/tmp
-  - --filesystem=host
   - --share=network
   - --env=LD_LIBRARY_PATH=/app/lib
   - --env=DISPLAY=:0
   - --env=MESA_GL_VERSION_OVERRIDE=3.3
   - --env=MESA_GLSL_VERSION_OVERRIDE=330
   - --env=QT_X11_NO_MITSHM=1
+  - --talk-name=org.freedesktop.portal.Camera
+  - --talk-name=org.freedesktop.portal.Desktop
   - --filesystem=/tmp/.X11-unix
   - --share=network
 
@@ -30,16 +32,24 @@ modules:
   - name: segmecam
     buildsystem: simple
     build-commands:
-      # Create lib directory and install libraries
+      # Build SegmeCam with Flatpak-specific configuration outside of Flatpak
+      # This assumes the binary has already been built with FLATPAK_BUILD=true
+      # Copy the pre-built binary and libraries
       - mkdir -p /app/lib
-      
-      # Copy our local lib files first (should contain GLU libraries)
-      - cp -v lib/* /app/lib/ || echo "Failed to copy lib files"
+      - cp segmecam /app/bin/segmecam
 
-      # Copy libraries from the flatpak-bundle directory
+      # Copy required libraries (GStreamer, GLib, etc. from system)
+      - cp /usr/lib/x86_64-linux-gnu/libgstreamer-1.0.so* /app/lib/ || true
+      - cp /usr/lib/x86_64-linux-gnu/libgstapp-1.0.so* /app/lib/ || true
+      - cp /usr/lib/x86_64-linux-gnu/libgstvideo-1.0.so* /app/lib/ || true
+      - cp /usr/lib/x86_64-linux-gnu/libglib-2.0.so* /app/lib/ || true
+      - cp /usr/lib/x86_64-linux-gnu/libgobject-2.0.so* /app/lib/ || true
+      - cp /usr/lib/x86_64-linux-gnu/libportal.so* /app/lib/ || true
+
+      # Copy additional system libraries that might be needed
       - cp flatpak-bundle/lib/* /app/lib/ || true
-      
-      # Also install GLU library from the build system
+
+      # Install GLU library from the build system
       - |
         if [ -f /usr/lib/x86_64-linux-gnu/libGLU.so.1 ]; then
           cp -v /usr/lib/x86_64-linux-gnu/libGLU.so* /app/lib/
@@ -47,59 +57,77 @@ modules:
         else
           echo "System GLU libraries not found"
         fi
-        
-      # List what we actually have in /app/lib
-      - ls -la /app/lib/ | grep GLU || echo "No GLU libraries found in /app/lib/"
-      
+
       # Install the wrapper script
       - install -Dm755 segmecam-wrapper-nvidia.sh /app/bin/segmecam-wrapper-nvidia.sh
-      
-      # Install the binary (updated for modular architecture)
-      - install -Dm755 segmecam /app/bin/segmecam
-      
+
+      # Create lib directory and copy built binary
+      - mkdir -p /app/lib
+      - cp bazel-bin/mediapipe/examples/desktop/segmecam/segmecam /app/bin/segmecam
+
+      # Copy required libraries (GStreamer, GLib, etc. from SDK extensions)
+      - cp /usr/lib/x86_64-linux-gnu/libgstreamer-1.0.so* /app/lib/ || true
+      - cp /usr/lib/x86_64-linux-gnu/libgstapp-1.0.so* /app/lib/ || true
+      - cp /usr/lib/x86_64-linux-gnu/libgstvideo-1.0.so* /app/lib/ || true
+      - cp /usr/lib/x86_64-linux-gnu/libglib-2.0.so* /app/lib/ || true
+      - cp /usr/lib/x86_64-linux-gnu/libgobject-2.0.so* /app/lib/ || true
+      - cp /usr/lib/x86_64-linux-gnu/libportal.so* /app/lib/ || true
+
+      # Copy additional system libraries that might be needed
+      - cp flatpak-bundle/lib/* /app/lib/ || true
+
+      # Install GLU library from the build system
+      - |
+        if [ -f /usr/lib/x86_64-linux-gnu/libGLU.so.1 ]; then
+          cp -v /usr/lib/x86_64-linux-gnu/libGLU.so* /app/lib/
+          echo "Copied system GLU libraries to /app/lib/"
+        else
+          echo "System GLU libraries not found"
+        fi
+
+      # Install the wrapper script
+      - install -Dm755 segmecam-wrapper-nvidia.sh /app/bin/segmecam-wrapper-nvidia.sh
+
       # Install graph files
       - mkdir -p /app/share/segmecam/mediapipe_graphs
-      - cp selfie_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
-      - cp face_and_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
-      - cp face_tasks_and_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
-      
+      - cp mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
+      - cp mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
+      - cp mediapipe_graphs/face_tasks_and_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
+
       # Create symlink for graphs in working directory
       - ln -sf /app/share/segmecam/mediapipe_graphs /app/mediapipe_graphs
-      
+
       # Create MediaPipe runfiles structure
       - mkdir -p /app/mediapipe_runfiles
-      
-      # Create mediapipe/external symlink inside runfiles for model resolution
-      #- ln -sf /app/mediapipe_runfiles/external /app/mediapipe_runfiles/mediapipe/external
-      
+
       # Fix permissions for all copied files
       - chmod -R u+w /app/mediapipe_runfiles/
-      
+
       # Create MediaPipe external model directory and install face landmarker model
       - mkdir -p /app/mediapipe/external/com_google_mediapipe_face_landmarker_task/file
-      - cp face_landmarker.task /app/mediapipe/external/com_google_mediapipe_face_landmarker_task/file/downloaded
+      - cp models/tasks/face_landmarker.task /app/mediapipe/external/com_google_mediapipe_face_landmarker_task/file/downloaded
 
       # Ensure mediapipe tflite models is installed to the expected path
       - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/selfie_segmentation
-      - cp selfie_segmenter.tflite /app/mediapipe_runfiles/mediapipe/modules/selfie_segmentation/selfie_segmentation.tflite
+      - cp models/selfie_segmenter.tflite /app/mediapipe_runfiles/mediapipe/modules/selfie_segmentation/selfie_segmentation.tflite
       - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/face_landmark
-      - cp face_landmarker.tflite /app/mediapipe_runfiles/mediapipe/modules/face_landmark/face_landmark_with_attention.tflite
+      - cp models/face_landmark_with_attention.tflite /app/mediapipe_runfiles/mediapipe/modules/face_landmark/face_landmark_with_attention.tflite
       - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/face_detection
-      - cp face_detection_short_range.tflite /app/mediapipe_runfiles/mediapipe/modules/face_detection/face_detection_short_range.tflite
-      
+      - cp models/face_detection_short_range.tflite /app/mediapipe_runfiles/mediapipe/modules/face_detection/face_detection_short_range.tflite
+
       # Install desktop integration
       - install -Dm644 org.segmecam.SegmeCam.desktop /app/share/applications/org.segmecam.SegmeCam.desktop
       - install -Dm644 org.segmecam.SegmeCam.appdata.xml /app/share/metainfo/org.segmecam.SegmeCam.appdata.xml
-      - install -Dm644 scai_logo.png /app/share/icons/hicolor/256x256/apps/org.segmecam.SegmeCam.png
-      
+      - install -Dm644 assets/scai_logo.png /app/share/icons/hicolor/256x256/apps/org.segmecam.SegmeCam.png
+
     sources:
-      # Application binary (updated for modular architecture)
+      # Application binary (built with FLATPAK_BUILD=true)
       - type: file
         path: segmecam
         dest-filename: segmecam
       - type: file
         path: segmecam-wrapper-nvidia.sh
-      
+
       # Desktop integration files
       - type: file
         path: org.segmecam.SegmeCam.desktop
@@ -107,37 +135,20 @@ modules:
         path: org.segmecam.SegmeCam.appdata.xml
       - type: file
         path: assets/scai_logo.png
-      
-      # MediaPipe graphs
-      - type: file
-        path: mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt
-        dest-filename: selfie_seg_gpu_mask_cpu.pbtxt
-      - type: file
-        path: mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt
-        dest-filename: face_and_seg_gpu_mask_cpu.pbtxt
-      - type: file
-        path: mediapipe_graphs/face_tasks_and_seg_gpu_mask_cpu.pbtxt
-        dest-filename: face_tasks_and_seg_gpu_mask_cpu.pbtxt
-      
-      # Models and dependencies
-      - type: file
-        path: models/tasks/face_landmarker.task
-        dest-filename: face_landmarker.task
 
+      # MediaPipe graphs
+      - type: dir
+        path: mediapipe_graphs
+
+      # Models
+      - type: dir
+        path: models
+
+      # MediaPipe runfiles (needed for model loading)
       - type: dir
         path: mediapipe_runfiles
+
+      # Flatpak bundle libraries
       - type: dir
         path: flatpak-bundle
-
-      # Selfie segmentation model
-      - type: file
-        path: models/selfie_segmenter.tflite
-        dest-filename: selfie_segmenter.tflite
-
-      # Face landmarker tflite models (assuming they are in models/)
-      - type: file
-        path: models/face_landmark_with_attention.tflite
-        dest-filename: face_landmarker.tflite
-      - type: file
-        path: models/face_detection_short_range.tflite
         dest-filename: face_detection_short_range.tflite
