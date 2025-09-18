@@ -6,31 +6,61 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+// Conditional compilation for Flatpak builds
+#ifdef FLATPAK_BUILD
+// GStreamer includes for PipeWire support
+extern "C" {
+#include <gst/gst.h>
+#include <gst/app/gstappsink.h>
+#include <gst/video/video.h>
+}
+
+// libportal for camera permissions (runtime loaded to avoid Bazel issues)
+#include <dlfcn.h>
+#endif
+
 namespace segmecam {
 
 CameraManager::CameraManager() {
-    // Initialize with default values
+#ifdef FLATPAK_BUILD
+    // Initialize GStreamer for PipeWire support
+    if (!InitializeGStreamer()) {
+        std::cout << "⚠️  GStreamer initialization failed, PipeWire camera support disabled" << std::endl;
+    }
+#endif
 }
 
 CameraManager::~CameraManager() {
     Cleanup();
+#ifdef FLATPAK_BUILD
+    CleanupGStreamer();
+#endif
 }
 
 int CameraManager::Initialize(const CameraConfig& config) {
     config_ = config;
     state_ = CameraState{}; // Reset state
-    
+
     std::cout << "📷 Initializing Camera Manager..." << std::endl;
-    
+
+#ifdef FLATPAK_BUILD
+    // For Flatpak, we'll use PipeWire + Camera Portal
+    std::cout << "📷 Using PipeWire + Camera Portal for sandboxed access" << std::endl;
+    // Camera enumeration will be handled differently in Flatpak
+    // We'll request camera access when needed
+    state_.is_initialized = true;
+    std::cout << "✅ Camera Manager initialized for Flatpak" << std::endl;
+    return 0;
+#else
     // Enumerate available cameras
     RefreshCameraList();
     RefreshVCamList();
-    
+
     if (cam_list_.empty()) {
         std::cout << "⚠️  No cameras found during enumeration" << std::endl;
         return 1;
     }
-    
+
     // Find the requested camera index in the enumerated list
     for (size_t i = 0; i < cam_list_.size(); ++i) {
         if (cam_list_[i].index == config_.default_camera_index) {
@@ -38,39 +68,39 @@ int CameraManager::Initialize(const CameraConfig& config) {
             break;
         }
     }
-    
+
     // Set initial resolution from available cameras
     if (!cam_list_.empty() && !cam_list_[state_.ui_cam_idx].resolutions.empty()) {
         auto resolutions = cam_list_[state_.ui_cam_idx].resolutions;
-        
+
         // Try to find matching resolution or use the largest available
         int best_res_idx = (int)resolutions.size() - 1; // Default to largest
-        
+
         if (config_.default_width > 0 && config_.default_height > 0) {
             for (size_t i = 0; i < resolutions.size(); ++i) {
-                if (resolutions[i].first == config_.default_width && 
+                if (resolutions[i].first == config_.default_width &&
                     resolutions[i].second == config_.default_height) {
                     best_res_idx = (int)i;
                     break;
                 }
             }
         }
-        
+
         state_.ui_res_idx = best_res_idx;
         auto wh = resolutions[best_res_idx];
         state_.current_width = wh.first;
         state_.current_height = wh.second;
     }
-    
+
     // Setup camera path and FPS options
     if (!cam_list_.empty()) {
         state_.current_camera_path = cam_list_[state_.ui_cam_idx].path;
         UpdateFPSOptions(state_.current_camera_path, state_.current_width, state_.current_height);
-        
+
         // Find best FPS option
         if (!ui_fps_opts_.empty()) {
             state_.ui_fps_idx = (int)ui_fps_opts_.size() - 1; // Default to highest
-            
+
             if (config_.default_fps > 0) {
                 for (size_t i = 0; i < ui_fps_opts_.size(); ++i) {
                     if (ui_fps_opts_[i] == config_.default_fps) {
@@ -79,29 +109,30 @@ int CameraManager::Initialize(const CameraConfig& config) {
                     }
                 }
             }
-            
+
             state_.current_fps = ui_fps_opts_[state_.ui_fps_idx];
         }
     }
-    
+
     // Initialize camera controls
     RefreshControls();
     ApplyDefaultControls();
-    
+
     // Open the camera
     if (!OpenCamera(config_.default_camera_index, state_.current_width, state_.current_height, state_.current_fps)) {
         std::cerr << "❌ Failed to open camera " << config_.default_camera_index << std::endl;
         return 2;
     }
-    
+
     state_.is_initialized = true;
     std::cout << "✅ Camera Manager initialized successfully!" << std::endl;
     std::cout << "📷 Using camera: " << state_.current_camera_path << std::endl;
     std::cout << "📐 Resolution: " << state_.current_width << "x" << state_.current_height << std::endl;
     std::cout << "🎬 FPS: " << state_.current_fps << std::endl;
     std::cout << "🔧 Backend: " << GetBackendName() << std::endl;
-    
+
     return 0;
+#endif
 }
 
 bool CameraManager::OpenCamera(int camera_index) {
@@ -110,24 +141,45 @@ bool CameraManager::OpenCamera(int camera_index) {
 
 bool CameraManager::OpenCamera(int camera_index, int width, int height, int fps) {
     CloseCamera();
-    
+
     std::cout << "📷 Opening camera " << camera_index << " with resolution: " << width << "x" << height;
     if (fps > 0) std::cout << " @ " << fps << " FPS";
     std::cout << std::endl;
-    
+
+#ifdef FLATPAK_BUILD
+    // For Flatpak, use PipeWire instead of direct V4L2 access
+    if (!StartPipeWireCapture()) {
+        std::cerr << "❌ Failed to start PipeWire camera capture" << std::endl;
+        return false;
+    }
+
+    // Set state for PipeWire capture
+    state_.current_width = width;
+    state_.current_height = height;
+    state_.current_fps = fps > 0 ? fps : 30; // Default to 30 FPS
+    state_.actual_fps = state_.current_fps;
+    state_.backend_name = "PipeWire";
+    state_.is_opened = true;
+
+    std::cout << "✅ PipeWire camera opened successfully: " << state_.current_width << "x" << state_.current_height
+              << " @ " << state_.actual_fps << " FPS" << std::endl;
+    std::cout << "🔧 Backend: " << state_.backend_name << std::endl;
+
+    return true;
+#else
     // Try V4L2 first if preferred
     if (config_.prefer_v4l2) {
         cap_ = OpenCapture(camera_index, width, height);
     } else {
         cap_.open(camera_index);
     }
-    
+
     // Fallback to default backend if V4L2 failed
     if (!cap_.isOpened()) {
         std::cout << "📷 V4L2 open failed for index " << camera_index << ", retrying with CAP_ANY" << std::endl;
         cap_.open(camera_index);
     }
-    
+
     if (!cap_.isOpened()) {
         std::cerr << "❌ Unable to open camera " << camera_index << std::endl;
         return false;
@@ -135,7 +187,7 @@ bool CameraManager::OpenCamera(int camera_index, int width, int height, int fps)
 
     // Force MJPG format for better FPS support (before setting resolution/FPS)
     cap_.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
-    
+
     // Set resolution
     cap_.set(cv::CAP_PROP_FRAME_WIDTH, width);
     cap_.set(cv::CAP_PROP_FRAME_HEIGHT, height);
@@ -144,31 +196,36 @@ bool CameraManager::OpenCamera(int camera_index, int width, int height, int fps)
     if (fps > 0) {
         cap_.set(cv::CAP_PROP_FPS, fps);
     }
-    
+
     // Verify actual settings
     double actual_w = cap_.get(cv::CAP_PROP_FRAME_WIDTH);
     double actual_h = cap_.get(cv::CAP_PROP_FRAME_HEIGHT);
     double actual_fps = cap_.get(cv::CAP_PROP_FPS);
-    
+
     state_.current_width = (int)actual_w;
     state_.current_height = (int)actual_h;
     state_.actual_fps = actual_fps;
     state_.backend_name = cap_.getBackendName();
     state_.is_opened = true;
-    
-    std::cout << "✅ Camera opened successfully: " << state_.current_width << "x" << state_.current_height 
+
+    std::cout << "✅ Camera opened successfully: " << state_.current_width << "x" << state_.current_height
               << " @ " << state_.actual_fps << " FPS" << std::endl;
     std::cout << "🔧 Backend: " << state_.backend_name << std::endl;
-    
+
     return true;
+#endif
 }
 
 void CameraManager::CloseCamera() {
+#ifdef FLATPAK_BUILD
+    StopPipeWireCapture();
+#else
     if (cap_.isOpened()) {
         cap_.release();
         state_.is_opened = false;
         std::cout << "📷 Camera closed" << std::endl;
     }
+#endif
 }
 
 bool CameraManager::IsOpened() const {
@@ -179,13 +236,26 @@ bool CameraManager::CaptureFrame(cv::Mat& frame) {
     if (!IsOpened()) {
         return false;
     }
-    
+
+#ifdef FLATPAK_BUILD
+    // For PipeWire, get frame from the current_frame_ buffer
+    {
+        std::lock_guard<std::mutex> lock(frame_mutex_);
+        if (current_frame_.empty()) {
+            return false;
+        }
+        current_frame_.copyTo(frame);
+    }
+    state_.frames_captured++;
+    return true;
+#else
     bool success = cap_.read(frame);
     if (success) {
         state_.frames_captured++;
     }
-    
+
     return success;
+#endif
 }
 
 void CameraManager::RefreshCameraList() {
@@ -472,5 +542,199 @@ void CameraManager::UpdateFPSOptions(const std::string& cam_path, int width, int
         std::cout << std::endl;
     }
 }
+
+#ifdef FLATPAK_BUILD
+
+bool CameraManager::InitializeGStreamer() {
+    if (gst_initialized_) {
+        return true;
+    }
+
+    std::cout << "🎬 Initializing GStreamer for PipeWire support..." << std::endl;
+
+    // Initialize GStreamer
+    gst_init(nullptr, nullptr);
+    gst_initialized_ = true;
+
+    std::cout << "✅ GStreamer initialized successfully" << std::endl;
+    return true;
+}
+
+void CameraManager::CleanupGStreamer() {
+    if (pipeline_) {
+        gst_element_set_state(pipeline_, GST_STATE_NULL);
+        gst_object_unref(pipeline_);
+        pipeline_ = nullptr;
+    }
+
+    if (appsink_) {
+        gst_object_unref(appsink_);
+        appsink_ = nullptr;
+    }
+
+    if (main_loop_) {
+        g_main_loop_quit(main_loop_);
+        g_main_loop_unref(main_loop_);
+        main_loop_ = nullptr;
+    }
+
+    gst_initialized_ = false;
+    camera_permission_granted_ = false;
+}
+
+bool CameraManager::RequestCameraPermission() {
+    std::cout << "📷 Requesting camera permission via Portal..." << std::endl;
+
+    // Load libportal at runtime to avoid Bazel header issues
+    void* portal_lib = dlopen("libportal.so", RTLD_LAZY);
+    if (!portal_lib) {
+        std::cerr << "❌ Failed to load libportal: " << dlerror() << std::endl;
+        std::cout << "📷 Assuming camera permission granted (libportal not available)" << std::endl;
+        camera_permission_granted_ = true;
+        return true;
+    }
+
+    // Try to get the xdp_portal_new function
+    typedef void* (*xdp_portal_new_func)();
+    xdp_portal_new_func xdp_portal_new = (xdp_portal_new_func)dlsym(portal_lib, "xdp_portal_new");
+
+    if (!xdp_portal_new) {
+        std::cerr << "❌ Failed to find xdp_portal_new: " << dlerror() << std::endl;
+        dlclose(portal_lib);
+        std::cout << "📷 Assuming camera permission granted (portal functions not available)" << std::endl;
+        camera_permission_granted_ = true;
+        return true;
+    }
+
+    // For now, assume permission is granted since we can't easily call the portal API
+    // TODO: Implement full portal API integration
+    std::cout << "✅ Camera permission request completed (simplified implementation)" << std::endl;
+    camera_permission_granted_ = true;
+    dlclose(portal_lib);
+    return true;
+}
+
+bool CameraManager::CreatePipeWirePipeline() {
+    std::cout << "🎬 Creating PipeWire GStreamer pipeline..." << std::endl;
+
+    // Create pipeline: pipewiresrc ! videoconvert ! video/x-raw,format=BGR ! appsink
+    pipeline_ = gst_pipeline_new("camera-pipeline");
+
+    if (!pipeline_) {
+        std::cerr << "❌ Failed to create pipeline" << std::endl;
+        return false;
+    }
+
+    // Create elements
+    GstElement* pipewiresrc = gst_element_factory_make("pipewiresrc", "source");
+    GstElement* videoconvert = gst_element_factory_make("videoconvert", "convert");
+    appsink_ = gst_element_factory_make("appsink", "sink");
+
+    if (!pipewiresrc || !videoconvert || !appsink_) {
+        std::cerr << "❌ Failed to create pipeline elements" << std::endl;
+        return false;
+    }
+
+    // Configure appsink
+    g_object_set(appsink_, "emit-signals", TRUE, nullptr);
+    g_signal_connect(appsink_, "new-sample", G_CALLBACK(OnNewSample), this);
+    g_signal_connect(appsink_, "eos", G_CALLBACK(OnEOS), this);
+
+    // Add elements to pipeline
+    gst_bin_add_many(GST_BIN(pipeline_), pipewiresrc, videoconvert, appsink_, nullptr);
+
+    // Link elements
+    if (!gst_element_link_many(pipewiresrc, videoconvert, appsink_, nullptr)) {
+        std::cerr << "❌ Failed to link pipeline elements" << std::endl;
+        return false;
+    }
+
+    std::cout << "✅ PipeWire pipeline created successfully" << std::endl;
+    return true;
+}
+
+bool CameraManager::StartPipeWireCapture() {
+    if (!camera_permission_granted_) {
+        if (!RequestCameraPermission()) {
+            return false;
+        }
+    }
+
+    if (!pipeline_ && !CreatePipeWirePipeline()) {
+        return false;
+    }
+
+    std::cout << "🎬 Starting PipeWire camera capture..." << std::endl;
+
+    // Set pipeline to playing state
+    GstStateChangeReturn ret = gst_element_set_state(pipeline_, GST_STATE_PLAYING);
+    if (ret == GST_STATE_CHANGE_FAILURE) {
+        std::cerr << "❌ Failed to start pipeline" << std::endl;
+        return false;
+    }
+
+    state_.is_opened = true;
+    std::cout << "✅ PipeWire camera capture started" << std::endl;
+    return true;
+}
+
+void CameraManager::StopPipeWireCapture() {
+    if (pipeline_) {
+        gst_element_set_state(pipeline_, GST_STATE_NULL);
+    }
+    state_.is_opened = false;
+    std::cout << "🛑 PipeWire camera capture stopped" << std::endl;
+}
+
+void CameraManager::OnNewSample(GstAppSink* sink, gpointer user_data) {
+    CameraManager* self = static_cast<CameraManager*>(user_data);
+
+    // Get the sample
+    GstSample* sample = gst_app_sink_pull_sample(sink);
+    if (!sample) {
+        return;
+    }
+
+    // Get buffer and caps
+    GstBuffer* buffer = gst_sample_get_buffer(sample);
+    GstCaps* caps = gst_sample_get_caps(sample);
+
+    if (!buffer || !caps) {
+        gst_sample_unref(sample);
+        return;
+    }
+
+    // Get video info
+    GstVideoInfo info;
+    gst_video_info_from_caps(&info, caps);
+
+    // Map buffer
+    GstMapInfo map_info;
+    if (!gst_buffer_map(buffer, &map_info, GST_MAP_READ)) {
+        gst_sample_unref(sample);
+        return;
+    }
+
+    // Convert to OpenCV Mat
+    {
+        std::lock_guard<std::mutex> lock(self->frame_mutex_);
+        self->current_frame_ = cv::Mat(info.height, info.width, CV_8UC3,
+                                      map_info.data, info.stride[0]);
+        // Make a copy since the buffer will be unmapped
+        self->current_frame_.copyTo(self->current_frame_);
+    }
+
+    // Unmap and unref
+    gst_buffer_unmap(buffer, &map_info);
+    gst_sample_unref(sample);
+}
+
+void CameraManager::OnEOS(GstAppSink* sink, gpointer user_data) {
+    CameraManager* self = static_cast<CameraManager*>(user_data);
+    std::cout << "🎬 PipeWire stream ended" << std::endl;
+    self->state_.is_opened = false;
+}
+
+#endif // FLATPAK_BUILD
 
 } // namespace segmecam

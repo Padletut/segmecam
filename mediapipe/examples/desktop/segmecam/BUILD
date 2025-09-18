@@ -1,8 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library") # type: ignore
 
-# SegmeCam Modular Architecture - Phase 1-8 Complete! 🎉
-# Note: Test targets may reference removed test files - this is expected after refactoring completion
-
 cc_library( # type: ignore
     name = "segmecam_composite",
     srcs = ["segmecam_composite.cc"],
@@ -136,7 +133,11 @@ cc_library( # type: ignore
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_highgui",
     ],
-    copts = ["-I/usr/include/opencv4"],
+    copts = [
+        "-I/usr/include/opencv4",
+        "-I/usr/include/spa-0.2",
+        "-I/usr/include/pipewire-0.3",
+    ],
     linkopts = ["-lopencv_core", "-lopencv_highgui"],
 )
 
@@ -257,12 +258,40 @@ cc_library( # type: ignore
     ],
     copts = [
         "-I/usr/include/opencv4",
-    ],
+    ] + select({
+        "//conditions:default": [],
+        ":flatpak_build": [
+            "-I/usr/include/gstreamer-1.0",
+            "-I/usr/include/glib-2.0",
+            "-I/usr/lib/x86_64-linux-gnu/glib-2.0/include",
+        ],
+    }),
     linkopts = [
         "-lopencv_core",
         "-lopencv_imgproc",
         "-lopencv_highgui",
-    ],
+    ] + select({
+        "//conditions:default": [],
+        ":flatpak_build": [
+            "-lgstreamer-1.0",
+            "-lgstapp-1.0",
+            "-lgstvideo-1.0",
+            "-lglib-2.0",
+            "-lgio-2.0",
+            "-lportal",
+        ],
+    }),
+    defines = select({
+        "//conditions:default": [],
+        ":flatpak_build": ["FLATPAK_BUILD"],
+    }),
+)
+
+config_setting(
+    name = "flatpak_build",
+    define_values = {
+        "FLATPAK_BUILD": "true",
+    },
 )
 
 # Render Manager Library (Phase 3 Refactoring)
@@ -364,305 +393,6 @@ cc_library( # type: ignore
         "-lopencv_core",
         "-lopencv_imgproc",
         "-lopencv_highgui",
-    ],
-)
-
-# Application Foundation - Main Executable (Phase 1 Modular Refactoring)
-cc_binary( # pyright: ignore[reportUndefinedVariable]
-    name = "application",
-    srcs = [
-        "src/application/application.cpp",
-        "include/application/application.h",
-    ],
-    includes = [".", "include"],
-    deps = [
-        # Extracted application modules
-        ":application_config",
-        ":gpu_setup", 
-        ":mediapipe_setup",
-        ":camera_setup",
-        ":manager_coordination",
-        ":application_cleanup",
-        ":application_run",
-        ":application_initialization",
-        # Phase 1-7 managers
-        ":camera_manager",
-        ":effects_manager", 
-        ":render_manager",
-        ":ui_manager_enhanced",
-        ":mediapipe_manager",
-        "//mediapipe/examples/desktop/segmecam/src/config:config_manager",
-        # Core dependencies
-        ":gpu_detector",
-        ":segmecam_face_effects",  # for cam_enum.h
-        "//mediapipe/framework:calculator_graph", 
-        "//mediapipe/framework/formats:image_frame",
-        "//mediapipe/framework/port:file_helpers",
-        "//mediapipe/framework/port:parse_text_proto",
-        "//mediapipe/framework/port:status",
-        "//mediapipe/framework/port:opencv_core",
-        "//mediapipe/framework/port:opencv_highgui",
-        "//mediapipe/gpu:gpu_shared_data_internal",
-        # Required calculators for selfie segmentation
-        "//mediapipe/graphs/selfie_segmentation:selfie_segmentation_gpu_deps",
-        "//mediapipe/graphs/selfie_segmentation:selfie_segmentation_cpu_deps",
-        "//mediapipe/calculators/util:to_image_calculator",
-        "//mediapipe/calculators/core:flow_limiter_calculator",
-        "//mediapipe/gpu:gl_calculator_helper",
-        "//mediapipe/gpu:gpu_buffer",
-        "//mediapipe/gpu:gpu_buffer_to_image_frame_calculator",
-        "//mediapipe/gpu:image_frame_to_gpu_buffer_calculator",
-        "@com_google_absl//absl/flags:flag",
-    ],
-    copts = [
-        "-I/usr/include/SDL2",
-        "-I/usr/include/opencv4",
-    ],
-    linkopts = [
-        "-lGL",
-        "-lGLU",
-        "-lSDL2",
-    ],
-)
-
-cc_binary( # pyright: ignore[reportUndefinedVariable]
-    name = "segmecam_gui_gpu",
-    srcs = [
-        "segmecam_gui_gpu.cpp",
-    ],
-    data = [
-        "//mediapipe/modules/selfie_segmentation:selfie_segmentation.tflite",
-        "//mediapipe/modules/face_landmark:face_landmark_with_attention.tflite",
-        "//mediapipe/modules/face_detection:face_detection_short_range.tflite",
-    ],
-    deps = [
-        ":segmecam_composite",
-        ":segmecam_face_effects",
-        ":presets",
-        ":vcam",
-        ":gpu_detector",
-        "//mediapipe/framework:calculator_graph",
-        "//mediapipe/framework/formats:image_frame",
-        "//mediapipe/framework/formats:landmark_cc_proto",
-        "//mediapipe/framework/formats:rect_cc_proto",
-        "//mediapipe/framework/port:file_helpers",
-        "//mediapipe/framework/port:parse_text_proto",
-        "//mediapipe/framework/port:status",
-        "//mediapipe/framework/port:opencv_core",
-        "//mediapipe/framework/port:opencv_imgproc",
-        "//mediapipe/framework/port:opencv_highgui",
-        "//mediapipe/graphs/selfie_segmentation:selfie_segmentation_gpu_deps",
-        "//mediapipe/graphs/face_mesh:desktop_live_gpu_calculators",
-        # Tasks Face Landmarker graph + options protos
-        "//mediapipe/tasks/cc/vision/face_landmarker:face_landmarker_graph",
-        "//mediapipe/tasks/cc/vision/face_landmarker:face_landmarks_connections",
-        "//mediapipe/tasks/cc/vision/face_landmarker/proto:face_landmarker_graph_options_cc_proto",
-        "//mediapipe/tasks/cc/vision/face_landmarker/proto:face_landmarks_detector_graph_options_cc_proto",
-        "//mediapipe/tasks/cc/vision/face_detector/proto:face_detector_graph_options_cc_proto",
-        # Needed calculators referenced by our graphs
-        "//mediapipe/calculators/util:to_image_calculator",
-        "//mediapipe/gpu:gl_calculator_helper",
-        "//mediapipe/gpu:gpu_buffer",
-        "//mediapipe/gpu:gpu_shared_data_internal",
-        "//mediapipe/gpu:gpu_buffer_to_image_frame_calculator",
-        "//mediapipe/gpu:image_frame_to_gpu_buffer_calculator",
-        "//third_party/imgui:imgui",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-    ],
-    copts = [
-        "-DABSL_USES_STD_ANY=1",
-        "-I/usr/include/opencv4",
-        "-I/usr/include/SDL2",
-        "-I/usr/lib/gcc/x86_64-linux-gnu/13/include",
-    ],
-    linkopts = [
-        "-lSDL2",
-        "-lGL",
-        "-ldl",
-        "-lpthread",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-# Test binary for Phase 1 Application Foundation 
-cc_binary( # type: ignore
-    name = "segmecam_gui_gpu_test",
-    srcs = [
-        "segmecam_gui_gpu_test.cpp",
-    ],
-    deps = [
-        ":application",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-# Test binary for Phase 2 MediaPipe Manager
-cc_binary( # pyright: ignore[reportUndefinedVariable]
-    name = "mediapipe_manager_test",
-    srcs = [
-        "mediapipe_manager_test.cpp",
-    ],
-    deps = [
-        ":application",
-        ":mediapipe_manager",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-# Test binary for Phase 3 Render Manager
-cc_binary( # pyright: ignore[reportUndefinedVariable]
-    name = "render_manager_test",
-    srcs = [
-        "render_manager_test.cpp",
-    ],
-    deps = [
-        ":render_manager",
-        "//mediapipe/framework/port:opencv_core",
-        "//third_party/imgui:imgui",
-    ],
-    copts = [
-        "-I/usr/include/SDL2",
-        "-I/usr/include/opencv4",
-    ],
-    linkopts = [
-        "-lSDL2",
-        "-lGL",
-        "-ldl",
-        "-lopencv_core",
-        "-lopencv_imgproc",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-# Test binary for Phase 4 Camera Manager
-cc_binary( # pyright: ignore[reportUndefinedVariable]
-    name = "camera_manager_test",
-    srcs = [
-        "camera_manager_test.cpp",
-    ],
-    deps = [
-        ":camera_manager",
-        "//mediapipe/framework/port:opencv_core",
-        "//mediapipe/framework/port:opencv_highgui",
-    ],
-    copts = [
-        "-I/usr/include/opencv4",
-    ],
-    linkopts = [
-        "-lopencv_core",
-        "-lopencv_imgproc",
-        "-lopencv_highgui",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-# Test binary for Phase 6 UI Management
-cc_binary( # pyright: ignore[reportUndefinedVariable]
-    name = "ui_manager_test",
-    srcs = [
-        "ui_manager_test.cpp",
-    ],
-    deps = [
-        ":ui_manager_enhanced",
-        ":ui_panels",
-        ":app_state",
-        ":camera_manager",
-        "//mediapipe/framework/port:opencv_core",
-        "//mediapipe/framework/port:opencv_imgproc",
-        "//mediapipe/framework/port:opencv_highgui",
-        "//third_party/imgui:imgui",
-    ],
-    copts = [
-        "-DABSL_USES_STD_ANY=1",
-        "-I/usr/include/SDL2",
-        "-I/usr/include/opencv4",
-        "-I/usr/lib/gcc/x86_64-linux-gnu/13/include",
-    ],
-    linkopts = [
-        "-lSDL2",
-        "-lGL",
-        "-ldl",
-        "-lpthread",
-        "-lopencv_core",
-        "-lopencv_imgproc",
-        "-lopencv_highgui",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-# Test binary for Phase 5 Effects Manager
-cc_binary( # pyright: ignore[reportUndefinedVariable]
-    name = "effects_manager_test",
-    srcs = ["effects_manager_test.cpp"],
-    deps = [
-        ":effects_manager",
-        ":app_state",
-        "@mediapipe//mediapipe/framework:calculator_framework",
-        "//mediapipe/framework/port:opencv_core",
-        "//mediapipe/framework/port:opencv_imgproc",
-    ],
-)
-
-# Test binary for Phase 7 Configuration Manager
-cc_binary( # pyright: ignore[reportUndefinedVariable]
-    name = "config_manager_test",
-    srcs = ["config_manager_test.cpp"],
-    deps = [
-        "//mediapipe/examples/desktop/segmecam/src/config:config_manager",
-        "//mediapipe/framework/port:opencv_core",
-        "//mediapipe/framework/port:opencv_highgui",
-    ],
-    copts = [
-        "-std=c++17",
-        "-Wno-sign-compare",
-        "-I/usr/include/opencv4",
-    ],
-    linkopts = [
-        "-lopencv_core",
-        "-lopencv_imgproc",
-    ],
-)
-
-# Phase 8: Integrated Application using all managers
-cc_binary( # pyright: ignore[reportUndefinedVariable]
-    name = "segmecam_integrated_simple",
-    srcs = ["segmecam_integrated_simple.cpp"],
-    deps = [
-        "//mediapipe/framework/port:opencv_core",
-        "//mediapipe/framework/port:opencv_imgproc",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-    ],
-    copts = [
-        "-I/usr/include/SDL2",
-    ],
-    linkopts = [
-        "-lGL",
-        "-lGLU", 
-        "-lSDL2",
-    ],
-)
-
-# Phase 8: Simple Application Test (without MediaPipe dependencies)
-cc_binary( # pyright: ignore[reportUndefinedVariable]
-    name = "application_simple_test",
-    srcs = ["application_simple_test.cpp"],
-    deps = [
-        ":camera_manager", 
-        ":render_manager",
-        "//mediapipe/examples/desktop/segmecam/src/config:config_manager",
-    ],
-    copts = [
-        "-I/usr/include/SDL2",
-        "-I/usr/include/opencv4",
-    ],
-    linkopts = [
-        "-lGL",
-        "-lGLU", 
-        "-lSDL2",
-        "-lopencv_core",
-        "-lopencv_imgproc",
     ],
 )
 

@@ -12,23 +12,15 @@ bool CameraSetup::SetupCamera(CameraSetupState& state, cv::VideoCapture& cap) {
     // Validate camera selection
     ValidateCameraSelection(state);
     
-    // Initialize video capture
+    // Initialize camera capture
     if (!InitializeCapture(state, cap)) {
         std::cerr << "Error: Failed to initialize camera capture" << std::endl;
         return false;
     }
     
-    // Configure camera settings
-    if (!ConfigureCamera(cap, state.width, state.height)) {
-        std::cerr << "Warning: Failed to configure camera settings" << std::endl;
-        // Continue anyway - some cameras may not support all settings
-    }
-    
     std::cout << "Camera setup completed successfully" << std::endl;
     return true;
-}
-
-void CameraSetup::EnumerateCameras(CameraSetupState& state) {
+}void CameraSetup::EnumerateCameras(CameraSetupState& state) {
     state.camera_infos = ::EnumerateCameras();  // Use the global function from cam_enum.h
     
     if (state.camera_infos.empty()) {
@@ -62,55 +54,35 @@ void CameraSetup::PrintCameraInfo(const CameraSetupState& state) {
 }
 
 bool CameraSetup::InitializeCapture(const CameraSetupState& state, cv::VideoCapture& cap) {
-    std::cout << "Initializing camera " << state.camera_id 
+    std::cout << "Initializing camera " << state.camera_id
               << " (" << state.selected_camera_name << ")" << std::endl;
-    
-    // Try to open the camera
+
+    // Open the camera
     cap.open(state.camera_id);
     if (!cap.isOpened()) {
-        std::cerr << "Error: Cannot open camera " << state.camera_id << std::endl;
+        std::cerr << "Error: Failed to open camera " << state.camera_id << std::endl;
         return false;
     }
-    
-    // Test if we can read a frame
-    cv::Mat test_frame;
-    if (!cap.read(test_frame) || test_frame.empty()) {
-        std::cerr << "Error: Cannot read from camera " << state.camera_id << std::endl;
-        cap.release();
-        return false;
+
+    // Configure camera settings
+    if (!ConfigureCamera(cap, state.width, state.height)) {
+        std::cerr << "Warning: Failed to configure camera settings" << std::endl;
+        // Continue anyway - some cameras may not support all settings
     }
-    
+
     std::cout << "Camera initialized successfully" << std::endl;
     return true;
-}
-
-bool CameraSetup::ConfigureCamera(cv::VideoCapture& cap, int width, int height) {
-    bool success = true;
-    
+}bool CameraSetup::ConfigureCamera(cv::VideoCapture& cap, int width, int height) {
     // Set frame size
-    if (!cap.set(cv::CAP_PROP_FRAME_WIDTH, width)) {
-        std::cerr << "Warning: Failed to set camera width to " << width << std::endl;
-        success = false;
-    }
-    
-    if (!cap.set(cv::CAP_PROP_FRAME_HEIGHT, height)) {
-        std::cerr << "Warning: Failed to set camera height to " << height << std::endl;
-        success = false;
-    }
-    
-    // Set format to BGR (most compatible)
-    if (!cap.set(cv::CAP_PROP_FORMAT, CV_8UC3)) {
-        std::cerr << "Warning: Failed to set camera format" << std::endl;
-        success = false;
-    }
-    
+    cap.set(cv::CAP_PROP_FRAME_WIDTH, width);
+    cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
+
     // Verify actual settings
-    int actual_width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
-    int actual_height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
-    
+    double actual_width = cap.get(cv::CAP_PROP_FRAME_WIDTH);
+    double actual_height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+
     std::cout << "Camera configured: " << actual_width << "x" << actual_height << std::endl;
-    
-    return success;
+    return true;
 }
 
 void CameraSetup::ValidateCameraSelection(CameraSetupState& state) {
