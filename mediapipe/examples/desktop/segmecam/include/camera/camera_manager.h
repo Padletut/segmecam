@@ -155,6 +155,17 @@ private:
     CtrlRange r_autogain_, r_autofocus_;
     CtrlRange r_autoexposure_, r_exposure_abs_;
     CtrlRange r_awb_, r_wb_temp_, r_backlight_, r_expo_dynfps_;
+
+#ifdef FLATPAK_BUILD
+    // PipeWire/GStreamer specific members
+    GstElement* pipeline_ = nullptr;
+    GstElement* appsink_ = nullptr;
+    GMainLoop* main_loop_ = nullptr;
+    bool gst_initialized_ = false;
+    bool camera_permission_granted_ = false;
+    cv::Mat current_frame_;
+    std::mutex frame_mutex_;
+#endif
     
     // Helper methods
     cv::VideoCapture OpenCapture(int idx, int w, int h);
@@ -162,6 +173,18 @@ private:
     bool SetCtrl(const std::string& cam_path, uint32_t id, int32_t value);
     bool GetCtrl(const std::string& cam_path, uint32_t id, int32_t* value);
     void UpdateFPSOptions(const std::string& cam_path, int width, int height);
+
+#ifdef FLATPAK_BUILD
+    // PipeWire/GStreamer specific methods
+    bool InitializeGStreamer();
+    void CleanupGStreamer();
+    bool RequestCameraPermission();
+    bool CreatePipeWirePipeline();
+    bool StartPipeWireCapture();
+    void StopPipeWireCapture();
+    static void OnNewSample(GstAppSink* sink, gpointer user_data);
+    static void OnEOS(GstAppSink* sink, gpointer user_data);
+#endif
 };
 
 } // namespace segmecam
