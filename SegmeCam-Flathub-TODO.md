@@ -1,5 +1,10 @@
 # SegmeCam → Flathub Readiness: TODO
 
+- [x] Stop copying system libraries (e.g., `libGLU.so`) from `/usr/lib...`.
+- [x] If GLU is really required, depend on the proper extension or build it in:
+  - [x] Prefer runtime/extension (e.g., `org.freedesktop.Sdk.Extension.glu`) or vendor the exact lib in a module built from source.
+- [x] Build OpenCV from source instead of copying system libraries.
+
 > Purpose: Make SegmeCam acceptable for Flathub by tightening sandboxing, removing broad device/filesystem permissions, and migrating camera & file selection to portals.
 
 ---
@@ -27,9 +32,9 @@
     # - --filesystem=xdg-download:ro
   ```
 - [ ] Remove ad-hoc env vars (`DISPLAY`, `MESA_*`, `QT_X11_NO_MITSHM`) unless proven necessary.
-- [ ] Stop copying system libraries (e.g., `libGLU.so`) from `/usr/lib...`.
-- [ ] If GLU is really required, depend on the proper extension or build it in:
-  - [ ] Prefer runtime/extension (e.g., `org.freedesktop.Sdk.Extension.glu`) or vendor the exact lib in a module built from source.
+- [x] Stop copying system libraries (e.g., `libGLU.so`) from `/usr/lib...`.
+- [x] If GLU is really required, depend on the proper extension or build it in:
+  - [x] Prefer runtime/extension (e.g., `org.freedesktop.Sdk.Extension.glu`) or vendor the exact lib in a module built from source.
 
 ---
 
@@ -43,6 +48,7 @@
   - [ ] Connect appsink frames to existing OpenCV/processing pipeline.
 - [ ] Add graceful error handling if camera permission is denied or no camera is present.
 - [ ] Verify performance (latency, FPS) equals/approaches V4L2 path.
+- [ ] Support resolution/FPS changes by re-requesting a new PipeWire remote when the user adjusts settings.
 
 **Temporary local dev option (not for Flathub):**
 - If you still need V4L2 for testing, run locally with an override:
@@ -58,6 +64,8 @@
 - [ ] On selection, **import** the image into the sandbox (e.g., `~/.local/share/SegmeCam/backgrounds/`).
 - [ ] Load backgrounds from the app data dir rather than absolute host paths.
 - [ ] Provide a simple “Import background…” UI action and show a preview/confirmation.
+- [ ] Support drag-and-drop by consuming the **FileTransfer** portal so dropped files are auto-exported without a secondary dialog.
+- [ ] Bundle a DBus-enabled SDL build inside the Flatpak (or use a patched SDL module) so drag-and-drop works via the portal.
 
 ---
 
