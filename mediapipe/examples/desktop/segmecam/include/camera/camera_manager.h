@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <mutex>
+#include <condition_variable>
 #include <opencv2/opencv.hpp>
 #include <linux/videodev2.h>
 #include "cam_enum.h"
@@ -13,11 +15,121 @@ extern "C" {
 #endif
 typedef struct _GstElement GstElement;
 typedef struct _GstAppSink GstAppSink;
+typedef struct _GstBin GstBin;
 typedef struct _GMainLoop GMainLoop;
+typedef struct _GstSample GstSample;
+typedef struct _GstBuffer GstBuffer;
+typedef struct _GstCaps GstCaps;
+typedef struct _GstBus GstBus;
+typedef struct _GstMessage GstMessage;
+typedef struct _GError GError;
+typedef struct _GstStructure GstStructure;
+typedef struct _GstMemory GstMemory;
+typedef int gboolean;
+typedef struct _XdpPortal XdpPortal;
+typedef struct _XdpParent XdpParent;
+
+// GStreamer state enums
+typedef enum {
+    GST_STATE_VOID_PENDING = 0,
+    GST_STATE_NULL = 1,
+    GST_STATE_READY = 2,
+    GST_STATE_PAUSED = 3,
+    GST_STATE_PLAYING = 4
+} GstState;
+
+typedef enum {
+    GST_STATE_CHANGE_FAILURE = 0,
+    GST_STATE_CHANGE_SUCCESS = 1,
+    GST_STATE_CHANGE_ASYNC = 2,
+    GST_STATE_CHANGE_NO_PREROLL = 3
+} GstStateChangeReturn;
+
+typedef int GstMapFlags;
+
+#define GST_PADDING 4
+
+typedef struct _GstMapInfo {
+    GstMemory* memory;
+    GstMapFlags flags;
+    unsigned char* data;
+    size_t size;
+    size_t maxsize;
+    void* user_data[4];
+    void* _gst_reserved[GST_PADDING];
+} GstMapInfo;
 typedef void* gpointer;
+
+// GLib forward declarations
+typedef struct _GObject GObject;
+typedef struct _GAsyncResult GAsyncResult;
+typedef struct _GCancellable GCancellable;
+typedef void (*GAsyncReadyCallback)(GObject*, GAsyncResult*, gpointer);
+typedef unsigned int XdpCameraFlags;
 #ifdef __cplusplus
 }
 #endif
+
+// GStreamer function pointer types
+typedef void (*gst_init_func)(int*, char***);
+typedef GstElement* (*gst_pipeline_new_func)(const char*);
+typedef GstElement* (*gst_element_factory_make_func)(const char*, const char*);
+typedef int (*gst_element_set_state_func)(GstElement*, int);
+typedef int (*gst_bin_add_many_func)(void*, ...);
+typedef int (*gst_element_link_many_func)(void*, ...);
+typedef void (*gst_object_unref_func)(void*);
+typedef void* (*gst_app_sink_pull_sample_func)(GstAppSink*);
+typedef void* (*gst_sample_get_buffer_func)(GstSample*);
+typedef void* (*gst_sample_get_caps_func)(GstSample*);
+typedef int (*gst_buffer_map_func)(GstBuffer*, GstMapInfo*, int);
+typedef void (*gst_buffer_unmap_func)(GstBuffer*, GstMapInfo*);
+typedef void (*gst_sample_unref_func)(GstSample*);
+
+// Additional GStreamer function pointer types
+typedef GstCaps* (*gst_caps_new_simple_func)(const char*, ...);
+typedef GstCaps* (*gst_caps_from_string_func)(const char*);
+typedef void (*gst_caps_unref_func)(GstCaps*);
+typedef void (*gst_message_parse_error_func)(void*, void**, void**);
+typedef void* (*gst_bus_timed_pop_filtered_func)(void*, uint64_t, int);
+typedef void* (*gst_element_get_bus_func)(GstElement*);
+typedef void (*gst_bus_unref_func)(void*);
+typedef void (*gst_message_unref_func)(void*);
+typedef int (*gst_app_sink_is_eos_func)(GstAppSink*);
+typedef GstElement* (*gst_parse_launch_func)(const char*, void**);
+typedef GstElement* (*gst_bin_get_by_name_func)(void*, const char*);
+typedef int (*gst_element_get_state_func)(GstElement*, int*, int*, uint64_t);
+typedef const char* (*gst_structure_get_string_func)(const GstStructure*, const char*);
+typedef void (*g_error_free_func)(void*);
+typedef void* (*gst_element_get_bus_func)(GstElement*);
+typedef void (*gst_bus_unref_func)(void*);
+typedef void (*gst_message_unref_func)(void*);
+typedef int (*gst_app_sink_is_eos_func)(GstAppSink*);
+typedef GstElement* (*gst_parse_launch_func)(const char*, void**);
+typedef GstElement* (*gst_bin_get_by_name_func)(void*, const char*);
+typedef int (*gst_element_get_state_func)(GstElement*, int*, int*, uint64_t);
+typedef void (*g_usleep_func)(unsigned long);
+typedef void (*g_error_free_func)(void*);
+
+// GLib function pointer types
+typedef void (*g_main_loop_quit_func)(GMainLoop*);
+typedef void (*g_main_loop_unref_func)(GMainLoop*);
+typedef void (*g_object_set_func)(void*, const char*, ...);
+typedef unsigned long (*g_signal_connect_func)(void*, const char*, void*, void*);
+
+typedef GMainLoop* (*g_main_loop_new_func)(void*, gboolean);
+typedef void (*g_main_loop_run_func)(GMainLoop*);
+typedef void (*g_object_unref_func)(void*);
+
+// GStreamer constants
+#define GST_STATE_NULL 0
+#define GST_STATE_PLAYING 4
+#define GST_MAP_READ 1
+#define GST_STATE_CHANGE_FAILURE -1
+// Additional constants/macros used without headers
+#define GST_SECOND 1000000000ULL
+#define G_OBJECT(obj) ((void*)(obj))
+#define GST_ELEMENT(obj) ((GstElement*)(obj))
+#define GST_APP_SINK(obj) ((GstAppSink*)(obj))
 
 namespace segmecam {
 
@@ -53,7 +165,10 @@ struct CameraState {
     // Performance tracking
     double actual_fps = 0.0;
     int frames_captured = 0;
-};
+
+    // User-facing status
+    std::string status_message;
+}; 
 
 // Camera system manager for initialization, enumeration, capture, and V4L2 controls
 class CameraManager {
@@ -64,6 +179,8 @@ public:
     // Core lifecycle
     int Initialize(const CameraConfig& config);
     int InitializeV4L2(const CameraConfig& config);
+    bool InitializePortal();
+    std::vector<CameraDesc> EnumerateCamerasPortal();
     void Cleanup();
     
     // Camera operations
@@ -172,16 +289,81 @@ private:
     // PipeWire/GStreamer specific members
     GstElement* pipeline_ = nullptr;
     GstElement* appsink_ = nullptr;
+    GstElement* pipewire_src_ = nullptr;
     GMainLoop* main_loop_ = nullptr;
     bool gst_initialized_ = false;
     bool camera_permission_granted_ = false;
+    XdpPortal* portal_instance_ = nullptr;
+    void* portal_library_handle_ = nullptr;
+    int portal_fd_ = -1;
     cv::Mat current_frame_;
     std::mutex frame_mutex_;
+    std::condition_variable frame_ready_cv_;
+    bool frame_ready_ = false;
+    
+    // Direct GStreamer camera capture (fallback for Flatpak)
+    GstElement* gst_pipeline_ = nullptr;
+    GstAppSink* gst_appsink_ = nullptr;
+    bool gst_camera_active_ = false;
+    
+    // GStreamer function pointers
+    gst_init_func gst_init = nullptr;
+    gst_pipeline_new_func gst_pipeline_new = nullptr;
+    gst_element_factory_make_func gst_element_factory_make = nullptr;
+    gst_element_set_state_func gst_element_set_state = nullptr;
+    gst_bin_add_many_func gst_bin_add_many = nullptr;
+    gst_element_link_many_func gst_element_link_many = nullptr;
+    gst_object_unref_func gst_object_unref = nullptr;
+    gst_app_sink_pull_sample_func gst_app_sink_pull_sample = nullptr;
+    gst_sample_get_buffer_func gst_sample_get_buffer = nullptr;
+    gst_sample_get_caps_func gst_sample_get_caps = nullptr;
+    gst_buffer_map_func gst_buffer_map = nullptr;
+    gst_buffer_unmap_func gst_buffer_unmap = nullptr;
+    gst_sample_unref_func gst_sample_unref = nullptr;
+    
+    // Additional GStreamer function pointers
+    gst_caps_new_simple_func gst_caps_new_simple = nullptr;
+    gst_caps_from_string_func gst_caps_from_string = nullptr;
+    gst_caps_unref_func gst_caps_unref = nullptr;
+    GstStructure* (*gst_caps_get_structure)(GstCaps*, unsigned int) = nullptr;
+    int (*gst_structure_get_int)(const GstStructure*, const char*, int*) = nullptr;
+    gst_structure_get_string_func gst_structure_get_string = nullptr;
+    gst_message_parse_error_func gst_message_parse_error = nullptr;
+    gst_bus_timed_pop_filtered_func gst_bus_timed_pop_filtered = nullptr;
+    gst_element_get_bus_func gst_element_get_bus = nullptr;
+    gst_bus_unref_func gst_bus_unref = nullptr;
+    gst_message_unref_func gst_message_unref = nullptr;
+    gst_app_sink_is_eos_func gst_app_sink_is_eos = nullptr;
+    gst_parse_launch_func gst_parse_launch = nullptr;
+    gst_bin_get_by_name_func gst_bin_get_by_name = nullptr;
+    gst_element_get_state_func gst_element_get_state = nullptr;
+    // Linking helpers
+    int (*gst_element_link)(void*, void*) = nullptr;
+    int (*gst_element_link_filtered)(void*, void*, GstCaps*) = nullptr;
+    g_usleep_func g_usleep = nullptr;
+    g_error_free_func g_error_free = nullptr;
+    g_object_set_func g_object_set = nullptr;
+    g_main_loop_new_func g_main_loop_new = nullptr;
+    g_main_loop_run_func g_main_loop_run = nullptr;
+    g_object_unref_func g_object_unref_ptr = nullptr;
+
+    // Portal function pointers
+    XdpPortal* (*xdp_portal_new)(void) = nullptr;
+    gboolean (*xdp_portal_is_camera_present)(XdpPortal*) = nullptr;
+    void (*xdp_portal_access_camera)(XdpPortal*, XdpParent*, XdpCameraFlags, GCancellable*, GAsyncReadyCallback, gpointer) = nullptr;
+    gboolean (*xdp_portal_access_camera_finish)(XdpPortal*, GAsyncResult*, GError**) = nullptr;
+    int (*xdp_portal_open_pipewire_remote_for_camera)(XdpPortal*) = nullptr;
+
+    // GLib function pointers
+    g_main_loop_quit_func g_main_loop_quit = nullptr;
+    g_main_loop_unref_func g_main_loop_unref = nullptr;
+    g_signal_connect_func g_signal_connect = nullptr;
     
     // Helper methods
     cv::VideoCapture OpenCapture(int idx, int w, int h);
     void QueryCtrl(const std::string& cam_path, uint32_t id, CtrlRange* out);
     bool SetCtrl(const std::string& cam_path, uint32_t id, int32_t value);
+    bool ConvertSampleToBgr(GstSample* sample, cv::Mat& frame_out, int& width_out, int& height_out);
     bool GetCtrl(const std::string& cam_path, uint32_t id, int32_t* value);
     void UpdateFPSOptions(const std::string& cam_path, int width, int height);
 
@@ -189,11 +371,20 @@ private:
     bool InitializeGStreamer();
     void CleanupGStreamer();
     bool RequestCameraPermission();
-    bool CreatePipeWirePipeline();
-    bool StartPipeWireCapture();
+    int OpenPipeWireRemote();
+    bool CreatePipeWirePipeline(int width, int height, int fps);
+    bool StartPipeWireCapture(int width, int height, int fps);
     void StopPipeWireCapture();
-    static void OnNewSample(GstAppSink* sink, gpointer user_data);
-    static void OnEOS(GstAppSink* sink, gpointer user_data);
+    void OnNewSample(GstAppSink* sink);
+    void OnEOS(GstAppSink* sink);
+    static void OnNewSampleWrapper(GstAppSink* sink, gpointer user_data);
+    static void OnEOSWrapper(GstAppSink* sink, gpointer user_data);
+    static void OnPortalCameraAccessFinished(GObject* source, GAsyncResult* result, gpointer user_data);
+    
+    // Direct GStreamer camera capture methods (Flatpak fallback)
+    bool OpenGStreamerCamera(int camera_index, int width, int height, int fps);
+    void CloseGStreamerCamera();
+    bool CaptureGStreamerFrame(cv::Mat& frame);
 };
 
 } // namespace segmecam
