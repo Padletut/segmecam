@@ -63,13 +63,17 @@ void ApplicationCleanup::CleanupMediaPipe(std::unique_ptr<mediapipe::CalculatorG
 
 void ApplicationCleanup::CleanupImGui() {
     std::cout << "🎨 Shutting down ImGui..." << std::endl;
-    
-    // Shutdown ImGui in proper order
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImGui::DestroyContext();
-    
-    std::cout << "✅ Enhanced ImGui cleaned up" << std::endl;
+
+    // Only shutdown if ImGui context exists (init may have failed earlier)
+    if (ImGui::GetCurrentContext() != nullptr) {
+        // Shutdown ImGui in proper order
+        ImGui_ImplOpenGL3_Shutdown();
+        ImGui_ImplSDL2_Shutdown();
+        ImGui::DestroyContext();
+        std::cout << "✅ Enhanced ImGui cleaned up" << std::endl;
+    } else {
+        std::cout << "ℹ️  ImGui not initialized; skipping shutdown" << std::endl;
+    }
 }
 
 void ApplicationCleanup::CleanupSDL(SDL_GLContext& gl_context, SDL_Window*& window) {
