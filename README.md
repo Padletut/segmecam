@@ -145,6 +145,12 @@ bazel version
 - **Computer Vision**: OpenCV (camera I/O, pre/post-processing)
 - **UI / Rendering**: SDL2 + OpenGL 3.3 + Dear ImGui
 - **Packaging**: AppImage & Flatpak
+- Camera access inside the Flatpak is granted via the desktop portal. Run the SegmeCam Flatpak to request permissions;
+  sandboxed `gst-launch-1.0 pipewiresrc ...` pipelines will be denied even after approval because the tokens are not shared.
+- **Background images** inside the Flatpak must live in directories exposed to the sandbox. By default only
+  `~/Pictures` is accessible; either place images there or grant extra permission, e.g.
+  `flatpak override --user --filesystem=xdg-download org.segmecam.SegmeCam` when you want to pick files
+  from `~/Downloads`.
 
 ---
 
