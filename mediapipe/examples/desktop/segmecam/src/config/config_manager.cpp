@@ -17,6 +17,11 @@ ConfigManager::ConfigManager() {
 ConfigManager::~ConfigManager() = default;
 
 std::string ConfigManager::GetProfileDir() const {
+    const char* xdg_config = std::getenv("XDG_CONFIG_HOME");
+    if (xdg_config && *xdg_config) {
+        return std::string(xdg_config) + "/segmecam";
+    }
+
     const char* home = std::getenv("HOME");
     std::string dir = (home && *home) ? 
         std::string(home) + "/.config/segmecam" : 
