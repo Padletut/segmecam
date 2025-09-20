@@ -7,12 +7,23 @@
 #include <iostream>
 #include <algorithm>
 #include <cstring>
+#include <cstdlib>
+#include <filesystem>
 
 #ifdef __linux__
 #include <linux/videodev2.h>
 #endif
 
 namespace segmecam {
+
+namespace {
+bool IsFlatpakEnvironment() {
+    if (std::getenv("FLATPAK_ID")) {
+        return true;
+    }
+    return std::filesystem::exists("/.flatpak-info");
+}
+} // namespace
 
 // Camera Panel Implementation
 CameraPanel::CameraPanel(AppState& state, CameraManager& camera_mgr, EffectsManager& effects_mgr)
@@ -465,9 +476,16 @@ void CameraPanel::LoadProfileIntoState(const std::string& profile_name) {
     // Apply loaded settings to state
     
     // Camera settings - apply both actual camera changes and UI state
+    const bool in_flatpak = IsFlatpakEnvironment();
+
     if (config.camera.ui_cam_idx >= 0) {
         // Set camera if different from current
-        if (config.camera.ui_cam_idx != ui_cam_idx_) {
+        if (in_flatpak) {
+            ui_cam_idx_ = config.camera.ui_cam_idx;
+            ui_res_idx_ = config.camera.ui_res_idx >= 0 ? config.camera.ui_res_idx : ui_res_idx_;
+            ui_fps_idx_ = config.camera.ui_fps_idx >= 0 ? config.camera.ui_fps_idx : ui_fps_idx_;
+            std::cout << "Profile loaded in Flatpak: camera settings retained (PipeWire session unchanged)." << std::endl;
+        } else if (config.camera.ui_cam_idx != ui_cam_idx_) {
             ui_cam_idx_ = config.camera.ui_cam_idx;
             ui_res_idx_ = config.camera.ui_res_idx >= 0 ? config.camera.ui_res_idx : 0;
             ui_fps_idx_ = config.camera.ui_fps_idx >= 0 ? config.camera.ui_fps_idx : 0;
@@ -477,7 +495,7 @@ void CameraPanel::LoadProfileIntoState(const std::string& profile_name) {
             std::cout << "Profile loaded: Camera changed to index " << ui_cam_idx_ 
                       << " with resolution index " << ui_res_idx_ 
                       << " and FPS index " << ui_fps_idx_ << std::endl;
-        } else {
+        } else if (!in_flatpak) {
             // Same camera, but possibly different resolution/FPS using actual values
             if (config.camera.res_w > 0 && config.camera.res_h > 0) {
                 camera_mgr_.SetResolution(config.camera.res_w, config.camera.res_h);
