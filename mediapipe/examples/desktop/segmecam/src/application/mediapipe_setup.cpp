@@ -109,48 +109,101 @@ int MediaPipeSetup::InitializeGraph(std::unique_ptr<mediapipe::CalculatorGraph>&
 std::string MediaPipeSetup::ResolveGraphPath(const std::string& graph_path, 
                                            const std::string& resource_root_dir,
                                            bool force_cpu) {
-    // Check if the graph path exists as-is
+    // If given path exists (absolute or relative), use it
     if (std::filesystem::exists(graph_path)) {
         return graph_path;
     }
-    
-    // Try with different path prefixes for CPU graphs
-    if (force_cpu) {
-        std::vector<std::string> possible_paths = {
-            "/home/padletut/segmecam/" + graph_path,
-            resource_root_dir + "/" + graph_path,
-            graph_path
-        };
-        
-        for (const auto& path : possible_paths) {
-            if (std::filesystem::exists(path)) {
-                return path;
+
+    // Build list of candidate roots to try
+    std::vector<std::string> roots;
+    const char* flatpak_id = std::getenv("FLATPAK_ID");
+    bool is_flatpak = flatpak_id != nullptr || std::filesystem::exists("/.flatpak-info");
+
+    // Highest priority: explicit resource root (ignore "." which is default)
+    if (!resource_root_dir.empty() && resource_root_dir != ".") {
+        roots.push_back(resource_root_dir);
+    }
+
+    // Common install locations
+    if (is_flatpak) {
+        roots.push_back("/app");
+        roots.push_back("/app/share/segmecam");
+        roots.push_back("/app/mediapipe_graphs");
+        roots.push_back("/app/share/segmecam/mediapipe_graphs");
+    }
+
+    // Helper to try roots + relative
+    auto try_with_roots = [&](const std::string& rel) -> std::string {
+        for (const auto& r : roots) {
+            std::string candidate = r + "/" + rel;
+            if (std::filesystem::exists(candidate)) {
+                return candidate;
             }
         }
+        return std::string();
+    };
+
+    // 1) Try root + graph_path as-is (e.g., includes mediapipe_graphs/...)
+    if (!graph_path.empty() && graph_path[0] != '/') {
+        std::string found = try_with_roots(graph_path);
+        if (!found.empty()) return found;
     }
-    
-    // Return original path if no resolution found
+
+    // 2) Try just the basename under common graph directories
+    std::string basename = graph_path;
+    auto pos = graph_path.find_last_of('/');
+    if (pos != std::string::npos) basename = graph_path.substr(pos + 1);
+
+    std::vector<std::string> graph_dirs = {
+        "mediapipe_graphs",
+        "/app/mediapipe_graphs",
+        "/app/share/segmecam/mediapipe_graphs"
+    };
+    for (const auto& dir : graph_dirs) {
+        std::string candidate = dir + std::string("/") + basename;
+        if (std::filesystem::exists(candidate)) {
+            return candidate;
+        }
+    }
+
+    // Not found; return original (will fail later and print error)
     return graph_path;
 }
 
 void MediaPipeSetup::SetupResourceDirectory(const std::string& user_resource_root_dir) {
     // Setup MediaPipe resource root directory for model files (critical for graph initialization)
     const char* runfiles_dir = std::getenv("RUNFILES_DIR");
+    const char* flatpak_id = std::getenv("FLATPAK_ID");
+    bool is_flatpak = flatpak_id != nullptr || std::filesystem::exists("/.flatpak-info");
+
     if (runfiles_dir && *runfiles_dir) {
         // Running under Bazel - use runfiles directory
         absl::SetFlag(&FLAGS_resource_root_dir, std::string(runfiles_dir));
         std::cout << "🔧 Set MediaPipe resource root to Bazel runfiles: " << runfiles_dir << std::endl;
-    } else if (!user_resource_root_dir.empty()) {
-        // Use user-specified resource root directory
+        return;
+    }
+
+    // Treat "." as no explicit override so we can choose better defaults (e.g. Flatpak)
+    bool has_explicit_user_dir = !user_resource_root_dir.empty() && user_resource_root_dir != ".";
+    if (has_explicit_user_dir) {
         std::string abs_path = std::filesystem::absolute(user_resource_root_dir).string();
         absl::SetFlag(&FLAGS_resource_root_dir, abs_path);
         std::cout << "🔧 Set MediaPipe resource root to user directory: " << abs_path << std::endl;
-    } else {
-        // Not running under Bazel - use current working directory
-        std::string cwd = std::filesystem::current_path().string();
-        absl::SetFlag(&FLAGS_resource_root_dir, cwd);
-        std::cout << "🔧 Set MediaPipe resource root to: " << cwd << std::endl;
+        return;
     }
+
+    if (is_flatpak) {
+        // Default inside Flatpak: runtime installs models to this directory
+        std::string flatpak_resources = "/app/mediapipe_runfiles";
+        absl::SetFlag(&FLAGS_resource_root_dir, flatpak_resources);
+        std::cout << "🔧 Set MediaPipe resource root for Flatpak: " << flatpak_resources << std::endl;
+        return;
+    }
+
+    // Fallback to current working directory
+    std::string cwd = std::filesystem::current_path().string();
+    absl::SetFlag(&FLAGS_resource_root_dir, cwd);
+    std::cout << "🔧 Set MediaPipe resource root to: " << cwd << std::endl;
 }
 
 int MediaPipeSetup::StartGraph(std::unique_ptr<mediapipe::CalculatorGraph>& graph) {
