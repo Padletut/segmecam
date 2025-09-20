@@ -22,7 +22,9 @@ This guide explains how to build, export, and bundle SegmeCam as a Flatpak for e
    # Ensure all required .tflite models are in /models
    ```
 
-3. **Build the Flatpak**
+3. **Build the Flatpak** (note: utilities such as `gst-launch-1.0 pipewiresrc` cannot
+   be used inside the sandbox because portal permissions are granted per-process.
+   Always start SegmeCam itself to exercise the camera portal.)
    ```bash
    flatpak-builder --force-clean build-dir org.segmecam.SegmeCam.final.yml
    ```
