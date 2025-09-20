@@ -910,3 +910,52 @@ http_archive(
     strip_prefix = "skia-226ae9d866748a2e68b6dbf114b37129c380a298/include/config",
     urls = ["https://github.com/google/skia/archive/226ae9d866748a2e68b6dbf114b37129c380a298.zip"],
 )
+
+new_local_repository(
+    name = "glib",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "glib",
+    hdrs = glob([
+        "include/glib-2.0/**/*.h",
+        "include/glib-2.0/**/*.hpp",
+        "lib/x86_64-linux-gnu/glib-2.0/include/**/*.h",
+        "lib/x86_64-linux-gnu/glib-2.0/include/**/*.hpp",
+    ]),
+    includes = [
+        "include/glib-2.0",
+        "lib/x86_64-linux-gnu/glib-2.0/include",
+    ],
+    linkopts = [
+        "-lgio-2.0",
+        "-lgobject-2.0",
+        "-lglib-2.0",
+        "-lgmodule-2.0",
+        "-ldl",
+        "-pthread",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+new_local_repository(
+    name = "libportal",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "libportal",
+    hdrs = glob([
+        "include/libportal/**/*.h",
+        "include/libportal/**/*.hpp",
+    ]),
+    includes = [
+        "include/libportal",
+    ],
+    linkopts = ["-lportal"],
+    deps = ["@glib//:glib"],
+    visibility = ["//visibility:public"],
+)
+""",
+)

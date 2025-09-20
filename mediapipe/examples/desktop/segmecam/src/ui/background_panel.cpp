@@ -1,6 +1,8 @@
 #include "include/ui/ui_panels.h"
+#include "include/application/portal_utils.h"
 #include <iostream>
 #include <cstring>
+#include <cstdio>
 #include <SDL2/SDL.h>
 
 namespace segmecam {
@@ -121,34 +123,19 @@ void BackgroundPanel::RenderImageControls() {
         if (clip) SDL_free(clip);
     }
     
-    // File browser button (Linux specific)
-#ifdef __linux__
     ImGui::SameLine();
     if (ImGui::Button("Browse")) {
-        // Use zenity for file selection on Linux
-        FILE* fp = popen("zenity --file-selection --file-filter='Images (*.jpg,*.jpeg,*.png,*.bmp) | *.jpg *.jpeg *.png *.bmp' --title='Select background image' 2>/dev/null", "r");
-        if (fp) {
-            char out[1024] = {0};
-            if (fgets(out, sizeof(out), fp)) {
-                // Strip trailing newline
-                size_t n = strlen(out);
-                while (n > 0 && (out[n-1] == '\n' || out[n-1] == '\r')) {
-                    out[--n] = '\0';
-                }
-                if (n > 0) {
-                    std::snprintf(state_.bg_path_buf, sizeof(state_.bg_path_buf), "%s", out);
-                    cv::Mat img = cv::imread(state_.bg_path_buf, cv::IMREAD_COLOR);
-                    if (!img.empty()) {
-                        state_.bg_image = img;
-                        std::cout << "Loaded background image: " << state_.bg_path_buf 
-                                  << " (" << img.cols << "x" << img.rows << ")" << std::endl;
-                    }
-                }
-            }
-            pclose(fp);
+        cv::Mat img;
+        std::string resolved_path;
+        if (OpenBackgroundImagePortalDialog(img, resolved_path)) {
+            state_.bg_image = img;
+            std::snprintf(state_.bg_path_buf, sizeof(state_.bg_path_buf), "%s", resolved_path.c_str());
+            std::cout << "Loaded background image via portal: " << state_.bg_path_buf
+                      << " (" << img.cols << "x" << img.rows << ")" << std::endl;
+        } else {
+            std::cerr << "Background image selection cancelled or failed" << std::endl;
         }
     }
-#endif
     
     ImGui::SameLine();
     if (ImGui::Button("Clear")) {

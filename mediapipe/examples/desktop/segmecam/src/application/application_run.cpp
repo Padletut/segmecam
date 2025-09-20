@@ -26,10 +26,13 @@
 // Include segmentation composite functions for proper mask decoding
 #include "segmecam_composite.h"
 
+#include "include/application/portal_utils.h"
+
 #include <iostream>
 #include <chrono>
 #include <thread>
 #include <cstring>
+#include <vector>
 
 namespace segmecam {
 
@@ -283,14 +286,21 @@ int ApplicationRun::ExecuteMainLoop(
     // Main application loop
     while (running) {
         if (frame_count <= 5) {
-            // Initial frame setup logging (first 5 frames only)
+            std::cout << "🔄 Starting frame " << frame_count + 1 << " processing..." << std::endl;
         }
         
         try {
             frame_count++;
             
+            if (frame_count <= 5) {
+                std::cout << "📸 Attempting to capture frame " << frame_count << "..." << std::endl;
+            }
+            
             // Capture frame from camera using CameraManager
             cv::Mat frame_bgr;
+            if (frame_count <= 5) {
+                std::cout << "📸 Calling CaptureFrame()..." << std::endl;
+            }
             if (!managers.camera->CaptureFrame(frame_bgr) || frame_bgr.empty()) {
                 if (frame_count < 10) {  // Only log first few failures
                     std::cout << "⚠️  Frame capture failed or empty on frame " << frame_count << std::endl;
@@ -299,8 +309,8 @@ int ApplicationRun::ExecuteMainLoop(
                 continue;
             }
             
-            if (frame_count == 1) {
-                std::cout << "✅ First frame captured successfully: " << frame_bgr.cols << "x" << frame_bgr.rows << std::endl;
+            if (frame_count <= 5) {
+                std::cout << "✅ Frame " << frame_count << " captured successfully: " << frame_bgr.cols << "x" << frame_bgr.rows << std::endl;
                 // Debug: Show camera frame format and sample pixel values
                 if (!frame_bgr.empty()) {
                     cv::Vec3b center_pixel = frame_bgr.at<cv::Vec3b>(frame_bgr.rows/2, frame_bgr.cols/2);
@@ -313,10 +323,10 @@ int ApplicationRun::ExecuteMainLoop(
                 }
             }
         
-        // Update FPS tracking
-        UpdateFPSTracking(fps, fps_frames, fps_last_ms);
-        
-        // Update app state with current frame and camera information
+            // Update FPS tracking
+            UpdateFPSTracking(fps, fps_frames, fps_last_ms);
+            
+            // Update app state with current frame and camera information
         app_state.fps = fps;
         app_state.camera_width = managers.camera->GetCurrentWidth();
         app_state.camera_height = managers.camera->GetCurrentHeight();
@@ -340,6 +350,9 @@ int ApplicationRun::ExecuteMainLoop(
         
         // Send frame to MediaPipe graph
         {
+            if (frame_count <= 5) {
+                std::cout << "📤 Sending frame " << frame_count << " to MediaPipe..." << std::endl;
+            }
             std::unique_ptr<mediapipe::ImageFrame> frame;
             MatToImageFrame(frame_bgr, frame);
             auto ts = mediapipe::Timestamp(frame_id++);
@@ -348,8 +361,8 @@ int ApplicationRun::ExecuteMainLoop(
                 std::cerr << "❌ AddPacket failed: " << st.message() << std::endl;
                 break;
             }
-            if (frame_count == 1) {
-                std::cout << "✅ First frame sent to MediaPipe successfully" << std::endl;
+            if (frame_count <= 5) {
+                std::cout << "✅ Frame " << frame_count << " sent to MediaPipe successfully" << std::endl;
             }
             
             if (frame_count <= 5) {
@@ -473,18 +486,19 @@ int ApplicationRun::ExecuteMainLoop(
         auto dropped_files = ui_manager.GetDroppedFiles();
         for (const auto& file_path : dropped_files) {
             std::cout << "🖼️  Processing dropped file: " << file_path << std::endl;
-            cv::Mat img = cv::imread(file_path);
-            if (!img.empty()) {
+            cv::Mat img;
+            std::string resolved_path;
+            if (LoadBackgroundImageWithPortal(file_path, img, resolved_path)) {
                 app_state.bg_image = img.clone();
                 app_state.bg_mode = 2; // Automatically switch to Image mode (0=None, 1=Blur, 2=Image, 3=Solid)
                 // Update the background path for profile persistence
-                strncpy(app_state.bg_path_buf, file_path.c_str(), sizeof(app_state.bg_path_buf) - 1);
+                strncpy(app_state.bg_path_buf, resolved_path.c_str(), sizeof(app_state.bg_path_buf) - 1);
                 app_state.bg_path_buf[sizeof(app_state.bg_path_buf) - 1] = '\0';
-                std::cout << "✅ Background image loaded from dropped file: " 
-                          << img.cols << "x" << img.rows << " (auto-switched to Image mode)" << std::endl;
+                std::cout << "✅ Background image loaded: " << img.cols << "x" << img.rows
+                          << " (auto-switched to Image mode)" << std::endl;
                 std::cout << "🔖 Background path saved: " << app_state.bg_path_buf << std::endl;
             } else {
-                std::cout << "❌ Failed to load dropped file as image: " << file_path << std::endl;
+                std::cout << "❌ Failed to load dropped file as image after portal fallback." << std::endl;
             }
         }
         
@@ -541,17 +555,17 @@ int ApplicationRun::ExecuteMainLoop(
         
         // Log when we're about to continue to the next iteration
         if (frame_count <= 5) {
-            // First few frames completed successfully
+            std::cout << "🔄 Frame " << frame_count << " loop completed, continuing..." << std::endl;
         }
         
-        } catch (const std::exception& e) {
-            std::cerr << "❌ Exception in main loop: " << e.what() << std::endl;
-            break;
-        } catch (...) {
-            std::cerr << "❌ Unknown exception in main loop" << std::endl;
-            break;
-        }
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Exception in main loop: " << e.what() << std::endl;
+        break;
+    } catch (...) {
+        std::cerr << "❌ Unknown exception in main loop" << std::endl;
+        break;
     }
+}
     
     std::cout << "🛑 Main loop ended" << std::endl;
     return 0;

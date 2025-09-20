@@ -325,6 +325,7 @@ cc_library( # type: ignore
         ":presets",
         ":segmecam_face_effects",  # for cam_enum.h
         ":vcam",
+        ":portal_utils",
         "//mediapipe/examples/desktop/segmecam/src/config:config_manager",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
@@ -338,6 +339,22 @@ cc_library( # type: ignore
         "-lopencv_core",
         "-lopencv_imgproc", 
         "-lopencv_highgui",
+    ],
+)
+
+cc_library(
+    name = "portal_utils",
+    srcs = ["src/application/portal_utils.cpp"],
+    hdrs = ["include/application/portal_utils.h"],
+    includes = [".", "include"],
+    deps = [
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgcodecs",
+        "@glib//:glib",
+        "@libportal//:libportal",
+    ],
+    copts = [
+        "-I/usr/include/opencv4",
     ],
 )
 
@@ -447,6 +464,9 @@ cc_binary( # pyright: ignore[reportUndefinedVariable]
         "@com_google_absl//absl/flags:flag",
         "//third_party/imgui:imgui",
         ":ui_manager_enhanced",
+        ":portal_utils",
+        "@glib//:glib",
+        "@libportal//:libportal",
     ],
     copts = [
         "-I/usr/include/SDL2",
