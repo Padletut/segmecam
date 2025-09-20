@@ -11,6 +11,7 @@ bazel-*
 *.exe
 *.out
 app
+segmecam
 segmecam_gui
 segmecam_gui_gpu
 
@@ -34,7 +35,6 @@ third_party/prebuilts/
 CONTRIBUTING.md
 Dockerfile.manylinux*
 MANIFEST.in
-build_*.sh
 find_models.sh
 run_llm_inference.sh
 setup_*.sh
@@ -67,7 +67,6 @@ repo/
 
 # Temporary build scripts
 build-flatpak-local.sh
-build-flatpak-working.sh
 test-*.sh
 
 # Development/backup files
@@ -118,7 +117,6 @@ app-old-just-example.cc
 make_appimage.sh
 notes.txt
 build-flatpak-local.sh
-build-flatpak-working.sh
 ldd-copy-all.sh
 org.segmecam.SegmeCam.Sandboxed.appdata.xml
 org.segmecam.SegmeCam.Sandboxed.desktop
@@ -131,3 +129,6 @@ install-desktop-shortcuts.sh
 flatpak-bundle/libGLU.so.1
 flatpak-bundle/lib/libGLU.so.1
 flatpak-bundle/lib/libGLU.so.1.3.1
+build_android_examples.sh
+build_desktop_examples.sh
+build_ios_examples.sh
