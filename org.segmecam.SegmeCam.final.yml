@@ -1,98 +1,150 @@
 app-id: org.segmecam.SegmeCam
 runtime: org.freedesktop.Platform
-runtime-version: '23.08'
+runtime-version: '24.08'
 sdk: org.freedesktop.Sdk
+metadata:
+  version: '1.1.0'
+add-extensions:
+  org.freedesktop.Platform.ffmpeg-full:
+    directory: lib/ffmpeg
+    add-ld-path: lib
+    no-autodownload: true
+    autodelete: false
+  org.freedesktop.Platform.GStreamer.gstreamer:
+    directory: lib/gstreamer-1.0
+    add-ld-path: lib
+    no-autodownload: false
+    autodelete: false
+  org.freedesktop.Platform.GStreamer.gst-plugins-good:
+    directory: lib/gstreamer-1.0
+    add-ld-path: lib
+    no-autodownload: false
+    autodelete: false
+  org.freedesktop.Platform.GStreamer.gst-plugins-bad:
+    directory: lib/gstreamer-1.0
+    add-ld-path: lib
+    no-autodownload: false
+    autodelete: false
 
-command: segmecam-wrapper-nvidia.sh
+command: segmecam-launcher.sh
 
 finish-args:
   - --socket=fallback-x11
   - --socket=wayland
   - --share=ipc
   - --device=dri
-  - --device=shm
-  # Removed --device=all for proper sandboxing
-  - --socket=pulseaudio
-  - --socket=pipewire
-  - --filesystem=xdg-pictures:ro
-  - --filesystem=home:ro
-  - --filesystem=/tmp
-  - --share=network
-  - --env=LD_LIBRARY_PATH=/app/lib
-  - --env=DISPLAY=:0
-  - --env=MESA_GL_VERSION_OVERRIDE=3.3
-  - --env=MESA_GLSL_VERSION_OVERRIDE=330
-  - --env=QT_X11_NO_MITSHM=1
-  - --talk-name=org.freedesktop.portal.Camera
-  - --talk-name=org.freedesktop.portal.Desktop
-  - --filesystem=/tmp/.X11-unix
-  - --share=network
+  - --persist=.config/segmecam
+
+build-options:
+  cflags: -O2
 
 modules:
+  - name: libportal
+    buildsystem: meson
+    config-opts:
+      - -Dvapi=false
+      - -Ddocs=false
+      - -Dlibdir=lib
+    sources:
+      - type: git
+        url: https://github.com/flatpak/libportal.git
+        tag: 0.7.1
+
+  - name: glu
+    buildsystem: meson
+    config-opts:
+      - -Dlibdir=lib              
+      - -Ddefault_library=shared
+    sources:
+      - type: archive
+        url: https://archive.mesa3d.org/glu/glu-9.0.3.tar.xz
+        sha256: bd43fe12f374b1192eb15fe20e45ff456b9bc26ab57f0eee919f96ca0f8a330f
+
+  - name: opencv
+    buildsystem: cmake
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_PREFIX=/app
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DBUILD_SHARED_LIBS=ON
+      - -DBUILD_opencv_apps=OFF
+      - -DBUILD_opencv_java=OFF
+      - -DBUILD_opencv_python=OFF
+      - -DBUILD_opencv_js=OFF
+      - -DBUILD_opencv_ts=OFF
+      - -DBUILD_opencv_java_bindings_generator=OFF
+      - -DBUILD_opencv_python_bindings_generator=OFF
+      - -DBUILD_opencv_dnn=ON
+      - -DBUILD_opencv_highgui=ON
+      - -DBUILD_opencv_imgcodecs=ON
+      - -DBUILD_opencv_imgproc=ON
+      - -DBUILD_opencv_core=ON
+      - -DBUILD_opencv_video=ON
+      - -DBUILD_opencv_videoio=ON
+      - -DBUILD_opencv_calib3d=ON
+      - -DBUILD_opencv_features2d=ON
+      - -DBUILD_opencv_flann=ON
+      - -DWITH_GTK=OFF
+      - -DWITH_QT=OFF
+      - -DWITH_OPENGL=ON
+      - -DWITH_GSTREAMER=ON
+      - -DWITH_FFMPEG=OFF
+      - -DWITH_V4L=ON
+    sources:
+      - type: archive
+        url: https://github.com/opencv/opencv/archive/4.6.0.tar.gz
+        sha256: 1ec1cba65f9f20fe5a41fda1586e01c70ea0c9a6d7b67c9e13edf0cfe2239277
+
   - name: segmecam
     buildsystem: simple
+    sources:
+      - type: dir
+        path: .
+        dest: source
     build-commands:
-      # Build SegmeCam with Flatpak-specific configuration outside of Flatpak
-      # This assumes the binary has already been built with FLATPAK_BUILD=true
-      # Copy the pre-built binary and libraries
-      - mkdir -p /app/lib
-      - cp segmecam /app/bin/segmecam
+      # Copy the pre-built SegmeCam binary from project root to the app directory (updated 2024-09-19 05:15)
+      - mkdir -p /app/bin /app/lib
+      - ls -la source/segmecam
+      - cp -v source/segmecam /app/bin/segmecam
 
-      # Copy required libraries (GStreamer, GLib, etc. from system)
-      - cp /usr/lib/x86_64-linux-gnu/libgstreamer-1.0.so* /app/lib/ || true
-      - cp /usr/lib/x86_64-linux-gnu/libgstapp-1.0.so* /app/lib/ || true
-      - cp /usr/lib/x86_64-linux-gnu/libgstvideo-1.0.so* /app/lib/ || true
-      - cp /usr/lib/x86_64-linux-gnu/libglib-2.0.so* /app/lib/ || true
-      - cp /usr/lib/x86_64-linux-gnu/libgobject-2.0.so* /app/lib/ || true
-      - cp /usr/lib/x86_64-linux-gnu/libportal.so* /app/lib/ || true
-
-      # Copy additional system libraries that might be needed
-      - cp flatpak-bundle/lib/* /app/lib/ || true
-
-      # Install GLU library from the build system
-      - |
-        if [ -f /usr/lib/x86_64-linux-gnu/libGLU.so.1 ]; then
-          cp -v /usr/lib/x86_64-linux-gnu/libGLU.so* /app/lib/
-          echo "Copied system GLU libraries to /app/lib/"
-        else
-          echo "System GLU libraries not found"
-        fi
+      # Copy essential system libraries that the binary depends on
+      # Note: For Flathub compliance, libraries are built from source when not available in runtime
+      # GTK, Cairo, Pango, GdkPixbuf, GL libraries are available in org.freedesktop.Platform
+      # OpenCV and GLU are built from source in dedicated modules
 
       # Install the wrapper script
-      - install -Dm755 segmecam-wrapper-nvidia.sh /app/bin/segmecam-wrapper-nvidia.sh
+      - cp source/segmecam-wrapper-nvidia.sh /app/bin/segmecam-wrapper-nvidia.sh
+      - chmod +x /app/bin/segmecam-wrapper-nvidia.sh
 
-      # Create lib directory and copy built binary
-      - mkdir -p /app/lib
-      - cp bazel-bin/mediapipe/examples/desktop/segmecam/segmecam /app/bin/segmecam
-
-      # Copy required libraries (GStreamer, GLib, etc. from SDK extensions)
-      - cp /usr/lib/x86_64-linux-gnu/libgstreamer-1.0.so* /app/lib/ || true
-      - cp /usr/lib/x86_64-linux-gnu/libgstapp-1.0.so* /app/lib/ || true
-      - cp /usr/lib/x86_64-linux-gnu/libgstvideo-1.0.so* /app/lib/ || true
-      - cp /usr/lib/x86_64-linux-gnu/libglib-2.0.so* /app/lib/ || true
-      - cp /usr/lib/x86_64-linux-gnu/libgobject-2.0.so* /app/lib/ || true
-      - cp /usr/lib/x86_64-linux-gnu/libportal.so* /app/lib/ || true
-
-      # Copy additional system libraries that might be needed
-      - cp flatpak-bundle/lib/* /app/lib/ || true
-
-      # Install GLU library from the build system
+      # Create simple launcher script
       - |
-        if [ -f /usr/lib/x86_64-linux-gnu/libGLU.so.1 ]; then
-          cp -v /usr/lib/x86_64-linux-gnu/libGLU.so* /app/lib/
-          echo "Copied system GLU libraries to /app/lib/"
-        else
-          echo "System GLU libraries not found"
-        fi
-
-      # Install the wrapper script
-      - install -Dm755 segmecam-wrapper-nvidia.sh /app/bin/segmecam-wrapper-nvidia.sh
+        cat > /app/bin/segmecam-launcher.sh << 'EOF'
+        #!/bin/bash
+        # Default arguments
+        GRAPH_PATH="/app/share/segmecam/mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt"
+        RESOURCE_DIR="/app/mediapipe_runfiles"
+        CAMERA_ID=0
+        
+        # Parse --face flag
+        for arg in "$@"; do
+          case $arg in
+            --face)
+              GRAPH_PATH="/app/share/segmecam/mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt"
+              shift
+              ;;
+          esac
+        done
+        
+        exec /app/bin/segmecam --graph_path="$GRAPH_PATH" --resource_root_dir="$RESOURCE_DIR" --camera_id="$CAMERA_ID" "$@"
+        EOF
+      - chmod +x /app/bin/segmecam-launcher.sh
 
       # Install graph files
       - mkdir -p /app/share/segmecam/mediapipe_graphs
-      - cp mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
-      - cp mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
-      - cp mediapipe_graphs/face_tasks_and_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
+      - cp source/mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
+      - cp source/mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
+      - cp source/mediapipe_graphs/face_tasks_and_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
 
       # Create symlink for graphs in working directory
       - ln -sf /app/share/segmecam/mediapipe_graphs /app/mediapipe_graphs
@@ -105,50 +157,17 @@ modules:
 
       # Create MediaPipe external model directory and install face landmarker model
       - mkdir -p /app/mediapipe/external/com_google_mediapipe_face_landmarker_task/file
-      - cp models/tasks/face_landmarker.task /app/mediapipe/external/com_google_mediapipe_face_landmarker_task/file/downloaded
+      - cp source/models/tasks/face_landmarker.task /app/mediapipe/external/com_google_mediapipe_face_landmarker_task/file/downloaded
 
       # Ensure mediapipe tflite models is installed to the expected path
       - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/selfie_segmentation
-      - cp models/selfie_segmenter.tflite /app/mediapipe_runfiles/mediapipe/modules/selfie_segmentation/selfie_segmentation.tflite
+      - cp source/models/selfie_segmenter.tflite /app/mediapipe_runfiles/mediapipe/modules/selfie_segmentation/selfie_segmentation.tflite
       - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/face_landmark
-      - cp models/face_landmark_with_attention.tflite /app/mediapipe_runfiles/mediapipe/modules/face_landmark/face_landmark_with_attention.tflite
+      - cp source/models/face_landmark_with_attention.tflite /app/mediapipe_runfiles/mediapipe/modules/face_landmark/face_landmark_with_attention.tflite
       - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/face_detection
-      - cp models/face_detection_short_range.tflite /app/mediapipe_runfiles/mediapipe/modules/face_detection/face_detection_short_range.tflite
+      - cp source/models/face_detection_short_range.tflite /app/mediapipe_runfiles/mediapipe/modules/face_detection/face_detection_short_range.tflite
 
       # Install desktop integration
-      - install -Dm644 org.segmecam.SegmeCam.desktop /app/share/applications/org.segmecam.SegmeCam.desktop
-      - install -Dm644 org.segmecam.SegmeCam.appdata.xml /app/share/metainfo/org.segmecam.SegmeCam.appdata.xml
-      - install -Dm644 assets/scai_logo.png /app/share/icons/hicolor/256x256/apps/org.segmecam.SegmeCam.png
-
-    sources:
-      # Application binary (built with FLATPAK_BUILD=true)
-      - type: file
-        path: segmecam
-        dest-filename: segmecam
-      - type: file
-        path: segmecam-wrapper-nvidia.sh
-
-      # Desktop integration files
-      - type: file
-        path: org.segmecam.SegmeCam.desktop
-      - type: file
-        path: org.segmecam.SegmeCam.appdata.xml
-      - type: file
-        path: assets/scai_logo.png
-
-      # MediaPipe graphs
-      - type: dir
-        path: mediapipe_graphs
-
-      # Models
-      - type: dir
-        path: models
-
-      # MediaPipe runfiles (needed for model loading)
-      - type: dir
-        path: mediapipe_runfiles
-
-      # Flatpak bundle libraries
-      - type: dir
-        path: flatpak-bundle
-        dest-filename: face_detection_short_range.tflite
+      - install -Dm644 source/org.segmecam.SegmeCam.desktop /app/share/applications/org.segmecam.SegmeCam.desktop
+      - install -Dm644 source/org.segmecam.SegmeCam.appdata.xml /app/share/metainfo/org.segmecam.SegmeCam.appdata.xml
+      - install -Dm644 source/assets/org.segmecam.SegmeCam.svg /app/share/icons/hicolor/scalable/apps/org.segmecam.SegmeCam.svg
