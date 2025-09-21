@@ -18,17 +18,30 @@ public:
     bool EnsureAvailable();
     bool OpenFileDialog(const std::string& initial_path_hint, std::string& out_uri);
 
+    // Helper methods for ReadImageFromUri
+    GFile* CreateFileFromUri(const std::string& uri);
+    bool ReadFileWithRetry(GFile* file, std::vector<unsigned char>& buffer);
+    bool DecodeImageData(const std::vector<unsigned char>& buffer, cv::Mat& image_out, std::string& resolved_path, GFile* file, const std::string& uri);
+
 private:
     struct FileDialogContext {
         PortalFileChooser* owner = nullptr;
         GMainLoop* loop = nullptr;
         std::string uri;
         bool success = false;
+        GVariant* response = nullptr;
     };
 
     static void OnOpenFileFinished(GObject* source_object, GAsyncResult* result, gpointer user_data);
 
     bool LoadSymbols();
+    bool LoadLibrary();
+    bool LoadFunctionSymbols();
+    bool CreatePortalInstance();
+    bool ValidateContext(FileDialogContext* ctx);
+    bool ProcessPortalResponse(GObject* source_object, GAsyncResult* result, FileDialogContext* ctx);
+    void ExtractUriFromResponse(FileDialogContext* ctx);
+    void CleanupAndQuit(FileDialogContext* ctx);
 
     void* portal_library_handle_ = nullptr;
     XdpPortal* portal_instance_ = nullptr;
@@ -49,6 +62,23 @@ bool PortalFileChooser::LoadSymbols() {
     if (load_attempted_) {
         return false;
     }
+
+    if (!LoadLibrary()) {
+        return false;
+    }
+
+    if (!LoadFunctionSymbols()) {
+        return false;
+    }
+
+    if (!CreatePortalInstance()) {
+        return false;
+    }
+
+    return true;
+}
+
+bool PortalFileChooser::LoadLibrary() {
     load_attempted_ = true;
 
     static const char* kLibNames[] = {"libportal-1.so.0", "libportal.so.1", "libportal.so.0", "libportal.so"};
@@ -62,7 +92,10 @@ bool PortalFileChooser::LoadSymbols() {
         std::cerr << "❌ Unable to load libportal" << std::endl;
         return false;
     }
+    return true;
+}
 
+bool PortalFileChooser::LoadFunctionSymbols() {
     xdp_portal_new_fn_ = reinterpret_cast<XdpPortal* (*)()>(dlsym(portal_library_handle_, "xdp_portal_new"));
     xdp_portal_open_file_fn_ = reinterpret_cast<void (*)(XdpPortal*, XdpParent*, const char*, GVariant*, GVariant*, GVariant*, unsigned int, GCancellable*, GAsyncReadyCallback, gpointer)>(
         dlsym(portal_library_handle_, "xdp_portal_open_file"));
@@ -73,26 +106,23 @@ bool PortalFileChooser::LoadSymbols() {
         std::cerr << "❌ Missing libportal symbols" << std::endl;
         return false;
     }
+    return true;
+}
 
+bool PortalFileChooser::CreatePortalInstance() {
     portal_instance_ = xdp_portal_new_fn_();
     if (!portal_instance_) {
         std::cerr << "❌ Failed to create XdpPortal instance" << std::endl;
         return false;
     }
-
     return true;
 }
 
-bool PortalFileChooser::EnsureAvailable() {
-    return LoadSymbols();
+bool PortalFileChooser::ValidateContext(FileDialogContext* ctx) {
+    return ctx && ctx->owner;
 }
 
-void PortalFileChooser::OnOpenFileFinished(GObject* source_object, GAsyncResult* result, gpointer user_data) {
-    auto* ctx = static_cast<FileDialogContext*>(user_data);
-    if (!ctx || !ctx->owner) {
-        return;
-    }
-
+bool PortalFileChooser::ProcessPortalResponse(GObject* source_object, GAsyncResult* result, FileDialogContext* ctx) {
     XdpPortal* portal = reinterpret_cast<XdpPortal*>(source_object);
     GError* error = nullptr;
     GVariant* response = ctx->owner->xdp_portal_open_file_finish_fn_(portal, result, &error);
@@ -101,10 +131,7 @@ void PortalFileChooser::OnOpenFileFinished(GObject* source_object, GAsyncResult*
             std::cerr << "❌ Portal open file failed: " << error->message << std::endl;
             g_error_free(error);
         }
-        if (ctx->loop) {
-            g_main_loop_quit(ctx->loop);
-        }
-        return;
+        return false;
     }
 
     // response is guaranteed to be non-null after the early return above
@@ -114,7 +141,12 @@ void PortalFileChooser::OnOpenFileFinished(GObject* source_object, GAsyncResult*
         g_free(dump);
     }
 
-    g_autoptr(GVariant) uris_variant = g_variant_lookup_value(response, "uris", G_VARIANT_TYPE("as"));
+    ctx->response = response;
+    return true;
+}
+
+void PortalFileChooser::ExtractUriFromResponse(FileDialogContext* ctx) {
+    g_autoptr(GVariant) uris_variant = g_variant_lookup_value(ctx->response, "uris", G_VARIANT_TYPE("as"));
     if (uris_variant) {
         gsize n_uris = 0;
         g_auto(GStrv) uris = g_variant_dup_strv(uris_variant, &n_uris);
@@ -129,15 +161,112 @@ void PortalFileChooser::OnOpenFileFinished(GObject* source_object, GAsyncResult*
         std::cout << "⚠️  FileChooser response missing 'uris' key" << std::endl;
     }
 
-    g_variant_unref(response);
+    g_variant_unref(ctx->response);
+}
 
-    if (error) {
-        g_error_free(error);
-    }
-
+void PortalFileChooser::CleanupAndQuit(FileDialogContext* ctx) {
     if (ctx->loop) {
         g_main_loop_quit(ctx->loop);
     }
+}
+
+GFile* PortalFileChooser::CreateFileFromUri(const std::string& uri) {
+    if (g_str_has_prefix(uri.c_str(), "file://")) {
+        return g_file_new_for_uri(uri.c_str());
+    } else {
+        return g_file_new_for_commandline_arg(uri.c_str());
+    }
+}
+
+bool PortalFileChooser::ReadFileWithRetry(GFile* file, std::vector<unsigned char>& buffer) {
+    const gsize kChunkSize = 16 * 1024;
+    std::vector<unsigned char> chunk(kChunkSize);
+    constexpr int kMaxAttempts = 10;
+    
+    for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
+        g_autoptr(GError) error = nullptr;
+        g_autoptr(GFileInputStream) stream = g_file_read(file, nullptr, &error);
+        if (!stream) {
+            if (error && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND)) {
+                if (attempt < kMaxAttempts - 1) {
+                    g_usleep(100 * 1000); // 100 ms
+                    continue;
+                }
+            }
+            if (error) {
+                std::cerr << "❌ Failed to read file: " << error->message << std::endl;
+            }
+            return false;
+        }
+
+        bool read_success = false;
+        while (!read_success) {
+            g_autoptr(GError) read_error = nullptr;
+            gssize bytes_read = g_input_stream_read(G_INPUT_STREAM(stream), chunk.data(), chunk.size(), nullptr, &read_error);
+            if (bytes_read > 0) {
+                buffer.insert(buffer.end(), chunk.begin(), chunk.begin() + bytes_read);
+            } else if (bytes_read == 0) {
+                read_success = true;
+            } else {
+                std::cerr << "❌ Error reading image data: " << (read_error ? read_error->message : "unknown") << std::endl;
+                return false;
+            }
+        }
+        return true;
+    }
+    std::cerr << "❌ Unable to read image data after retries" << std::endl;
+    return false;
+}
+
+bool PortalFileChooser::DecodeImageData(const std::vector<unsigned char>& buffer, cv::Mat& image_out, std::string& resolved_path, GFile* file, const std::string& uri) {
+    if (buffer.empty()) {
+        std::cerr << "❌ Portal returned empty file data" << std::endl;
+        return false;
+    }
+
+    cv::Mat data_mat(1, static_cast<int>(buffer.size()), CV_8UC1, const_cast<unsigned char*>(buffer.data()));
+    cv::Mat decoded = cv::imdecode(data_mat, cv::IMREAD_COLOR);
+    if (decoded.empty()) {
+        std::cerr << "❌ Failed to decode image data" << std::endl;
+        return false;
+    }
+
+    image_out = decoded;
+
+    g_autofree gchar* path_c = g_file_get_path(file);
+    if (path_c) {
+        resolved_path.assign(path_c);
+    } else {
+        resolved_path = uri;
+    }
+
+    std::cout << "📄 Loaded image from URI: " << resolved_path
+              << " (" << image_out.cols << "x" << image_out.rows << ")" << std::endl;
+    return true;
+}
+
+bool PortalFileChooser::EnsureAvailable() {
+    return LoadSymbols();
+}
+
+void PortalFileChooser::OnOpenFileFinished(GObject* source_object, GAsyncResult* result, gpointer user_data) {
+    auto* ctx = static_cast<FileDialogContext*>(user_data);
+    if (!ctx || !ctx->owner) {
+        return;
+    }
+
+    if (!ctx->owner->ValidateContext(ctx)) {
+        ctx->owner->CleanupAndQuit(ctx);
+        return;
+    }
+
+    if (!ctx->owner->ProcessPortalResponse(source_object, result, ctx)) {
+        ctx->owner->CleanupAndQuit(ctx);
+        return;
+    }
+
+    ctx->owner->ExtractUriFromResponse(ctx);
+    ctx->owner->CleanupAndQuit(ctx);
 }
 
 bool PortalFileChooser::OpenFileDialog(const std::string& initial_path_hint, std::string& out_uri) {
@@ -171,15 +300,12 @@ bool PortalFileChooser::OpenFileDialog(const std::string& initial_path_hint, std
     return true;
 }
 
+} // namespace
+
 bool ReadImageFromUri(const std::string& uri, cv::Mat& image_out, std::string& resolved_path) {
     std::cout << "🧷 Attempting to read image from URI: " << uri << std::endl;
 
-    g_autoptr(GFile) file = nullptr;
-    if (g_str_has_prefix(uri.c_str(), "file://")) {
-        file = g_file_new_for_uri(uri.c_str());
-    } else {
-        file = g_file_new_for_commandline_arg(uri.c_str());
-    }
+    g_autoptr(GFile) file = g_portal_file_chooser.CreateFileFromUri(uri);
     if (!file) {
         std::cerr << "❌ Unable to parse URI: " << uri << std::endl;
         return false;
@@ -187,75 +313,13 @@ bool ReadImageFromUri(const std::string& uri, cv::Mat& image_out, std::string& r
 
     std::vector<unsigned char> buffer;
     buffer.reserve(64 * 1024);
-    const gsize kChunkSize = 16 * 1024;
-    std::vector<unsigned char> chunk(kChunkSize);
-
-    constexpr int kMaxAttempts = 10;
-    bool read_success = false;
-    for (int attempt = 0; attempt < kMaxAttempts && !read_success; ++attempt) {
-        g_autoptr(GError) error = nullptr;
-        g_autoptr(GFileInputStream) stream = g_file_read(file, nullptr, &error);
-        if (!stream) {
-            if (error && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND)) {
-                // Document portal may still be exporting the file; retry shortly.
-                if (attempt < kMaxAttempts - 1) {
-                    g_usleep(100 * 1000); // 100 ms
-                    continue;
-                }
-            }
-            if (error) {
-                std::cerr << "❌ Failed to read file: " << error->message << std::endl;
-            }
-            return false;
-        }
-
-        while (true) {
-            g_autoptr(GError) read_error = nullptr;
-            gssize bytes_read = g_input_stream_read(G_INPUT_STREAM(stream), chunk.data(), chunk.size(), nullptr, &read_error);
-            if (bytes_read > 0) {
-                buffer.insert(buffer.end(), chunk.begin(), chunk.begin() + bytes_read);
-            } else if (bytes_read == 0) {
-                read_success = true;
-                break;
-            } else {
-                std::cerr << "❌ Error reading image data: " << (read_error ? read_error->message : "unknown") << std::endl;
-                return false;
-            }
-        }
-    }
-
-    if (!read_success) {
-        std::cerr << "❌ Unable to read image data after retries" << std::endl;
+    
+    if (!g_portal_file_chooser.ReadFileWithRetry(file, buffer)) {
         return false;
     }
 
-    if (buffer.empty()) {
-        std::cerr << "❌ Portal returned empty file data" << std::endl;
-        return false;
-    }
-
-    cv::Mat data_mat(1, static_cast<int>(buffer.size()), CV_8UC1, buffer.data());
-    cv::Mat decoded = cv::imdecode(data_mat, cv::IMREAD_COLOR);
-    if (decoded.empty()) {
-        std::cerr << "❌ Failed to decode image data" << std::endl;
-        return false;
-    }
-
-    image_out = decoded;
-
-    g_autofree gchar* path_c = g_file_get_path(file);
-    if (path_c) {
-        resolved_path.assign(path_c);
-    } else {
-        resolved_path = uri;
-    }
-
-    std::cout << "📄 Loaded image from URI: " << resolved_path
-              << " (" << image_out.cols << "x" << image_out.rows << ")" << std::endl;
-    return true;
+    return g_portal_file_chooser.DecodeImageData(buffer, image_out, resolved_path, file, uri);
 }
-
-} // namespace
 
 bool LoadBackgroundImageWithPortal(const std::string& original_path,
                                    cv::Mat& image_out,
