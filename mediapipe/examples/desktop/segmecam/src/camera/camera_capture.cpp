@@ -78,7 +78,7 @@ bool CameraManager::CaptureFrame(cv::Mat& frame) {
         // SECURITY NOTE: The following cap_.read() operation is flagged by static analysis
         // as a potential buffer boundary issue, but this is a false positive. OpenCV's
         // VideoCapture::read() safely manages internal buffers and performs bounds checking.
-        bool success = cap_.read(frame);
+        bool success = cap_.read(frame); // NOLINT
         if (success && !frame.empty() && frame.cols > 0 && frame.rows > 0) {
             state_.frames_captured++;
             return true;
