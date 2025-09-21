@@ -404,6 +404,10 @@ private:
     bool OpenGStreamerCamera(int camera_index, int width, int height, int fps);
     void CloseGStreamerCamera();
     bool CaptureGStreamerFrame(cv::Mat& frame);
+    
+    // PipeWire utility functions
+    static std::vector<int> EnumeratePipeWireCameraNodes();
+    static int GetPipeWireNodeIdForCamera(int camera_index);
 };
 
 } // namespace segmecam

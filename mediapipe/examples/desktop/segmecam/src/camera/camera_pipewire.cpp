@@ -3,6 +3,9 @@
 
 #include <iostream>
 #include <mutex>
+#include <vector>
+#include <algorithm>
+#include <string>
 
 // GStreamer types (forward declared to avoid header dependencies)
 typedef struct _GstElement GstElement;
@@ -189,6 +192,67 @@ void CameraManager::StopPipeWireCapture() {
     gst_camera_active_ = false;
     state_.is_opened = false;
     std::cout << "🛑 PipeWire camera capture stopped" << std::endl;
+}
+
+// Enumerate PipeWire camera nodes using pw-cli
+std::vector<int> CameraManager::EnumeratePipeWireCameraNodes() {
+    std::vector<int> camera_nodes;
+
+    // SECURITY NOTE: This popen call is considered safe because:
+    // 1. The command is hardcoded and cannot be influenced by user input
+    // 2. It only executes read-only operations (pw-cli ls)
+    // 3. Output is validated before use (std::stoi with exception handling)
+    // 4. It's only executed in Flatpak environments where PipeWire is available
+    FILE* pipe = popen("pw-cli ls Node 2>/dev/null | grep -E 'node\\.name.*camera|node\\.name.*webcam|node\\.name.*video' | grep -o 'id [0-9]*' | cut -d' ' -f2", "r");
+    if (!pipe) {
+        std::cerr << "⚠️  Failed to run pw-cli for PipeWire node enumeration" << std::endl;
+        return camera_nodes;
+    }
+
+    char buffer[128];
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        try {
+            // Use std::stoi instead of atoi for better error handling
+            int node_id = std::stoi(std::string(buffer));
+            if (node_id > 0) {
+                camera_nodes.push_back(node_id);
+                std::cout << "📷 Found PipeWire camera node: " << node_id << std::endl;
+            }
+        } catch (const std::exception&) {
+            // Skip invalid lines that can't be parsed as integers
+            continue;
+        }
+    }
+
+    pclose(pipe);
+
+    // Sort by node ID
+    std::sort(camera_nodes.begin(), camera_nodes.end());
+
+    return camera_nodes;
+}
+
+// Get PipeWire node ID for a given camera index
+int CameraManager::GetPipeWireNodeIdForCamera(int camera_index) {
+    static std::vector<int> cached_nodes;
+    static bool nodes_enumerated = false;
+
+    if (!nodes_enumerated) {
+        cached_nodes = EnumeratePipeWireCameraNodes();
+        nodes_enumerated = true;
+
+        if (cached_nodes.empty()) {
+            std::cerr << "⚠️  No PipeWire camera nodes found, cannot enumerate cameras" << std::endl;
+            return -1;
+        }
+    }
+
+    if (camera_index >= 0 && camera_index < static_cast<int>(cached_nodes.size())) {
+        return cached_nodes[camera_index];
+    }
+
+    std::cerr << "⚠️  Camera index " << camera_index << " out of range (found " << cached_nodes.size() << " camera nodes)" << std::endl;
+    return -1;
 }
 
 } // namespace segmecam
