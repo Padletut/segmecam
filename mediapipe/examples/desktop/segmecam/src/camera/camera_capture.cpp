@@ -49,6 +49,7 @@ void CameraManager::LogWaitStart() {
     static int wait_log_count = 0;
     if (wait_log_count < 10) {
         std::cout << "⏳ CaptureFrame waiting for PipeWire sample..." << std::endl;
+        wait_log_count++;
     }
 }
 
@@ -57,7 +58,6 @@ void CameraManager::LogWaitEnd(bool signaled) {
     if (wait_log_count < 10) {
         std::cout << "⏱️  CaptureFrame wait finished (signaled=" << std::boolalpha << signaled
                   << ", frame_ready=" << frame_ready_ << ", opened=" << state_.is_opened << ")" << std::endl;
-        wait_log_count++;
     }
 }
 
