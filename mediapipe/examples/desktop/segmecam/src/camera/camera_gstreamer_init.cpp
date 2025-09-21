@@ -6,6 +6,38 @@
 
 namespace segmecam {
 
+template<typename T>
+bool CameraManager::LoadFunctionPointer(T*& func_ptr, void* library, const char* symbol_name, const char* func_name) {
+    func_ptr = reinterpret_cast<T*>(dlsym(library, symbol_name));
+    if (!func_ptr) {
+        std::cerr << "❌ " << func_name << " dlerror: " << dlerror() << std::endl;
+        return false;
+    }
+    return true;
+}
+
+bool CameraManager::ValidateFunctionPointers(const std::vector<std::pair<void*, const char*>>& functions_to_check) {
+    std::vector<std::string> failed_functions;
+    
+    for (const auto& func_pair : functions_to_check) {
+        if (!func_pair.first) {
+            failed_functions.push_back(func_pair.second);
+        }
+    }
+
+    if (!failed_functions.empty()) {
+        std::cerr << "❌ Failed to load GStreamer/GLib functions: ";
+        for (size_t i = 0; i < failed_functions.size(); ++i) {
+            if (i > 0) std::cerr << ", ";
+            std::cerr << failed_functions[i];
+        }
+        std::cerr << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 bool CameraManager::LoadRequiredLibraries(void*& gst_lib, void*& gstapp_lib, void*& gstvideo_lib, void*& glib_lib, void*& gobject_lib) {
     // Load GStreamer core library
     std::cout << "🔍 DEBUG: Attempting to load libgstreamer-1.0.so.0" << std::endl;
@@ -67,53 +99,32 @@ bool CameraManager::LoadRequiredLibraries(void*& gst_lib, void*& gstapp_lib, voi
 }
 
 bool CameraManager::LoadGStreamerCoreFunctions(void* gst_lib) {
-    // Load GStreamer functions from core library
-    gst_init = reinterpret_cast<gst_init_func>(dlsym(gst_lib, "gst_init"));
-    if (!gst_init) std::cerr << "❌ gst_init dlerror: " << dlerror() << std::endl;
-    gst_pipeline_new = reinterpret_cast<GstElement* (*)(const char*)>(dlsym(gst_lib, "gst_pipeline_new"));
-    if (!gst_pipeline_new) std::cerr << "❌ gst_pipeline_new dlerror: " << dlerror() << std::endl;
-    gst_element_factory_make = reinterpret_cast<GstElement* (*)(const char*, const char*)>(dlsym(gst_lib, "gst_element_factory_make"));
-    if (!gst_element_factory_make) std::cerr << "❌ gst_element_factory_make dlerror: " << dlerror() << std::endl;
-    gst_element_set_state = reinterpret_cast<int (*)(GstElement*, int)>(dlsym(gst_lib, "gst_element_set_state"));
-    if (!gst_element_set_state) std::cerr << "❌ gst_element_set_state dlerror: " << dlerror() << std::endl;
-    gst_element_get_state = reinterpret_cast<int (*)(GstElement*, int*, int*, uint64_t)>(dlsym(gst_lib, "gst_element_get_state"));
-    if (!gst_element_get_state) std::cerr << "❌ gst_element_get_state dlerror: " << dlerror() << std::endl;
-    gst_bin_add_many = reinterpret_cast<int (*)(void*, ...)>(dlsym(gst_lib, "gst_bin_add_many"));
-    if (!gst_bin_add_many) std::cerr << "❌ gst_bin_add_many dlerror: " << dlerror() << std::endl;
-    gst_element_link_many = reinterpret_cast<int (*)(void*, ...)>(dlsym(gst_lib, "gst_element_link_many"));
-    if (!gst_element_link_many) std::cerr << "❌ gst_element_link_many dlerror: " << dlerror() << std::endl;
-    gst_object_unref = reinterpret_cast<void (*)(void*)>(dlsym(gst_lib, "gst_object_unref"));
-    if (!gst_object_unref) std::cerr << "❌ gst_object_unref dlerror: " << dlerror() << std::endl;
-    gst_sample_get_buffer = reinterpret_cast<void* (*)(GstSample*)>(dlsym(gst_lib, "gst_sample_get_buffer"));
-    if (!gst_sample_get_buffer) std::cerr << "❌ gst_sample_get_buffer dlerror: " << dlerror() << std::endl;
-    gst_sample_get_caps = reinterpret_cast<void* (*)(GstSample*)>(dlsym(gst_lib, "gst_sample_get_caps"));
-    if (!gst_sample_get_caps) std::cerr << "❌ gst_sample_get_caps dlerror: " << dlerror() << std::endl;
-    gst_caps_from_string = reinterpret_cast<gst_caps_from_string_func>(dlsym(gst_lib, "gst_caps_from_string"));
-    if (!gst_caps_from_string) std::cerr << "❌ gst_caps_from_string dlerror: " << dlerror() << std::endl;
-    gst_caps_unref = reinterpret_cast<gst_caps_unref_func>(dlsym(gst_lib, "gst_caps_unref"));
-    if (!gst_caps_unref) std::cerr << "❌ gst_caps_unref dlerror: " << dlerror() << std::endl;
-    gst_caps_get_structure = reinterpret_cast<GstStructure* (*)(GstCaps*, unsigned int)>(dlsym(gst_lib, "gst_caps_get_structure"));
-    if (!gst_caps_get_structure) std::cerr << "❌ gst_caps_get_structure dlerror: " << dlerror() << std::endl;
-    gst_structure_get_int = reinterpret_cast<int (*)(const GstStructure*, const char*, int*)>(dlsym(gst_lib, "gst_structure_get_int"));
-    if (!gst_structure_get_int) std::cerr << "❌ gst_structure_get_int dlerror: " << dlerror() << std::endl;
-    gst_structure_get_string = reinterpret_cast<const char* (*)(const GstStructure*, const char*)>(dlsym(gst_lib, "gst_structure_get_string"));
-    if (!gst_structure_get_string) std::cerr << "⚠️  gst_structure_get_string dlerror: " << dlerror() << std::endl;
-    gst_element_link = reinterpret_cast<int (*)(void*, void*)>(dlsym(gst_lib, "gst_element_link"));
-    if (!gst_element_link) std::cerr << "❌ gst_element_link dlerror: " << dlerror() << std::endl;
-    gst_element_link_filtered = reinterpret_cast<int (*)(void*, void*, GstCaps*)>(dlsym(gst_lib, "gst_element_link_filtered"));
-    if (!gst_element_link_filtered) std::cerr << "❌ gst_element_link_filtered dlerror: " << dlerror() << std::endl;
-    gst_parse_launch = reinterpret_cast<GstElement* (*)(const char*, void**)>(dlsym(gst_lib, "gst_parse_launch"));
-    if (!gst_parse_launch) std::cerr << "❌ gst_parse_launch dlerror: " << dlerror() << std::endl;
-    gst_bin_get_by_name = reinterpret_cast<GstElement* (*)(void*, const char*)>(dlsym(gst_lib, "gst_bin_get_by_name"));
-    if (!gst_bin_get_by_name) std::cerr << "❌ gst_bin_get_by_name dlerror: " << dlerror() << std::endl;
-    gst_buffer_map = reinterpret_cast<int (*)(GstBuffer*, GstMapInfo*, int)>(dlsym(gst_lib, "gst_buffer_map"));
-    if (!gst_buffer_map) std::cerr << "❌ gst_buffer_map dlerror: " << dlerror() << std::endl;
-    gst_buffer_unmap = reinterpret_cast<void (*)(GstBuffer*, GstMapInfo*)>(dlsym(gst_lib, "gst_buffer_unmap"));
-    if (!gst_buffer_unmap) std::cerr << "❌ gst_buffer_unmap dlerror: " << dlerror() << std::endl;
-    gst_sample_unref = reinterpret_cast<void (*)(GstSample*)>(dlsym(gst_lib, "gst_sample_unref"));
-    if (!gst_sample_unref) std::cerr << "❌ gst_sample_unref dlerror: " << dlerror() << std::endl;
+    // Load GStreamer functions from core library using helper
+    bool success = true;
+    success &= LoadFunctionPointer(gst_init, gst_lib, "gst_init", "gst_init");
+    success &= LoadFunctionPointer(gst_pipeline_new, gst_lib, "gst_pipeline_new", "gst_pipeline_new");
+    success &= LoadFunctionPointer(gst_element_factory_make, gst_lib, "gst_element_factory_make", "gst_element_factory_make");
+    success &= LoadFunctionPointer(gst_element_set_state, gst_lib, "gst_element_set_state", "gst_element_set_state");
+    success &= LoadFunctionPointer(gst_element_get_state, gst_lib, "gst_element_get_state", "gst_element_get_state");
+    success &= LoadFunctionPointer(gst_bin_add_many, gst_lib, "gst_bin_add_many", "gst_bin_add_many");
+    success &= LoadFunctionPointer(gst_element_link_many, gst_lib, "gst_element_link_many", "gst_element_link_many");
+    success &= LoadFunctionPointer(gst_object_unref, gst_lib, "gst_object_unref", "gst_object_unref");
+    success &= LoadFunctionPointer(gst_sample_get_buffer, gst_lib, "gst_sample_get_buffer", "gst_sample_get_buffer");
+    success &= LoadFunctionPointer(gst_sample_get_caps, gst_lib, "gst_sample_get_caps", "gst_sample_get_caps");
+    success &= LoadFunctionPointer(gst_caps_from_string, gst_lib, "gst_caps_from_string", "gst_caps_from_string");
+    success &= LoadFunctionPointer(gst_caps_unref, gst_lib, "gst_caps_unref", "gst_caps_unref");
+    success &= LoadFunctionPointer(gst_caps_get_structure, gst_lib, "gst_caps_get_structure", "gst_caps_get_structure");
+    success &= LoadFunctionPointer(gst_structure_get_int, gst_lib, "gst_structure_get_int", "gst_structure_get_int");
+    success &= LoadFunctionPointer(gst_structure_get_string, gst_lib, "gst_structure_get_string", "gst_structure_get_string");
+    success &= LoadFunctionPointer(gst_element_link, gst_lib, "gst_element_link", "gst_element_link");
+    success &= LoadFunctionPointer(gst_element_link_filtered, gst_lib, "gst_element_link_filtered", "gst_element_link_filtered");
+    success &= LoadFunctionPointer(gst_parse_launch, gst_lib, "gst_parse_launch", "gst_parse_launch");
+    success &= LoadFunctionPointer(gst_bin_get_by_name, gst_lib, "gst_bin_get_by_name", "gst_bin_get_by_name");
+    success &= LoadFunctionPointer(gst_buffer_map, gst_lib, "gst_buffer_map", "gst_buffer_map");
+    success &= LoadFunctionPointer(gst_buffer_unmap, gst_lib, "gst_buffer_unmap", "gst_buffer_unmap");
+    success &= LoadFunctionPointer(gst_sample_unref, gst_lib, "gst_sample_unref", "gst_sample_unref");
 
-    return true;
+    return success;
 }
 
 bool CameraManager::LoadGStreamerAppFunctions(void* gstapp_lib) {
@@ -127,76 +138,60 @@ bool CameraManager::LoadGStreamerAppFunctions(void* gstapp_lib) {
 }
 
 bool CameraManager::LoadGLibFunctions(void* glib_lib, void* gobject_lib) {
-    // Load GLib functions
-    g_object_set = reinterpret_cast<void (*)(void*, const char*, ...)>(dlsym(gobject_lib, "g_object_set"));
-    if (!g_object_set) std::cerr << "❌ g_object_set dlerror: " << dlerror() << std::endl;
-    g_main_loop_quit = reinterpret_cast<g_main_loop_quit_func>(dlsym(glib_lib, "g_main_loop_quit"));
-    if (!g_main_loop_quit) std::cerr << "❌ g_main_loop_quit dlerror: " << dlerror() << std::endl;
-    g_main_loop_unref = reinterpret_cast<g_main_loop_unref_func>(dlsym(glib_lib, "g_main_loop_unref"));
-    if (!g_main_loop_unref) std::cerr << "❌ g_main_loop_unref dlerror: " << dlerror() << std::endl;
-    g_signal_connect = reinterpret_cast<g_signal_connect_func>(dlsym(gobject_lib, "g_signal_connect_data"));
-    if (!g_signal_connect) std::cerr << "❌ g_signal_connect dlerror: " << dlerror() << std::endl;
-    g_main_loop_new = reinterpret_cast<g_main_loop_new_func>(dlsym(glib_lib, "g_main_loop_new"));
-    if (!g_main_loop_new) std::cerr << "❌ g_main_loop_new dlerror: " << dlerror() << std::endl;
-    g_main_loop_run = reinterpret_cast<g_main_loop_run_func>(dlsym(glib_lib, "g_main_loop_run"));
-    if (!g_main_loop_run) std::cerr << "❌ g_main_loop_run dlerror: " << dlerror() << std::endl;
-    g_object_unref_ptr = reinterpret_cast<g_object_unref_func>(dlsym(gobject_lib, "g_object_unref"));
-    if (!g_object_unref_ptr) std::cerr << "❌ g_object_unref dlerror: " << dlerror() << std::endl;
-    g_usleep = reinterpret_cast<g_usleep_func>(dlsym(glib_lib, "g_usleep"));
-    if (!g_usleep) std::cerr << "❌ g_usleep dlerror: " << dlerror() << std::endl;
-    g_error_free = reinterpret_cast<g_error_free_func>(dlsym(glib_lib, "g_error_free"));
-    if (!g_error_free) std::cerr << "❌ g_error_free dlerror: " << dlerror() << std::endl;
+    // Load GLib functions using helper
+    bool success = true;
+    success &= LoadFunctionPointer(g_object_set, gobject_lib, "g_object_set", "g_object_set");
+    success &= LoadFunctionPointer(g_main_loop_quit, glib_lib, "g_main_loop_quit", "g_main_loop_quit");
+    success &= LoadFunctionPointer(g_main_loop_unref, glib_lib, "g_main_loop_unref", "g_main_loop_unref");
+    success &= LoadFunctionPointer(g_signal_connect, gobject_lib, "g_signal_connect_data", "g_signal_connect");
+    success &= LoadFunctionPointer(g_main_loop_new, glib_lib, "g_main_loop_new", "g_main_loop_new");
+    success &= LoadFunctionPointer(g_main_loop_run, glib_lib, "g_main_loop_run", "g_main_loop_run");
+    success &= LoadFunctionPointer(g_object_unref_ptr, gobject_lib, "g_object_unref", "g_object_unref");
+    success &= LoadFunctionPointer(g_usleep, glib_lib, "g_usleep", "g_usleep");
+    success &= LoadFunctionPointer(g_error_free, glib_lib, "g_error_free", "g_error_free");
 
-    return true;
+    return success;
 }
 
 bool CameraManager::ValidateFunctionLoading() {
-    // Check if all functions were loaded
-    std::vector<std::string> failed_functions;
-    if (!gst_init) failed_functions.push_back("gst_init");
-    if (!gst_pipeline_new) failed_functions.push_back("gst_pipeline_new");
-    if (!gst_element_factory_make) failed_functions.push_back("gst_element_factory_make");
-    if (!gst_element_set_state) failed_functions.push_back("gst_element_set_state");
-    if (!gst_element_get_state) failed_functions.push_back("gst_element_get_state");
-    if (!gst_bin_add_many) failed_functions.push_back("gst_bin_add_many");
-    if (!gst_element_link_many) failed_functions.push_back("gst_element_link_many");
-    if (!gst_object_unref) failed_functions.push_back("gst_object_unref");
-    if (!gst_app_sink_pull_sample) failed_functions.push_back("gst_app_sink_pull_sample");
-    if (!gst_app_sink_is_eos) failed_functions.push_back("gst_app_sink_is_eos");
-    if (!gst_sample_get_buffer) failed_functions.push_back("gst_sample_get_buffer");
-    if (!gst_sample_get_caps) failed_functions.push_back("gst_sample_get_caps");
-    if (!gst_caps_from_string) failed_functions.push_back("gst_caps_from_string");
-    if (!gst_caps_unref) failed_functions.push_back("gst_caps_unref");
-    if (!gst_caps_get_structure) failed_functions.push_back("gst_caps_get_structure");
-    if (!gst_structure_get_int) failed_functions.push_back("gst_structure_get_int");
-    if (!gst_element_link) failed_functions.push_back("gst_element_link");
-    if (!gst_element_link_filtered) failed_functions.push_back("gst_element_link_filtered");
-    if (!gst_parse_launch) failed_functions.push_back("gst_parse_launch");
-    if (!gst_bin_get_by_name) failed_functions.push_back("gst_bin_get_by_name");
-    if (!gst_buffer_map) failed_functions.push_back("gst_buffer_map");
-    if (!gst_buffer_unmap) failed_functions.push_back("gst_buffer_unmap");
-    if (!gst_sample_unref) failed_functions.push_back("gst_sample_unref");
-    if (!g_object_set) failed_functions.push_back("g_object_set");
-    if (!g_main_loop_quit) failed_functions.push_back("g_main_loop_quit");
-    if (!g_main_loop_unref) failed_functions.push_back("g_main_loop_unref");
-    if (!g_signal_connect) failed_functions.push_back("g_signal_connect");
-    if (!g_main_loop_new) failed_functions.push_back("g_main_loop_new");
-    if (!g_main_loop_run) failed_functions.push_back("g_main_loop_run");
-    if (!g_object_unref_ptr) failed_functions.push_back("g_object_unref");
-    if (!g_usleep) failed_functions.push_back("g_usleep");
-    if (!g_error_free) failed_functions.push_back("g_error_free");
+    // Check if all functions were loaded using helper
+    std::vector<std::pair<void*, const char*>> functions_to_check;
+    functions_to_check.reserve(32); // Reserve space for efficiency
+    
+    functions_to_check.push_back({(void*)gst_init, "gst_init"});
+    functions_to_check.push_back({(void*)gst_pipeline_new, "gst_pipeline_new"});
+    functions_to_check.push_back({(void*)gst_element_factory_make, "gst_element_factory_make"});
+    functions_to_check.push_back({(void*)gst_element_set_state, "gst_element_set_state"});
+    functions_to_check.push_back({(void*)gst_element_get_state, "gst_element_get_state"});
+    functions_to_check.push_back({(void*)gst_bin_add_many, "gst_bin_add_many"});
+    functions_to_check.push_back({(void*)gst_element_link_many, "gst_element_link_many"});
+    functions_to_check.push_back({(void*)gst_object_unref, "gst_object_unref"});
+    functions_to_check.push_back({(void*)gst_app_sink_pull_sample, "gst_app_sink_pull_sample"});
+    functions_to_check.push_back({(void*)gst_app_sink_is_eos, "gst_app_sink_is_eos"});
+    functions_to_check.push_back({(void*)gst_sample_get_buffer, "gst_sample_get_buffer"});
+    functions_to_check.push_back({(void*)gst_sample_get_caps, "gst_sample_get_caps"});
+    functions_to_check.push_back({(void*)gst_caps_from_string, "gst_caps_from_string"});
+    functions_to_check.push_back({(void*)gst_caps_unref, "gst_caps_unref"});
+    functions_to_check.push_back({(void*)gst_caps_get_structure, "gst_caps_get_structure"});
+    functions_to_check.push_back({(void*)gst_structure_get_int, "gst_structure_get_int"});
+    functions_to_check.push_back({(void*)gst_element_link, "gst_element_link"});
+    functions_to_check.push_back({(void*)gst_element_link_filtered, "gst_element_link_filtered"});
+    functions_to_check.push_back({(void*)gst_parse_launch, "gst_parse_launch"});
+    functions_to_check.push_back({(void*)gst_bin_get_by_name, "gst_bin_get_by_name"});
+    functions_to_check.push_back({(void*)gst_buffer_map, "gst_buffer_map"});
+    functions_to_check.push_back({(void*)gst_buffer_unmap, "gst_buffer_unmap"});
+    functions_to_check.push_back({(void*)gst_sample_unref, "gst_sample_unref"});
+    functions_to_check.push_back({(void*)g_object_set, "g_object_set"});
+    functions_to_check.push_back({(void*)g_main_loop_quit, "g_main_loop_quit"});
+    functions_to_check.push_back({(void*)g_main_loop_unref, "g_main_loop_unref"});
+    functions_to_check.push_back({(void*)g_signal_connect, "g_signal_connect"});
+    functions_to_check.push_back({(void*)g_main_loop_new, "g_main_loop_new"});
+    functions_to_check.push_back({(void*)g_main_loop_run, "g_main_loop_run"});
+    functions_to_check.push_back({(void*)g_object_unref_ptr, "g_object_unref"});
+    functions_to_check.push_back({(void*)g_usleep, "g_usleep"});
+    functions_to_check.push_back({(void*)g_error_free, "g_error_free"});
 
-    if (!failed_functions.empty()) {
-        std::cerr << "❌ Failed to load GStreamer/GLib functions: ";
-        for (size_t i = 0; i < failed_functions.size(); ++i) {
-            if (i > 0) std::cerr << ", ";
-            std::cerr << failed_functions[i];
-        }
-        std::cerr << std::endl;
-        return false;
-    }
-
-    return true;
+    return ValidateFunctionPointers(functions_to_check);
 }
 
 bool CameraManager::InitializeGStreamer() {

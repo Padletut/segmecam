@@ -403,6 +403,11 @@ private:
     bool LoadGLibFunctions(void* glib_lib, void* gobject_lib);
     bool ValidateFunctionLoading();
     void CleanupGStreamer();
+    
+    // Helper methods for function loading
+    template<typename T>
+    bool LoadFunctionPointer(T*& func_ptr, void* library, const char* symbol_name, const char* func_name);
+    bool ValidateFunctionPointers(const std::vector<std::pair<void*, const char*>>& functions_to_check);
     bool RequestCameraPermission();
     int OpenPipeWireRemote();
     bool CreatePipeWirePipeline(int width, int height, int fps);
