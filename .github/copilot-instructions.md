@@ -34,7 +34,7 @@ bazel build -c opt --action_env=PKG_CONFIG_PATH --repo_env=PKG_CONFIG_PATH --cxx
 **NEVER use manual `bazel build` or `bazel run` commands for the main application!**
 **ALWAYS build the `:segmecam` target and run the binary directly**
 **This ensures all proper paths, arguments, and configurations are set automatically!**
-- **Header/Source**: `.h` in `include/`, `.cpp` in `src/` with matching subdirectories
+
 ## Project-Specific Patterns
 - **Header/Source Structure**: `.h` in `include/`, `.cpp` in `src/` with matching subdirectories
 - **Manager Pattern**: Each manager is self-contained with `Initialize()`, `Update()`, `Render()`, `Cleanup()` lifecycle methods

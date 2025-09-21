@@ -24,7 +24,7 @@ Application crashes or falls back to software rendering
 - "NVIDIA drivers incompatible with Flatpak"
 
 **What Was Actually Wrong** (SIMPLE):
-- Missing `--filesystem=host` permission in Flatpak manifest
+
 - EGL needs access to host GPU driver files outside sandbox
 
 ### 🔧 **The Complete Fix**
