@@ -61,8 +61,8 @@ bool CameraManager::CreatePipeWirePipeline(int /*width*/, int /*height*/, int /*
         return false;
     }
 
-    pipewire_src_ = gst_bin_get_by_name ? gst_bin_get_by_name((GstBin*)pipeline_, "source") : nullptr;
-    GstElement* sink_element = gst_bin_get_by_name ? gst_bin_get_by_name((GstBin*)pipeline_, "sink") : nullptr;
+    pipewire_src_ = gst_bin_get_by_name ? gst_bin_get_by_name(reinterpret_cast<GstBin*>(pipeline_), "source") : nullptr;
+    GstElement* sink_element = gst_bin_get_by_name ? gst_bin_get_by_name(reinterpret_cast<GstBin*>(pipeline_), "sink") : nullptr;
     if (!pipewire_src_) {
         std::cerr << "❌ PipeWire pipeline missing source" << std::endl;
         gst_object_unref(pipeline_);
@@ -82,15 +82,16 @@ bool CameraManager::CreatePipeWirePipeline(int /*width*/, int /*height*/, int /*
     }
 
     appsink_ = sink_element;
-    gst_appsink_ = (GstAppSink*)sink_element;
+    gst_appsink_ = reinterpret_cast<GstAppSink*>(sink_element);
 
     g_object_set(appsink_, "emit-signals", TRUE,
                  "sync", FALSE,
                  "max-buffers", 1,
                  "drop", TRUE,
                  nullptr);
-    g_signal_connect(appsink_, "new-sample", G_CALLBACK(OnNewSampleWrapper), this);
-    g_signal_connect(appsink_, "eos", G_CALLBACK(OnEOSWrapper), this);
+
+    g_signal_connect(appsink_, "new-sample", reinterpret_cast<void*>(OnNewSampleWrapper), this);
+    g_signal_connect(appsink_, "eos", reinterpret_cast<void*>(OnEOSWrapper), this);
 
     std::cout << "✅ PipeWire pipeline created successfully" << std::endl;
     return true;
@@ -130,14 +131,7 @@ bool CameraManager::StartPipeWireCapture(int width, int height, int fps) {
 
     std::cout << "🎬 Starting PipeWire camera capture..." << std::endl;
 
-    // Set pipeline to playing state
-    {
-        std::lock_guard<std::mutex> lock(frame_mutex_);
-        current_frame_.release();
-        frame_ready_ = false;
-    }
-    state_.frames_captured = 0;
-
+    // Set the PipeWire remote fd on the source element
     if (pipewire_src_ && portal_fd_ >= 0) {
         g_object_set(pipewire_src_, "fd", portal_fd_, NULL);
     }

@@ -1,3 +1,4 @@
+// cppcheck-suppress missingInclude
 #include "mediapipe/examples/desktop/segmecam/include/camera/camera_manager.h"
 #include <iostream>
 #include <dlfcn.h>
@@ -43,16 +44,16 @@ bool CameraManager::RequestCameraPermission() {
             return false;
         }
 
-        xdp_portal_new = (XdpPortal* (*)())dlsym(portal_library_handle_, "xdp_portal_new");
+        xdp_portal_new = reinterpret_cast<XdpPortal* (*)()>(dlsym(portal_library_handle_, "xdp_portal_new"));
         if (!xdp_portal_new) std::cerr << "❌ xdp_portal_new dlerror: " << dlerror() << std::endl;
-        xdp_portal_is_camera_present = (gboolean (*)(XdpPortal*))dlsym(portal_library_handle_, "xdp_portal_is_camera_present");
+        xdp_portal_is_camera_present = reinterpret_cast<gboolean (*)(XdpPortal*)>(dlsym(portal_library_handle_, "xdp_portal_is_camera_present"));
         if (!xdp_portal_is_camera_present) std::cerr << "❌ xdp_portal_is_camera_present dlerror: " << dlerror() << std::endl;
-        xdp_portal_access_camera = (void (*)(XdpPortal*, XdpParent*, XdpCameraFlags, GCancellable*, GAsyncReadyCallback, gpointer))dlsym(portal_library_handle_, "xdp_portal_access_camera");
+        xdp_portal_access_camera = reinterpret_cast<void (*)(XdpPortal*, XdpParent*, XdpCameraFlags, GCancellable*, GAsyncReadyCallback, gpointer)>(dlsym(portal_library_handle_, "xdp_portal_access_camera"));
         if (!xdp_portal_access_camera) std::cerr << "❌ xdp_portal_access_camera dlerror: " << dlerror() << std::endl;
-        xdp_portal_access_camera_finish = (gboolean (*)(XdpPortal*, GAsyncResult*, GError**))dlsym(portal_library_handle_, "xdp_portal_access_camera_finish");
+        xdp_portal_access_camera_finish = reinterpret_cast<gboolean (*)(XdpPortal*, GAsyncResult*, GError**)>(dlsym(portal_library_handle_, "xdp_portal_access_camera_finish"));
         if (!xdp_portal_access_camera_finish) std::cerr << "❌ xdp_portal_access_camera_finish dlerror: " << dlerror() << std::endl;
         xdp_portal_open_pipewire_remote_for_camera =
-            (int (*)(XdpPortal*))dlsym(portal_library_handle_, "xdp_portal_open_pipewire_remote_for_camera");
+            reinterpret_cast<int (*)(XdpPortal*)>(dlsym(portal_library_handle_, "xdp_portal_open_pipewire_remote_for_camera"));
         if (!xdp_portal_open_pipewire_remote_for_camera) std::cerr << "❌ xdp_portal_open_pipewire_remote_for_camera dlerror: " << dlerror() << std::endl;
     }
 
