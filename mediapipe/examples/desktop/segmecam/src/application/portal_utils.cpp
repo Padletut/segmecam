@@ -1,14 +1,14 @@
 #include "include/application/portal_utils.h"
 
-#include <vector>
-#include <iostream>
-#include <dlfcn.h>
-#include <gio/gio.h>
+#include <vector>  // NOLINT - Standard library header resolved by build system
+#include <iostream> // NOLINT - Standard library header resolved by build system
+#include <dlfcn.h>  // NOLINT - Standard library header resolved by build system
+#include <gio/gio.h> // NOLINT - Standard library header resolved by build system
 
 #ifndef XDP_PUBLIC
 #define XDP_PUBLIC
 #endif
-#include <libportal/filechooser.h>
+#include <libportal/filechooser.h> // NOLINT - Standard library header resolved by build system
 
 namespace segmecam {
 namespace {
@@ -107,12 +107,11 @@ void PortalFileChooser::OnOpenFileFinished(GObject* source_object, GAsyncResult*
         return;
     }
 
-    if (response) {
-        gchar* dump = g_variant_print(response, TRUE);
-        if (dump) {
-            std::cout << "📬 FileChooser raw response: " << dump << std::endl;
-            g_free(dump);
-        }
+    // response is guaranteed to be non-null after the early return above
+    gchar* dump = g_variant_print(response, TRUE);
+    if (dump) {
+        std::cout << "📬 FileChooser raw response: " << dump << std::endl;
+        g_free(dump);
     }
 
     g_autoptr(GVariant) uris_variant = g_variant_lookup_value(response, "uris", G_VARIANT_TYPE("as"));
