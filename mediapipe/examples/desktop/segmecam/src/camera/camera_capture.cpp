@@ -75,11 +75,30 @@ bool CameraManager::CaptureFrame(cv::Mat& frame) {
         state_.frames_captured++;
         return true;
     } else {
-        // SECURITY NOTE: The following cap_.read() operation is flagged by static analysis
-        // as a potential buffer boundary issue, but this is a false positive. OpenCV's
-        // VideoCapture::read() safely manages internal buffers and performs bounds checking.
-        bool success = cap_.read(frame); // NOLINT
+        // SECURITY NOTE: Validate frame dimensions to prevent buffer overflow issues
+        // CWE-120/CWE-20: Check buffer boundaries and input validation
+        bool success = cap_.read(frame); // NOLINT - OpenCV manages internal buffers safely
         if (success && !frame.empty() && frame.cols > 0 && frame.rows > 0) {
+            // Validate reasonable frame dimensions to prevent memory exhaustion
+            // Maximum reasonable dimensions for camera frames (8K resolution limit)
+            const int MAX_FRAME_WIDTH = 7680;  // 8K width
+            const int MAX_FRAME_HEIGHT = 4320; // 8K height
+            const int MAX_FRAME_PIXELS = MAX_FRAME_WIDTH * MAX_FRAME_HEIGHT;
+
+            if (frame.cols > MAX_FRAME_WIDTH || frame.rows > MAX_FRAME_HEIGHT ||
+                (frame.cols * frame.rows) > MAX_FRAME_PIXELS) {
+                std::cerr << "❌ Invalid frame dimensions: " << frame.cols << "x" << frame.rows
+                          << " (max allowed: " << MAX_FRAME_WIDTH << "x" << MAX_FRAME_HEIGHT << ")" << std::endl;
+                return false;
+            }
+
+            // Additional validation: ensure frame has valid channels (1-4 for typical formats)
+            if (frame.channels() < 1 || frame.channels() > 4) {
+                std::cerr << "❌ Invalid frame channels: " << frame.channels()
+                          << " (expected 1-4 channels)" << std::endl;
+                return false;
+            }
+
             state_.frames_captured++;
             return true;
         }
