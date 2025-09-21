@@ -61,8 +61,8 @@ bool CameraManager::CreatePipeWirePipeline(int /*width*/, int /*height*/, int /*
         return false;
     }
 
-    pipewire_src_ = gst_bin_get_by_name ? gst_bin_get_by_name(reinterpret_cast<GstBin*>(pipeline_), "source") : nullptr;
-    GstElement* sink_element = gst_bin_get_by_name ? gst_bin_get_by_name(reinterpret_cast<GstBin*>(pipeline_), "sink") : nullptr;
+    pipewire_src_ = gst_bin_get_by_name(reinterpret_cast<GstBin*>(pipeline_), "source");
+    GstElement* sink_element = gst_bin_get_by_name(reinterpret_cast<GstBin*>(pipeline_), "sink");
     if (!pipewire_src_) {
         std::cerr << "❌ PipeWire pipeline missing source" << std::endl;
         gst_object_unref(pipeline_);

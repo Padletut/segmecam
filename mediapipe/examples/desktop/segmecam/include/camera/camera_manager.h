@@ -191,6 +191,8 @@ public:
     
     // Frame capture
     bool CaptureFrame(cv::Mat& frame);
+    bool CaptureFrameFlatpak(cv::Mat& frame);
+    bool CaptureFrameNative(cv::Mat& frame);
     
     // Camera enumeration and selection
     const std::vector<CameraDesc>& GetCameraList() const { return cam_list_; }
@@ -388,6 +390,11 @@ private:
 
     // PipeWire/GStreamer specific methods
     bool InitializeGStreamer();
+    bool LoadRequiredLibraries(void*& gst_lib, void*& gstapp_lib, void*& gstvideo_lib, void*& glib_lib, void*& gobject_lib);
+    bool LoadGStreamerCoreFunctions(void* gst_lib);
+    bool LoadGStreamerAppFunctions(void* gstapp_lib);
+    bool LoadGLibFunctions(void* glib_lib, void* gobject_lib);
+    bool ValidateFunctionLoading();
     void CleanupGStreamer();
     bool RequestCameraPermission();
     int OpenPipeWireRemote();
@@ -404,6 +411,7 @@ private:
     bool OpenGStreamerCamera(int camera_index, int width, int height, int fps);
     void CloseGStreamerCamera();
     bool CaptureGStreamerFrame(cv::Mat& frame);
+    bool ValidateGStreamerPipeline();
     
     // PipeWire utility functions
     static std::vector<int> EnumeratePipeWireCameraNodes();

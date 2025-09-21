@@ -6,16 +6,10 @@
 
 namespace segmecam {
 
-bool CameraManager::InitializeGStreamer() {
-    if (gst_initialized_) {
-        return true;
-    }
-
-    std::cout << "🎬 Initializing GStreamer for PipeWire support..." << std::endl;
-
+bool CameraManager::LoadRequiredLibraries(void*& gst_lib, void*& gstapp_lib, void*& gstvideo_lib, void*& glib_lib, void*& gobject_lib) {
     // Load GStreamer core library
     std::cout << "🔍 DEBUG: Attempting to load libgstreamer-1.0.so.0" << std::endl;
-    void* gst_lib = dlopen("libgstreamer-1.0.so.0", RTLD_LAZY);
+    gst_lib = dlopen("libgstreamer-1.0.so.0", RTLD_LAZY);
     if (!gst_lib) {
         std::cerr << "❌ Failed to load libgstreamer-1.0.so.0: " << dlerror() << std::endl;
         return false;
@@ -24,7 +18,7 @@ bool CameraManager::InitializeGStreamer() {
 
     // Load GStreamer app library (needed for gst_app_sink_* functions)
     std::cout << "🔍 DEBUG: Attempting to load libgstapp-1.0.so.0" << std::endl;
-    void* gstapp_lib = dlopen("libgstapp-1.0.so.0", RTLD_LAZY);
+    gstapp_lib = dlopen("libgstapp-1.0.so.0", RTLD_LAZY);
     if (!gstapp_lib) {
         std::cerr << "❌ Failed to load libgstapp-1.0.so.0: " << dlerror() << std::endl;
         dlclose(gst_lib);
@@ -34,7 +28,7 @@ bool CameraManager::InitializeGStreamer() {
 
     // Load GStreamer video library (needed for video format helpers)
     std::cout << "🔍 DEBUG: Attempting to load libgstvideo-1.0.so.0" << std::endl;
-    void* gstvideo_lib = dlopen("libgstvideo-1.0.so.0", RTLD_LAZY);
+    gstvideo_lib = dlopen("libgstvideo-1.0.so.0", RTLD_LAZY);
     if (!gstvideo_lib) {
         std::cerr << "❌ Failed to load libgstvideo-1.0.so.0: " << dlerror() << std::endl;
         dlclose(gst_lib);
@@ -45,7 +39,7 @@ bool CameraManager::InitializeGStreamer() {
 
     // Load GLib library
     std::cout << "🔍 DEBUG: Attempting to load libglib-2.0.so.0" << std::endl;
-    void* glib_lib = dlopen("libglib-2.0.so.0", RTLD_LAZY);
+    glib_lib = dlopen("libglib-2.0.so.0", RTLD_LAZY);
     if (!glib_lib) {
         std::cerr << "❌ Failed to load libglib-2.0.so.0: " << dlerror() << std::endl;
         std::cout << "🔍 DEBUG: dlerror() says: " << dlerror() << std::endl;
@@ -58,7 +52,7 @@ bool CameraManager::InitializeGStreamer() {
 
     // Load GObject library (needed for g_object_set, g_signal_connect)
     std::cout << "🔍 DEBUG: Attempting to load libgobject-2.0.so.0" << std::endl;
-    void* gobject_lib = dlopen("libgobject-2.0.so.0", RTLD_LAZY);
+    gobject_lib = dlopen("libgobject-2.0.so.0", RTLD_LAZY);
     if (!gobject_lib) {
         std::cerr << "❌ Failed to load libgobject-2.0.so.0: " << dlerror() << std::endl;
         dlclose(gst_lib);
@@ -69,6 +63,10 @@ bool CameraManager::InitializeGStreamer() {
     }
     std::cout << "✅ DEBUG: Successfully loaded libgobject-2.0.so.0" << std::endl;
 
+    return true;
+}
+
+bool CameraManager::LoadGStreamerCoreFunctions(void* gst_lib) {
     // Load GStreamer functions from core library
     gst_init = reinterpret_cast<gst_init_func>(dlsym(gst_lib, "gst_init"));
     if (!gst_init) std::cerr << "❌ gst_init dlerror: " << dlerror() << std::endl;
@@ -115,12 +113,20 @@ bool CameraManager::InitializeGStreamer() {
     gst_sample_unref = reinterpret_cast<void (*)(GstSample*)>(dlsym(gst_lib, "gst_sample_unref"));
     if (!gst_sample_unref) std::cerr << "❌ gst_sample_unref dlerror: " << dlerror() << std::endl;
 
+    return true;
+}
+
+bool CameraManager::LoadGStreamerAppFunctions(void* gstapp_lib) {
     // Load GStreamer app functions from app library
     gst_app_sink_pull_sample = reinterpret_cast<void* (*)(GstAppSink*)>(dlsym(gstapp_lib, "gst_app_sink_pull_sample"));
     if (!gst_app_sink_pull_sample) std::cerr << "❌ gst_app_sink_pull_sample dlerror: " << dlerror() << std::endl;
     gst_app_sink_is_eos = reinterpret_cast<int (*)(GstAppSink*)>(dlsym(gstapp_lib, "gst_app_sink_is_eos"));
     if (!gst_app_sink_is_eos) std::cerr << "❌ gst_app_sink_is_eos dlerror: " << dlerror() << std::endl;
 
+    return true;
+}
+
+bool CameraManager::LoadGLibFunctions(void* glib_lib, void* gobject_lib) {
     // Load GLib functions
     g_object_set = reinterpret_cast<void (*)(void*, const char*, ...)>(dlsym(gobject_lib, "g_object_set"));
     if (!g_object_set) std::cerr << "❌ g_object_set dlerror: " << dlerror() << std::endl;
@@ -141,6 +147,10 @@ bool CameraManager::InitializeGStreamer() {
     g_error_free = reinterpret_cast<g_error_free_func>(dlsym(glib_lib, "g_error_free"));
     if (!g_error_free) std::cerr << "❌ g_error_free dlerror: " << dlerror() << std::endl;
 
+    return true;
+}
+
+bool CameraManager::ValidateFunctionLoading() {
     // Check if all functions were loaded
     std::vector<std::string> failed_functions;
     if (!gst_init) failed_functions.push_back("gst_init");
@@ -183,10 +193,43 @@ bool CameraManager::InitializeGStreamer() {
             std::cerr << failed_functions[i];
         }
         std::cerr << std::endl;
-        dlclose(gst_lib);
-        dlclose(gstapp_lib);
-        dlclose(gstvideo_lib);
-        dlclose(glib_lib);
+        return false;
+    }
+
+    return true;
+}
+
+bool CameraManager::InitializeGStreamer() {
+    if (gst_initialized_) {
+        return true;
+    }
+
+    std::cout << "🎬 Initializing GStreamer for PipeWire support..." << std::endl;
+
+    // Load required libraries
+    void* gst_lib = nullptr;
+    void* gstapp_lib = nullptr;
+    void* gstvideo_lib = nullptr;
+    void* glib_lib = nullptr;
+    void* gobject_lib = nullptr;
+
+    if (!LoadRequiredLibraries(gst_lib, gstapp_lib, gstvideo_lib, glib_lib, gobject_lib)) {
+        return false;
+    }
+
+    // Load GStreamer core functions
+    LoadGStreamerCoreFunctions(gst_lib);
+
+    // Load GStreamer app functions
+    LoadGStreamerAppFunctions(gstapp_lib);
+
+    // Load GLib functions
+    LoadGLibFunctions(glib_lib, gobject_lib);
+
+    // Validate that all functions were loaded successfully
+    if (!ValidateFunctionLoading()) {
+        // Note: Libraries should NOT be closed here as function pointers depend on them
+        // The libraries will remain loaded for the lifetime of the application
         return false;
     }
 
