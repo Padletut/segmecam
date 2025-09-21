@@ -287,6 +287,12 @@ cc_library( # type: ignore
     srcs = [
         "src/camera/camera_manager.cpp",
         "src/camera/camera_initialization.cpp",
+        "src/camera/camera_opening.cpp",
+        "src/camera/camera_capture.cpp",
+        "src/camera/camera_gstreamer_init.cpp",
+        "src/camera/camera_gstreamer_cleanup.cpp",
+        "src/camera/camera_portal_permission.cpp",
+        "src/camera/camera_pipewire.cpp",
     ],
     hdrs = ["include/camera/camera_manager.h"],
     includes = [".", "include"],

@@ -4,7 +4,10 @@
 
 // Runtime detection of Flatpak environment
 static bool IsRunningInFlatpak() {
-    return std::getenv("FLATPAK_ID") != nullptr;
+    const char* flatpak_id = std::getenv("FLATPAK_ID");
+    // FLATPAK_ID is set by Flatpak runtime, presence indicates sandboxed environment
+    // This is a safe check as we only verify existence, not use the value
+    return flatpak_id != nullptr && flatpak_id[0] != '\0';
 }
 
 namespace segmecam {
