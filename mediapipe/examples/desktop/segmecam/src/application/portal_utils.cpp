@@ -21,6 +21,8 @@ public:
     // Helper methods for ReadImageFromUri
     GFile* CreateFileFromUri(const std::string& uri);
     bool ReadFileWithRetry(GFile* file, std::vector<unsigned char>& buffer);
+    GFileInputStream* CreateFileStreamWithRetry(GFile* file);
+    bool ReadFileData(GFileInputStream* stream, std::vector<unsigned char>& buffer);
     bool DecodeImageData(const std::vector<unsigned char>& buffer, cv::Mat& image_out, std::string& resolved_path, GFile* file, const std::string& uri);
 
 private:
@@ -178,44 +180,59 @@ GFile* PortalFileChooser::CreateFileFromUri(const std::string& uri) {
     }
 }
 
-bool PortalFileChooser::ReadFileWithRetry(GFile* file, std::vector<unsigned char>& buffer) {
-    const gsize kChunkSize = 16 * 1024;
-    std::vector<unsigned char> chunk(kChunkSize);
+GFileInputStream* PortalFileChooser::CreateFileStreamWithRetry(GFile* file) {
     constexpr int kMaxAttempts = 10;
     
     for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
         g_autoptr(GError) error = nullptr;
-        g_autoptr(GFileInputStream) stream = g_file_read(file, nullptr, &error);
-        if (!stream) {
-            if (error && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND)) {
-                if (attempt < kMaxAttempts - 1) {
-                    g_usleep(100 * 1000); // 100 ms
-                    continue;
-                }
+        GFileInputStream* stream = g_file_read(file, nullptr, &error);
+        if (stream) {
+            return stream;
+        }
+        
+        if (error && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND)) {
+            if (attempt < kMaxAttempts - 1) {
+                g_usleep(100 * 1000); // 100 ms
+                continue;
             }
-            if (error) {
-                std::cerr << "❌ Failed to read file: " << error->message << std::endl;
-            }
+        }
+        
+        if (error) {
+            std::cerr << "❌ Failed to read file: " << error->message << std::endl;
+        }
+        return nullptr;
+    }
+    
+    std::cerr << "❌ Unable to create file stream after retries" << std::endl;
+    return nullptr;
+}
+
+bool PortalFileChooser::ReadFileData(GFileInputStream* stream, std::vector<unsigned char>& buffer) {
+    const gsize kChunkSize = 16 * 1024;
+    std::vector<unsigned char> chunk(kChunkSize);
+    
+    while (true) {
+        g_autoptr(GError) read_error = nullptr;
+        gssize bytes_read = g_input_stream_read(G_INPUT_STREAM(stream), chunk.data(), chunk.size(), nullptr, &read_error);
+        
+        if (bytes_read > 0) {
+            buffer.insert(buffer.end(), chunk.begin(), chunk.begin() + bytes_read);
+        } else if (bytes_read == 0) {
+            return true; // EOF reached
+        } else {
+            std::cerr << "❌ Error reading image data: " << (read_error ? read_error->message : "unknown") << std::endl;
             return false;
         }
-
-        bool read_success = false;
-        while (!read_success) {
-            g_autoptr(GError) read_error = nullptr;
-            gssize bytes_read = g_input_stream_read(G_INPUT_STREAM(stream), chunk.data(), chunk.size(), nullptr, &read_error);
-            if (bytes_read > 0) {
-                buffer.insert(buffer.end(), chunk.begin(), chunk.begin() + bytes_read);
-            } else if (bytes_read == 0) {
-                read_success = true;
-            } else {
-                std::cerr << "❌ Error reading image data: " << (read_error ? read_error->message : "unknown") << std::endl;
-                return false;
-            }
-        }
-        return true;
     }
-    std::cerr << "❌ Unable to read image data after retries" << std::endl;
-    return false;
+}
+
+bool PortalFileChooser::ReadFileWithRetry(GFile* file, std::vector<unsigned char>& buffer) {
+    g_autoptr(GFileInputStream) stream = CreateFileStreamWithRetry(file);
+    if (!stream) {
+        return false;
+    }
+    
+    return ReadFileData(stream, buffer);
 }
 
 bool PortalFileChooser::DecodeImageData(const std::vector<unsigned char>& buffer, cv::Mat& image_out, std::string& resolved_path, GFile* file, const std::string& uri) {
