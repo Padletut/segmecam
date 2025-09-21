@@ -18,7 +18,7 @@ Application crashes or falls back to software rendering
 ```
 
 **What We Initially Thought** (WRONG):
-- "EGL doesn't work in Flatpak"
+
 - "Sandboxing breaks GPU access"
 - "Need complex workarounds for GPU drivers"
 - "NVIDIA drivers incompatible with Flatpak"
