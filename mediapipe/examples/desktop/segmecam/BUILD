@@ -284,7 +284,10 @@ cc_library( # type: ignore
 # Camera Manager Library (Phase 4 Refactoring)
 cc_library( # type: ignore
     name = "camera_manager",
-    srcs = ["src/camera/camera_manager.cpp"],
+    srcs = [
+        "src/camera/camera_manager.cpp",
+        "src/camera/camera_initialization.cpp",
+    ],
     hdrs = ["include/camera/camera_manager.h"],
     includes = [".", "include"],
     deps = [
