@@ -88,103 +88,53 @@ bool ManagerCoordination::ValidateManagers(const Managers& managers) {
 
 bool ManagerCoordination::InitializeConfigManager(Managers& managers, segmecam::AppState& app_state) {
     try {
-        managers.config = std::make_unique<segmecam::ConfigManager>();
-        
-        // ConfigManager doesn't have an Initialize method, it's ready to use
-        std::cout << "ConfigManager created successfully" << std::endl;
-        
-        // Try to get default profile
-        std::string default_profile;
-        if (managers.config->GetDefaultProfile(default_profile) && !default_profile.empty()) {
-            std::cout << "Loading default profile: " << default_profile << std::endl;
-            // Load the default profile using ConfigData and apply basic settings
-            segmecam::ConfigData config_data;
-            if (managers.config->LoadProfile(default_profile, config_data)) {
-                // Apply basic display settings from the profile
-                app_state.vsync_on = config_data.display.vsync_on;
-                app_state.show_mask = config_data.display.show_mask;
-                app_state.show_landmarks = config_data.display.show_landmarks;
-                app_state.bg_mode = config_data.background.bg_mode;
-                app_state.blur_strength = config_data.background.blur_strength;
-                // Apply background path from profile to preserve it for future saves
-                strncpy(app_state.bg_path_buf, config_data.background.bg_path.c_str(), sizeof(app_state.bg_path_buf) - 1);
-                app_state.bg_path_buf[sizeof(app_state.bg_path_buf) - 1] = '\0';
-                
-                // Apply beauty effects settings from profile
-                app_state.fx_skin = config_data.beauty.fx_skin;
-                app_state.fx_skin_adv = config_data.beauty.fx_skin_adv;
-                app_state.fx_skin_strength = config_data.beauty.fx_skin_strength;
-                app_state.fx_skin_amount = config_data.beauty.fx_skin_amount;
-                app_state.fx_skin_radius = config_data.beauty.fx_skin_radius;
-                app_state.fx_skin_tex = config_data.beauty.fx_skin_tex;
-                app_state.fx_skin_edge = config_data.beauty.fx_skin_edge;
-                app_state.fx_adv_scale = config_data.beauty.fx_adv_scale;
-                app_state.fx_adv_detail_preserve = config_data.beauty.fx_adv_detail_preserve;
-                
-                // Wrinkle settings
-                app_state.fx_skin_wrinkle = config_data.beauty.fx_skin_wrinkle;
-                app_state.fx_skin_smile_boost = config_data.beauty.fx_skin_smile_boost;
-                app_state.fx_skin_squint_boost = config_data.beauty.fx_skin_squint_boost;
-                app_state.fx_skin_forehead_boost = config_data.beauty.fx_skin_forehead_boost;
-                app_state.fx_skin_wrinkle_gain = config_data.beauty.fx_skin_wrinkle_gain;
-                app_state.fx_wrinkle_suppress_lower = config_data.beauty.fx_wrinkle_suppress_lower;
-                app_state.fx_wrinkle_lower_ratio = config_data.beauty.fx_wrinkle_lower_ratio;
-                app_state.fx_wrinkle_ignore_glasses = config_data.beauty.fx_wrinkle_ignore_glasses;
-                app_state.fx_wrinkle_glasses_margin = config_data.beauty.fx_wrinkle_glasses_margin;
-                app_state.fx_wrinkle_keep_ratio = config_data.beauty.fx_wrinkle_keep_ratio;
-                app_state.fx_wrinkle_custom_scales = config_data.beauty.fx_wrinkle_custom_scales;
-                app_state.fx_wrinkle_min_px = config_data.beauty.fx_wrinkle_min_px;
-                app_state.fx_wrinkle_max_px = config_data.beauty.fx_wrinkle_max_px;
-                app_state.fx_wrinkle_use_skin_gate = config_data.beauty.fx_wrinkle_use_skin_gate;
-                app_state.fx_wrinkle_mask_gain = config_data.beauty.fx_wrinkle_mask_gain;
-                app_state.fx_wrinkle_baseline = config_data.beauty.fx_wrinkle_baseline;
-                app_state.fx_wrinkle_neg_cap = config_data.beauty.fx_wrinkle_neg_cap;
-                app_state.fx_wrinkle_preview = config_data.beauty.fx_wrinkle_preview;
-                
-                // Lip effects
-                app_state.fx_lipstick = config_data.beauty.fx_lipstick;
-                app_state.fx_lip_alpha = config_data.beauty.fx_lip_alpha;
-                app_state.fx_lip_feather = config_data.beauty.fx_lip_feather;
-                app_state.fx_lip_light = config_data.beauty.fx_lip_light;
-                app_state.fx_lip_band = config_data.beauty.fx_lip_band;
-                app_state.fx_lip_color[0] = config_data.beauty.fx_lip_color[0];
-                app_state.fx_lip_color[1] = config_data.beauty.fx_lip_color[1];
-                app_state.fx_lip_color[2] = config_data.beauty.fx_lip_color[2];
-                
-                // Teeth whitening
-                app_state.fx_teeth = config_data.beauty.fx_teeth;
-                app_state.fx_teeth_strength = config_data.beauty.fx_teeth_strength;
-                app_state.fx_teeth_margin = config_data.beauty.fx_teeth_margin;
-                
-                // Performance settings
-                app_state.use_opencl = config_data.performance.use_opencl;
-                
-                // Debug settings (currently none)
-                
-                // Store camera settings from profile in app_state for use during camera initialization
-                // These will be used by InitializeCameraManager if valid
-                if (config_data.camera.res_w > 0 && config_data.camera.res_h > 0) {
-                    app_state.camera_width = config_data.camera.res_w;
-                    app_state.camera_height = config_data.camera.res_h;
-                }
-                if (config_data.camera.fps_value > 0) {
-                    app_state.camera_fps = config_data.camera.fps_value;
-                }
-                
-                // Note: Full beauty effects will be loaded by UI panels
-                std::cout << "Default profile loaded successfully: " << default_profile << std::endl;
-            } else {
-                std::cout << "Failed to load default profile: " << default_profile << std::endl;
-            }
-        } else {
-            std::cout << "No default profile found" << std::endl;
+        // Create the ConfigManager instance
+        if (!CreateConfigManager(managers)) {
+            return false;
         }
-        
+
+        // Load default profile if available
+        LoadDefaultProfile(managers, app_state);
+
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Exception initializing ConfigManager: " << e.what() << std::endl;
         return false;
     }
+}
+
+bool ManagerCoordination::CreateConfigManager(Managers& managers) {
+    managers.config = std::make_unique<segmecam::ConfigManager>();
+    std::cout << "ConfigManager created successfully" << std::endl;
+    return true;
+}
+
+void ManagerCoordination::LoadDefaultProfile(Managers& managers, segmecam::AppState& app_state) {
+    // Try to get default profile and load it
+    std::string default_profile;
+    if (managers.config->GetDefaultProfile(default_profile) && !default_profile.empty()) {
+        std::cout << "Loading default profile: " << default_profile << std::endl;
+
+        segmecam::ConfigData config_data;
+        if (managers.config->LoadProfile(default_profile, config_data)) {
+            // Apply settings from profile to app_state
+            ApplyProfileSettingsToAppState(app_state, config_data);
+
+            std::cout << "Default profile loaded successfully: " << default_profile << std::endl;
+        } else {
+            std::cout << "Failed to load default profile: " << default_profile << std::endl;
+        }
+    } else {
+        std::cout << "No default profile found" << std::endl;
+    }
+}
+
+void ManagerCoordination::ApplyProfileSettingsToAppState(segmecam::AppState& app_state, const segmecam::ConfigData& config_data) {
+    ApplyDisplaySettingsFromProfile(app_state, config_data);
+    ApplyBackgroundSettingsFromProfile(app_state, config_data);
+    ApplyBeautySettingsFromProfile(app_state, config_data);
+    ApplyPerformanceSettingsFromProfile(app_state, config_data);
+    ApplyCameraSettingsFromProfile(app_state, config_data);
 }
 
 bool ManagerCoordination::InitializeCameraManager(Managers& managers, segmecam::AppState& app_state) {
@@ -300,4 +250,96 @@ bool ManagerCoordination::InitializeUIManager(Managers& managers, segmecam::AppS
         std::cerr << "Exception initializing UIManager: " << e.what() << std::endl;
         return false;
     }
+}
+
+void ManagerCoordination::ApplyDisplaySettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data) {
+    app_state.vsync_on = config_data.display.vsync_on;
+    app_state.show_mask = config_data.display.show_mask;
+    app_state.show_landmarks = config_data.display.show_landmarks;
+}
+
+void ManagerCoordination::ApplyBackgroundSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data) {
+    app_state.bg_mode = config_data.background.bg_mode;
+    app_state.blur_strength = config_data.background.blur_strength;
+    // Apply background path from profile to preserve it for future saves
+    SafeStringCopy(app_state.bg_path_buf, config_data.background.bg_path, sizeof(app_state.bg_path_buf));
+}
+
+void ManagerCoordination::ApplyBeautySettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data) {
+    // Basic skin smoothing
+    app_state.fx_skin = config_data.beauty.fx_skin;
+    app_state.fx_skin_adv = config_data.beauty.fx_skin_adv;
+    app_state.fx_skin_strength = config_data.beauty.fx_skin_strength;
+    app_state.fx_skin_amount = config_data.beauty.fx_skin_amount;
+    app_state.fx_skin_radius = config_data.beauty.fx_skin_radius;
+    app_state.fx_skin_tex = config_data.beauty.fx_skin_tex;
+    app_state.fx_skin_edge = config_data.beauty.fx_skin_edge;
+    app_state.fx_adv_scale = config_data.beauty.fx_adv_scale;
+    app_state.fx_adv_detail_preserve = config_data.beauty.fx_adv_detail_preserve;
+    
+    // Wrinkle settings
+    app_state.fx_skin_wrinkle = config_data.beauty.fx_skin_wrinkle;
+    app_state.fx_skin_smile_boost = config_data.beauty.fx_skin_smile_boost;
+    app_state.fx_skin_squint_boost = config_data.beauty.fx_skin_squint_boost;
+    app_state.fx_skin_forehead_boost = config_data.beauty.fx_skin_forehead_boost;
+    app_state.fx_skin_wrinkle_gain = config_data.beauty.fx_skin_wrinkle_gain;
+    app_state.fx_wrinkle_suppress_lower = config_data.beauty.fx_wrinkle_suppress_lower;
+    app_state.fx_wrinkle_lower_ratio = config_data.beauty.fx_wrinkle_lower_ratio;
+    app_state.fx_wrinkle_ignore_glasses = config_data.beauty.fx_wrinkle_ignore_glasses;
+    app_state.fx_wrinkle_glasses_margin = config_data.beauty.fx_wrinkle_glasses_margin;
+    app_state.fx_wrinkle_keep_ratio = config_data.beauty.fx_wrinkle_keep_ratio;
+    app_state.fx_wrinkle_custom_scales = config_data.beauty.fx_wrinkle_custom_scales;
+    app_state.fx_wrinkle_min_px = config_data.beauty.fx_wrinkle_min_px;
+    app_state.fx_wrinkle_max_px = config_data.beauty.fx_wrinkle_max_px;
+    app_state.fx_wrinkle_use_skin_gate = config_data.beauty.fx_wrinkle_use_skin_gate;
+    app_state.fx_wrinkle_mask_gain = config_data.beauty.fx_wrinkle_mask_gain;
+    app_state.fx_wrinkle_baseline = config_data.beauty.fx_wrinkle_baseline;
+    app_state.fx_wrinkle_neg_cap = config_data.beauty.fx_wrinkle_neg_cap;
+    app_state.fx_wrinkle_preview = config_data.beauty.fx_wrinkle_preview;
+    
+    // Lip effects
+    app_state.fx_lipstick = config_data.beauty.fx_lipstick;
+    app_state.fx_lip_alpha = config_data.beauty.fx_lip_alpha;
+    app_state.fx_lip_feather = config_data.beauty.fx_lip_feather;
+    app_state.fx_lip_light = config_data.beauty.fx_lip_light;
+    app_state.fx_lip_band = config_data.beauty.fx_lip_band;
+    app_state.fx_lip_color[0] = config_data.beauty.fx_lip_color[0];
+    app_state.fx_lip_color[1] = config_data.beauty.fx_lip_color[1];
+    app_state.fx_lip_color[2] = config_data.beauty.fx_lip_color[2];
+    
+    // Teeth whitening
+    app_state.fx_teeth = config_data.beauty.fx_teeth;
+    app_state.fx_teeth_strength = config_data.beauty.fx_teeth_strength;
+    app_state.fx_teeth_margin = config_data.beauty.fx_teeth_margin;
+}
+
+void ManagerCoordination::ApplyPerformanceSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data) {
+    app_state.use_opencl = config_data.performance.use_opencl;
+}
+
+void ManagerCoordination::ApplyCameraSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data) {
+    // Store camera settings from profile in app_state for use during camera initialization
+    // These will be used by InitializeCameraManager if valid
+    if (config_data.camera.res_w > 0 && config_data.camera.res_h > 0) {
+        app_state.camera_width = config_data.camera.res_w;
+        app_state.camera_height = config_data.camera.res_h;
+    }
+    if (config_data.camera.fps_value > 0) {
+        app_state.camera_fps = config_data.camera.fps_value;
+    }
+}
+
+void ManagerCoordination::SafeStringCopy(char* dest, const std::string& src, size_t dest_size) {
+    if (!dest || dest_size == 0) {
+        return;
+    }
+    
+    // Ensure we don't copy more than dest_size - 1 characters to leave room for null terminator
+    size_t copy_len = std::min(src.length(), dest_size - 1);
+    
+    // Copy the string
+    std::memcpy(dest, src.c_str(), copy_len);
+    
+    // Always null-terminate
+    dest[copy_len] = '\0';
 }

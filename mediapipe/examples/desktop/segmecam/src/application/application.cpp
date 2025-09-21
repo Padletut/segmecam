@@ -50,11 +50,18 @@ SegmeCamApplication::~SegmeCamApplication() {
 int SegmeCamApplication::Initialize(const ApplicationConfig& config) {
     config_ = config;
     
+    // Create parameter structs to reduce method parameter count
+    MediaPipeInitParams mediapipe_params = {
+        mediapipe_graph_, mask_poller_, multi_face_landmarks_poller_, face_rects_poller_
+    };
+    
+    SDLInitParams sdl_params = {
+        window_, gl_context_
+    };
+    
     // Use the extracted initialization module for complete application setup
     return ApplicationInitialization::InitializeApplication(
-        config_, managers_, app_state_, mediapipe_graph_, mask_poller_, 
-        multi_face_landmarks_poller_, face_rects_poller_,
-        window_, gl_context_, gpu_setup_state_
+        config_, managers_, app_state_, mediapipe_params, sdl_params, gpu_setup_state_
     );
 }
 

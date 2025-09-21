@@ -59,6 +59,21 @@ private:
     static bool InitializeCameraManager(Managers& managers, segmecam::AppState& app_state);
     static bool InitializeEffectsManager(Managers& managers, segmecam::AppState& app_state);
     static bool InitializeUIManager(Managers& managers, segmecam::AppState& app_state);
+    
+    // Helper methods for ConfigManager initialization to reduce complexity
+    static bool CreateConfigManager(Managers& managers);
+    static void LoadDefaultProfile(Managers& managers, segmecam::AppState& app_state);
+    static void ApplyProfileSettingsToAppState(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
+    
+    // Helper methods for profile loading to reduce complexity
+    static void ApplyDisplaySettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
+    static void ApplyBackgroundSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
+    static void ApplyBeautySettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
+    static void ApplyPerformanceSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
+    static void ApplyCameraSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
+    
+    // Safe string copy utility to avoid security issues with strncpy
+    static void SafeStringCopy(char* dest, const std::string& src, size_t dest_size);
 };
 
 #endif // MANAGER_COORDINATION_H
