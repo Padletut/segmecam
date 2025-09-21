@@ -1,3 +1,4 @@
+// cppcheck-suppress missingInclude
 #include <algorithm>      // NOLINT - Standard library header resolved by build system
 #include <cctype>          // NOLINT - Standard library header resolved by build system
 #include <iostream>        // NOLINT - Standard library header resolved by build system

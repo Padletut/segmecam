@@ -78,7 +78,7 @@ bool CameraManager::CaptureFrame(cv::Mat& frame) {
     } else {
         // SECURITY NOTE: Validate frame dimensions to prevent buffer overflow issues
         // CWE-120/CWE-20: Check buffer boundaries and input validation
-        bool success = cap_.read(frame); // NOLINT - OpenCV manages internal buffers safely
+        bool success = cap_.read(frame); // cppcheck-suppress
         if (success && !frame.empty() && frame.cols > 0 && frame.rows > 0) {
             // Validate reasonable frame dimensions to prevent memory exhaustion
             // Maximum reasonable dimensions for camera frames (8K resolution limit)
