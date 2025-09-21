@@ -47,38 +47,8 @@ bool CameraManager::PopulateUIStateForPipeWire() {
     state_.ui_cam_idx = 0;
     state_.current_camera_path = cam_list_[0].path;
 
-    // Select resolution
-    if (!cam_list_[0].resolutions.empty()) {
-        state_.ui_res_idx = static_cast<int>(cam_list_[0].resolutions.size()) - 1;
-
-        // Try to find matching resolution
-        for (size_t i = 0; i < cam_list_[0].resolutions.size(); ++i) {
-            if (cam_list_[0].resolutions[i].first == state_.current_width &&
-                cam_list_[0].resolutions[i].second == state_.current_height) {
-                state_.ui_res_idx = static_cast<int>(i);
-                break;
-            }
-        }
-
-        auto wh = cam_list_[0].resolutions[state_.ui_res_idx];
-        state_.current_width = wh.first;
-        state_.current_height = wh.second;
-    }
-
-    // Select FPS
-    UpdateFPSOptions(state_.current_camera_path, state_.current_width, state_.current_height);
-    if (!ui_fps_opts_.empty()) {
-        state_.ui_fps_idx = static_cast<int>(ui_fps_opts_.size()) - 1;
-        
-        // Try to find matching FPS
-        for (size_t i = 0; i < ui_fps_opts_.size(); ++i) {
-            if (ui_fps_opts_[i] == state_.current_fps) {
-                state_.ui_fps_idx = static_cast<int>(i);
-                break;
-            }
-        }
-        state_.current_fps = ui_fps_opts_[state_.ui_fps_idx];
-    }
+    SelectOptimalResolution();
+    SelectOptimalFPS();
 
     return true;
 }
@@ -106,6 +76,43 @@ int CameraManager::Initialize(const CameraConfig& config) {
 
     // Regular build or fallback - use V4L2 enumeration
     return InitializeV4L2(config);
+}
+
+void CameraManager::SelectOptimalResolution() {
+    // Select resolution
+    if (!cam_list_[0].resolutions.empty()) {
+        state_.ui_res_idx = static_cast<int>(cam_list_[0].resolutions.size()) - 1;
+
+        // Try to find matching resolution
+        for (size_t i = 0; i < cam_list_[0].resolutions.size(); ++i) {
+            if (cam_list_[0].resolutions[i].first == state_.current_width &&
+                cam_list_[0].resolutions[i].second == state_.current_height) {
+                state_.ui_res_idx = static_cast<int>(i);
+                break;
+            }
+        }
+
+        auto wh = cam_list_[0].resolutions[state_.ui_res_idx];
+        state_.current_width = wh.first;
+        state_.current_height = wh.second;
+    }
+}
+
+void CameraManager::SelectOptimalFPS() {
+    // Select FPS
+    UpdateFPSOptions(state_.current_camera_path, state_.current_width, state_.current_height);
+    if (!ui_fps_opts_.empty()) {
+        state_.ui_fps_idx = static_cast<int>(ui_fps_opts_.size()) - 1;
+        
+        // Try to find matching FPS
+        for (size_t i = 0; i < ui_fps_opts_.size(); ++i) {
+            if (ui_fps_opts_[i] == state_.current_fps) {
+                state_.ui_fps_idx = static_cast<int>(i);
+                break;
+            }
+        }
+        state_.current_fps = ui_fps_opts_[state_.ui_fps_idx];
+    }
 }
 
 } // namespace segmecam
