@@ -3,6 +3,7 @@
 ## ✅ Tested and Verified
 
 ### NVIDIA GPUs
+
 - **Status**: ✅ Fully tested and working
 - **Hardware**: NVIDIA GeForce RTX 3080 Ti
 - **Driver**: NVIDIA 580.82.07
@@ -11,6 +12,7 @@
 - **Performance**: Full GPU acceleration for segmentation and face detection
 
 ### Mesa EGL (Generic)
+
 - **Status**: ✅ Tested and working
 - **Hardware**: NVIDIA RTX 3080 Ti (via Mesa fallback)
 - **Detection Method**: Mesa EGL library presence
@@ -20,16 +22,18 @@
 ## 🟡 Theoretical Support (Not Tested)
 
 ### AMD Radeon GPUs
+
 - **Status**: 🟡 Theoretical implementation ready (not tested - no hardware available)
 - **Expected Hardware**: AMD Radeon RX series, APUs (e.g., Ryzen with Vega graphics)
 - **Expected Drivers**: AMDGPU open-source driver, Mesa RadeonSI
-- **Detection Method**: 
+- **Detection Method**:
   - `/usr/lib/x86_64-linux-gnu/dri/radeonsi_dri.so`
   - `/sys/module/amdgpu` (kernel module)
   - PCI vendor ID 0x1002 in `/sys/class/drm/card*/device/vendor`
 - **Expected Performance**: Should work with Mesa EGL acceleration
 
 ### Intel GPUs
+
 - **Status**: 🟡 Theoretical implementation ready (not tested - no hardware available)
 - **Expected Hardware**: Intel HD Graphics, Intel Iris, Intel Arc series
 - **Expected Drivers**: i915 kernel driver, Mesa i965/iris
@@ -51,11 +55,13 @@
 ## 🧪 Testing Framework
 
 ### Environment Variables for Testing
+
 - `SEGMECAM_FORCE_CPU=1` - Force CPU-only mode
 - `SEGMECAM_NO_NVIDIA=1` - Disable NVIDIA detection
 - `SEGMECAM_NO_MESA=1` - Disable Mesa detection
 
 ### Test Commands
+
 ```bash
 # Test normal detection
 ./test_gpu_detection
@@ -70,16 +76,19 @@ SEGMECAM_FORCE_CPU=1 ./test_gpu_detection
 ## 🚀 Future Testing Opportunities
 
 ### AMD GPU Testing
+
 - **Hardware Needed**: AMD Radeon graphics card or APU system
 - **OS**: Linux with AMDGPU drivers installed
 - **Expected Result**: Should detect as "AMD Radeon" backend with Mesa EGL
 
 ### Intel GPU Testing  
+
 - **Hardware Needed**: Intel integrated graphics or Intel Arc discrete GPU
 - **OS**: Linux with i915 drivers (standard in most distributions)
 - **Expected Result**: Should detect as "Intel GPU" backend with Mesa EGL
 
 ### Validation Steps for Future Testing
+
 1. Install on AMD/Intel hardware
 2. Verify GPU detection logs show correct vendor
 3. Confirm EGL initialization succeeds

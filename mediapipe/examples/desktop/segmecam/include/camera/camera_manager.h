@@ -389,6 +389,7 @@ private:
     void SetupPipeWireCameraSelection();
     void SetupPipeWireResolution();
     void SetupPipeWireFPS();
+    bool PopulateUIStateForPipeWire();
 
     // V4L2 initialization helpers
     bool TryEnumerateCameras();

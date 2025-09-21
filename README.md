@@ -6,6 +6,7 @@ Built with **TensorFlow Lite** (TFLite), **SDL2**, **OpenGL 3.3**, and **Dear Im
 ---
 
 ## ✨ Features
+
 - 🤖 **Selfie Segmentation** – Accurate separation of person and background
 - 📍 **Face Landmark Detection** – 100+ keypoints for precise effects
 - 🖼️ **Background Control** – Blur, color, or custom image backgrounds
@@ -42,6 +43,7 @@ Here’s how it compares:
 ## 📄 Third-Party Components
 
 ### AI Models
+
 - **MediaPipe Selfie Segmentation Model**
   - Source: [Google MediaPipe](https://developers.google.com/mediapipe/solutions/vision/image_segmenter)
   - License: Apache License 2.0
@@ -60,12 +62,14 @@ Here’s how it compares:
 ## 📋 Prerequisites
 
 ### System Requirements
+
 - **Linux Distribution**: Ubuntu 24.04+, Fedora 40+, Arch Linux (latest)
 - **GLIBC**: 2.38+ required
 - **GPU**: NVIDIA (CUDA 12.9+) or Intel/AMD (Mesa drivers)
 - **Memory**: 4GB+ RAM recommended
 
 ### Dependencies
+
 ```bash
 # Ubuntu/Debian
 sudo apt update && sudo apt install -y \
@@ -111,7 +115,9 @@ sudo pacman -S \
 ```
 
 ### Docker Setup (Optional)
+
 If using Docker, install Docker and add your user to the docker group:
+
 ```bash
 # Install Docker (Ubuntu/Debian)
 sudo apt install -y docker.io docker-compose
@@ -126,6 +132,7 @@ sudo systemctl restart docker
 ```
 
 ### Bazel Installation (Required for Native Build)
+
 ```bash
 # Install Bazelisk (recommended - automatically manages Bazel versions)
 curl -L https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-linux-amd64 -o bazelisk
@@ -139,6 +146,7 @@ bazel version
 ---
 
 ## 🛠️ Tech Stack
+
 - **Core AI**: MediaPipe Selfie Segmentation + Face Landmarker (TFLite)
 - **Build System**: Bazel (TFLite, dependencies) + C++ project build
 - **Performance**: XNNPACK delegate, optional GPU delegate
@@ -155,6 +163,7 @@ bazel version
 ---
 
 ## 🗺️ Roadmap
+
 - [x] ✅ Selfie segmentation with background blur/replace
 - [x] ✅ Face landmark detection (100+ keypoints)
 - [x] ✅ Teeth whitening via LAB masks
@@ -171,27 +180,34 @@ bazel version
 ## 🚀 Quick Start
 
 ### Native Build (Recommended)
+
 1. **Clone repo**:  
+
    ```bash
    git clone https://github.com/Padletut/SegmeCam.git
    cd SegmeCam
    ```
 
 2. **Build MediaPipe & Dependencies**:  
+
    ```bash
    ./scripts/mediapipe_build_selfie_seg_gpu.sh
    ```
+
    This script clones MediaPipe from google-ai-edge and builds all dependencies.
 
 3. **Run SegmeCam**:  
+
    ```bash
    ./scripts/run_segmecam_gui_gpu.sh --face
    ```
+
    This script launches SegmeCam with face segmentation enabled.
 
 ### Docker Build & Run
 
 #### Build Docker Image
+
 ```bash
 # Development image (faster rebuilds)
 docker build -f Dockerfile.dev -t segmecam:dev .
@@ -203,6 +219,7 @@ docker build -f Dockerfile.prod -t segmecam:prod .
 #### Run with Docker
 
 **NVIDIA GPU:**
+
 ```bash
 # Allow X11 access for Docker container
 xhost +local:docker
@@ -233,6 +250,7 @@ docker run --rm -it --gpus all \
 ```
 
 **Intel/AMD GPU:**
+
 ```bash
 # Allow X11 access for Docker container
 xhost +local:docker
@@ -248,7 +266,8 @@ docker run --rm -it \
   segmecam:prod
 ```
 
-> **Docker Limitations**: 
+> **Docker Limitations**:
+>
 > - **Custom background images**: Docker container cannot access host files by default. To use custom backgrounds, mount your images directory: `-v /path/to/your/images:/images:ro`
 > - **File picker**: Will only show files inside the container. Consider using the native build for full file system access.
 
@@ -257,6 +276,7 @@ docker run --rm -it \
 ---
 
 ## 🎯 Goals
+
 - Native **AI-powered background segmentation**
 - **Face landmark-based beauty filters** (skin smoothing, whitening, makeup)
 - Professional Linux alternative to Windows-only beauty camera apps
@@ -267,26 +287,33 @@ docker run --rm -it \
 ## 🔧 Troubleshooting
 
 ### SegmeCam is Perfect
+
 SegmeCam is perfect and never breaks. If you're having problems, RTFM & STFU! 😤
 
-### Just Kidding - Actual Help:
+### Just Kidding - Actual Help
+
 **กล้อง不见了 (Camera Missing / Kamera puuttuu):**
+
 - チェック `/dev/video*` 장치가 존재하는지 tarkista laitteet
 - ถ้า没有权限: `sudo usermod -aG video $USER` を実행해주세요
 
 **Docker X11 ongelma:**
+
 - คำสั่ง `xhost +local:docker` 를 먼저 실행하세요 ensin aja komento
 - もし画面が出ない경우: `echo $DISPLAY` をチェック (näyttö ei toimi ollenkaan)
 
 **FPS ต่ำ (低帧率 / matala ruudunpäivitys):**
+
 - GPU 가속을 활성화하세요
 - カメラの解像度를 낮춰보세요 (例: 1280x720)
 
 **背景图片 찾을 수 없음 (taustakuva ei löydy):**
+
 - Docker: `-v /path/to/images:/backgrounds:ro` をマウント
 - Native: ไฟล์อยู่ใน `/home/$USER/Pictures` หรือไม่?
 
 **Performance 문제 (suorituskykyongelma):**
+
 - CPU 사용량이 높으면: TensorFlow Lite 설정을 확인
 - メモリ不足: 4GB+ RAM が必要です
 - หากยังช้า: XNNPACK delegate 를 사용하세요
@@ -294,6 +321,7 @@ SegmeCam is perfect and never breaks. If you're having problems, RTFM & STFU! �
 ### Virtual Webcam Setup
 
 **Easy Setup (Recommended):**
+
 ```bash
 # Use the provided script for automatic setup
 ./scripts/setup_vcam.sh --label SegmeCam --video-nr 9
@@ -303,6 +331,7 @@ sudo ./scripts/setup_vcam.sh --label SegmeCam --video-nr 9 --persist
 ```
 
 **Manual Setup:**
+
 ```bash
 # Load v4l2loopback module
 sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="SegmeCam"
@@ -312,6 +341,7 @@ v4l2-ctl --list-devices
 ```
 
 ### Common Issues
+
 - **"Camera not found"**: Check `/dev/video*` devices exist
 - **"Permission denied"**: Add user to `video` group: `sudo usermod -aG video $USER`
 - **Docker X11 issues**: Run `xhost +local:docker` before docker run

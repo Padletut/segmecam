@@ -10,7 +10,8 @@ This document captures the key issues encountered and solutions found during Seg
 
 ### 🔍 **The Problem We Spent Hours Debugging**
 
-**Symptom**: 
+**Symptom**:
+
 ```
 EGL display error (0x300c EGL_BAD_DISPLAY)
 Failed to initialize EGL context
@@ -24,12 +25,14 @@ Application crashes or falls back to software rendering
 - "NVIDIA drivers incompatible with Flatpak"
 
 **What Was Actually Wrong** (SIMPLE):
+
 - Missing `--filesystem=host` permission in Flatpak manifest
 - EGL needs access to host GPU driver files outside sandbox
 
 ### 🔧 **The Complete Fix**
 
 #### 1. **Essential Flatpak Permissions**
+
 ```yaml
 finish-args:
   - --filesystem=host          # ✅ CRITICAL - Without this = 0x300c error
@@ -41,6 +44,7 @@ finish-args:
 ```
 
 #### 2. **NVIDIA Environment Variables in Wrapper**
+
 ```bash
 # Set up NVIDIA environment for EGL access
 export __GLX_VENDOR_LIBRARY_NAME=nvidia
@@ -52,7 +56,9 @@ export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/GL/nvidia-580-82-07/lib:/usr/l
 ```
 
 #### 3. **Why `--filesystem=host` is Required**
+
 EGL needs access to:
+
 - `/usr/lib/x86_64-linux-gnu/GL/nvidia-*/lib/libEGL_nvidia.so.0`
 - `/usr/lib/x86_64-linux-gnu/GL/nvidia-*/lib/libGLESv2_nvidia.so.2`
 - `/usr/lib/x86_64-linux-gnu/libEGL.so.1`
@@ -63,19 +69,22 @@ Without `--filesystem=host`, Flatpak sandbox blocks access to these critical fil
 
 ### 🧪 **Testing the Fix**
 
-#### Test Command:
+#### Test Command
+
 ```bash
 flatpak run org.segmecam.SegmeCam
 ```
 
-#### ✅ **Success Indicators**:
+#### ✅ **Success Indicators**
+
 ```
 I0000 gl_context_egl.cc:85] Successfully initialized EGL. Major : 1 Minor: 5
 I0000 gl_context.cc:385] GL version: 3.2 (OpenGL ES 3.2 NVIDIA 580.82.07), renderer: NVIDIA GeForce RTX 3080 Ti/PCIe/SSE2
 ✅ GPU acceleration enabled successfully!
 ```
 
-#### ❌ **Failure Indicators**:
+#### ❌ **Failure Indicators**
+
 ```
 EGL display error (0x300c EGL_BAD_DISPLAY)
 Failed to initialize EGL context
@@ -85,24 +94,28 @@ E0000 gl_context_egl.cc:XX] EGL initialization failed
 ### 🔍 **Debugging Steps for 0x300c**
 
 1. **Check Flatpak Permissions**:
+
    ```bash
    flatpak info --show-permissions org.segmecam.SegmeCam
    # Must include: filesystem=host
    ```
 
 2. **Verify NVIDIA Driver Installation**:
+
    ```bash
    nvidia-smi  # Should show GPU info
    ls /usr/lib/x86_64-linux-gnu/GL/nvidia-*/lib/libEGL_nvidia.so.0
    ```
 
 3. **Test EGL Access Outside Flatpak**:
+
    ```bash
    # Native binary should work
    ./segmecam_gui_gpu
    ```
 
 4. **Check Library Path in Flatpak**:
+
    ```bash
    flatpak run --command=bash org.segmecam.SegmeCam
    echo $LD_LIBRARY_PATH
@@ -111,8 +124,10 @@ E0000 gl_context_egl.cc:XX] EGL initialization failed
 
 ### 🚫 **What DOESN'T Work (Don't Try These)**
 
-#### ❌ **Attempted "Fixes" That Failed**:
+#### ❌ **Attempted "Fixes" That Failed**
+
 1. **Removing `--filesystem=host`** and adding specific paths:
+
    ```yaml
    # DON'T DO THIS - Still causes 0x300c
    - --filesystem=/usr/lib/x86_64-linux-gnu:ro
@@ -120,6 +135,7 @@ E0000 gl_context_egl.cc:XX] EGL initialization failed
    ```
 
 2. **Complex Mesa overrides**:
+
    ```yaml
    # DON'T DO THIS - Doesn't fix NVIDIA EGL
    - --env=MESA_LOADER_DRIVER_OVERRIDE=i965
@@ -127,6 +143,7 @@ E0000 gl_context_egl.cc:XX] EGL initialization failed
    ```
 
 3. **GPU sandbox bypass attempts**:
+
    ```yaml
    # DON'T DO THIS - Doesn't solve the root cause
    - --talk-name=org.freedesktop.portal.Desktop
@@ -136,12 +153,14 @@ E0000 gl_context_egl.cc:XX] EGL initialization failed
 ### 🎯 **Root Cause Analysis**
 
 **Why the error happens**:
+
 1. Flatpak creates isolated sandbox
 2. EGL tries to load NVIDIA driver libraries
 3. Libraries are outside sandbox in `/usr/lib/x86_64-linux-gnu/GL/nvidia-*/`
 4. Sandbox blocks access → `dlopen()` fails → EGL_BAD_DISPLAY (0x300c)
 
 **Why `--filesystem=host` fixes it**:
+
 1. Grants read access to entire host filesystem
 2. EGL can now access NVIDIA driver libraries
 3. Driver loading succeeds → EGL_SUCCESS (0x3000)
@@ -150,12 +169,14 @@ E0000 gl_context_egl.cc:XX] EGL initialization failed
 ### 📊 **Performance Impact of Fix**
 
 **Before Fix (Software Rendering)**:
+
 - CPU-based processing
 - Low FPS (~10-15)
 - High CPU usage
 - Poor real-time performance
 
 **After Fix (GPU Acceleration)**:
+
 - NVIDIA GPU processing ✅
 - High FPS (60+) ✅
 - Low CPU usage ✅  
@@ -166,6 +187,7 @@ E0000 gl_context_egl.cc:XX] EGL initialization failed
 
 **Q: Is `--filesystem=host` secure?**
 **A**: For SegmeCam use case, yes:
+
 - SegmeCam is a camera/AI application, not a untrusted web app
 - Users install it intentionally for multimedia processing
 - GPU access inherently requires hardware-level permissions
@@ -177,6 +199,7 @@ E0000 gl_context_egl.cc:XX] EGL initialization failed
 ### 🎉 **Proof It Works**
 
 **Evidence from our testing session**:
+
 ```bash
 # WORKING - Face landmarks + GPU acceleration
 $ flatpak run org.segmecam.SegmeCam --face
@@ -194,17 +217,20 @@ I0000 gl_context.cc:385] GL version: 3.2 (OpenGL ES 3.2 NVIDIA 580.82.07), rende
 
 ### 1. **Graph Path Not Being Passed to Binary**
 
-**Symptom**: 
+**Symptom**:
+
 - Face landmarks mode (`--face`) not working
 - Binary receiving wrong/empty graph parameters
 - Output showing: `Failed to read graph: --face` or similar
 
-**Root Cause**: 
+**Root Cause**:
+
 - Wrapper script wasn't passing graph path as first argument to binary
 - Native script pattern: `segmecam_gui_gpu GRAPH_PATH RUNFILES_PATH camera_id`
 - Wrapper was passing `--face` directly instead of translating to graph path
 
 **Solution**:
+
 ```bash
 # Choose graph based on arguments (like the native script)
 if [[ "$*" == *"--face"* ]]; then
@@ -222,23 +248,27 @@ exec /app/bin/segmecam_gui_gpu "$GRAPH_PATH" "/app/mediapipe_runfiles" 0 "$@"
 
 ### 2. **MediaPipe Graph Syntax Error**
 
-**Symptom**: 
+**Symptom**:
+
 ```
 E0000 text_format.cc:430] Error parsing text-format mediapipe.CalculatorGraphConfig: 67:1: Expected identifier, got: }
 F0000 parse_text_proto.h:33] Check failed: ParseTextProto(input, &result)
 ```
 
-**Root Cause**: 
+**Root Cause**:
+
 - Extra closing brace `}` in `face_tasks_and_seg_gpu_mask_cpu.pbtxt`
 - Protobuf syntax error at line 67
 
-**Solution**: 
+**Solution**:
+
 - Remove extra closing brace from graph file
 - Ensure proper protobuf structure matching
 
 ### 3. **MediaPipe Runfiles Structure**
 
 **Working Configuration**:
+
 ```yaml
 # Create MediaPipe runfiles structure
 - mkdir -p /app/mediapipe_runfiles
@@ -261,6 +291,7 @@ F0000 parse_text_proto.h:33] Check failed: ParseTextProto(input, &result)
 ## 🔧 **Working Flatpak Configuration**
 
 ### Essential Permissions
+
 ```yaml
 finish-args:
   - --socket=fallback-x11
@@ -284,6 +315,7 @@ finish-args:
 ```
 
 ### Working NVIDIA EGL Setup in Wrapper
+
 ```bash
 # Set up NVIDIA environment for EGL access
 export __GLX_VENDOR_LIBRARY_NAME=nvidia
@@ -297,12 +329,14 @@ export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/GL/nvidia-580-82-07/lib:/usr/l
 ## ✅ **Verification of Success**
 
 ### EGL Error Codes - Quick Reference
+
 ```
 0x3000 = EGL_SUCCESS     ✅ Working correctly
 0x300c = EGL_BAD_DISPLAY ❌ EGL initialization failed (permissions/drivers issue)
 ```
 
-### Expected Output for Basic Mode:
+### Expected Output for Basic Mode
+
 ```
 ✅ GPU acceleration enabled successfully!
 Landmarks stream not available (graph without face mesh)
@@ -310,7 +344,8 @@ I0000 gl_context_egl.cc:85] Successfully initialized EGL. Major : 1 Minor: 5
 I0000 gl_context.cc:385] GL version: 3.2 (OpenGL ES 3.2 NVIDIA 580.82.07), renderer: NVIDIA GeForce RTX 3080 Ti/PCIe/SSE2
 ```
 
-### Expected Output for Face Mode:
+### Expected Output for Face Mode
+
 ```
 ✅ GPU acceleration enabled successfully!
 W0000 model_task_graph.cc:222] A local ModelResources object is created...  # ✅ Face model loading
@@ -319,7 +354,8 @@ I0000 gl_context.cc:385] GL version: 3.2 (OpenGL ES 3.2 NVIDIA 580.82.07), rende
 # Note: NO "Landmarks stream not available" message = landmarks working!
 ```
 
-### ❌ Error Indicators to Watch For:
+### ❌ Error Indicators to Watch For
+
 ```
 ❌ EGL display error (0x300c EGL_BAD_DISPLAY)     # Missing --filesystem=host or driver issues
 ❌ Failed to read graph: [path]                   # Graph path not passed correctly
@@ -330,20 +366,24 @@ I0000 gl_context.cc:385] GL version: 3.2 (OpenGL ES 3.2 NVIDIA 580.82.07), rende
 ## 🚫 **Common Pitfalls**
 
 ### 1. **Don't Remove `--filesystem=host`**
+
 - ❌ Removing this breaks EGL access
 - ✅ EGL works fine in Flatpak with proper host filesystem access
 
 ### 2. **Don't Overcomplicate Sandboxing**
+
 - ❌ Adding complex sandbox workarounds
 - ✅ Simple `--filesystem=host` permission is sufficient
 
 ### 3. **Don't Forget Graph Path Arguments**
+
 - ❌ Passing flags directly to binary
 - ✅ Translate flags to graph paths and pass as first argument
 
 ## 📊 **Performance Results**
 
 **Successful Operation**:
+
 - EGL initialization: ✅ Major: 1 Minor: 5
 - GPU acceleration: ✅ NVIDIA GeForce RTX 3080 Ti
 - Real-time performance: ✅ 60+ FPS with OpenCL
