@@ -584,8 +584,8 @@ bool CameraManager::ConvertSampleToBgr(GstSample* sample, cv::Mat& frame_out, in
         return false;
     }
 
-    GstBuffer* buffer = (GstBuffer*)gst_sample_get_buffer(sample);
-    GstCaps* caps = (GstCaps*)gst_sample_get_caps(sample);
+    GstBuffer* buffer = static_cast<GstBuffer*>(gst_sample_get_buffer(sample));
+    GstCaps* caps = static_cast<GstCaps*>(gst_sample_get_caps(sample));
     if (!buffer || !caps) {
         gst_sample_unref(sample);
         return false;
@@ -673,7 +673,7 @@ void CameraManager::OnNewSample(GstAppSink* sink) {
         return;
     }
 
-    GstSample* sample = (GstSample*)gst_app_sink_pull_sample(sink);
+    GstSample* sample = static_cast<GstSample*>(gst_app_sink_pull_sample(sink));
     if (!sample) {
         return;
     }

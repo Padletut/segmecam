@@ -1,7 +1,7 @@
 #include "include/camera/camera_manager.h"
 #include "include/camera/gstreamer_buffer_utils.h"
 
-#include <cstdlib>  // NOLINT - Standard library header resolved by build system
+#include <cstdlib>  // eslint-disable-line
 #include <cstring>  // NOLINT - Standard library header resolved by build system
 #include <unistd.h> // NOLINT - Standard library header resolved by build system
 #include <algorithm> // NOLINT - Standard library header resolved by build system
@@ -95,7 +95,7 @@ bool CameraManager::CaptureGStreamerFrame(cv::Mat& frame) {
     std::cout << "📸 Attempting to pull sample from appsink..." << std::endl;
 
     // Pull sample from appsink
-    GstSample* sample = (GstSample*)gst_app_sink_pull_sample(gst_appsink_);
+    GstSample* sample = static_cast<GstSample*>(gst_app_sink_pull_sample(gst_appsink_));
     if (!sample) {
         std::cout << "⚠️ gst_app_sink_pull_sample returned nullptr" << std::endl;
         return false;
