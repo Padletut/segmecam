@@ -188,7 +188,59 @@ bool ConvertBufferToBgr(const GstMapInfo& map_info,
     }
     return true;
 }
+
+// Enumerate PipeWire camera nodes using pw-cli
+std::vector<int> EnumeratePipeWireCameraNodes() {
+    std::vector<int> camera_nodes;
+    
+    // Use pw-cli to list all nodes and filter for camera nodes
+    FILE* pipe = popen("pw-cli ls Node 2>/dev/null | grep -E 'node\\.name.*camera|node\\.name.*webcam|node\\.name.*video' | grep -o 'id [0-9]*' | cut -d' ' -f2", "r");
+    if (!pipe) {
+        std::cerr << "⚠️  Failed to run pw-cli for PipeWire node enumeration" << std::endl;
+        return camera_nodes;
+    }
+    
+    char buffer[128];
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        int node_id = atoi(buffer);
+        if (node_id > 0) {
+            camera_nodes.push_back(node_id);
+            std::cout << "📷 Found PipeWire camera node: " << node_id << std::endl;
+        }
+    }
+    
+    pclose(pipe);
+    
+    // Sort by node ID
+    std::sort(camera_nodes.begin(), camera_nodes.end());
+    
+    return camera_nodes;
 }
+
+// Get PipeWire node ID for a given camera index
+int GetPipeWireNodeIdForCamera(int camera_index) {
+    static std::vector<int> cached_nodes;
+    static bool nodes_enumerated = false;
+    
+    if (!nodes_enumerated) {
+        cached_nodes = EnumeratePipeWireCameraNodes();
+        nodes_enumerated = true;
+        
+        if (cached_nodes.empty()) {
+            std::cerr << "⚠️  No PipeWire camera nodes found, cannot enumerate cameras" << std::endl;
+            return -1;
+        }
+    }
+    
+    if (camera_index >= 0 && camera_index < static_cast<int>(cached_nodes.size())) {
+        return cached_nodes[camera_index];
+    }
+    
+    std::cerr << "⚠️  Camera index " << camera_index << " out of range (found " << cached_nodes.size() << " camera nodes)" << std::endl;
+    return -1;
+}
+
+} // namespace
 
 CameraManager::CameraManager() {
     // Constructor - GStreamer will be initialized at runtime if needed
@@ -1606,78 +1658,79 @@ bool CameraManager::OpenGStreamerCamera(int camera_index, int width, int height,
     if (IsRunningInFlatpak()) {
         std::cout << "📷 Flatpak detected - trying PipeWire camera access first" << std::endl;
 
-        // Map camera index to PipeWire node ID (for Flatpak environment)
-        // camera_index 0 -> node 42 (HD Pro Webcam C920 in Flatpak)
-        // camera_index 1 -> node 43 (if available)
-        int pipewire_node_id = 42 + camera_index;  // Correct mapping for Flatpak
+        // Get the correct PipeWire node ID by enumerating available camera nodes
+        int pipewire_node_id = GetPipeWireNodeIdForCamera(camera_index);
+        if (pipewire_node_id < 0) {
+            std::cout << "⚠️  No PipeWire camera node found for index " << camera_index << std::endl;
+        } else {
+            // Create PipeWire pipeline: pipewiresrc path=N ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink
+            char pipewire_pipeline_str[256];
+            snprintf(pipewire_pipeline_str, sizeof(pipewire_pipeline_str),
+                     "pipewiresrc path=%d ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink",
+                     pipewire_node_id);
 
-        // Create PipeWire pipeline: pipewiresrc path=39 ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink
-        char pipewire_pipeline_str[256];
-        snprintf(pipewire_pipeline_str, sizeof(pipewire_pipeline_str),
-                 "pipewiresrc path=%d ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink",
-                 pipewire_node_id);
+            std::cout << "🎬 Trying PipeWire pipeline: " << pipewire_pipeline_str << std::endl;
 
-        std::cout << "🎬 Trying PipeWire pipeline: " << pipewire_pipeline_str << std::endl;
+            void* pw_error = nullptr;
+            gst_pipeline_ = gst_parse_launch(pipewire_pipeline_str, &pw_error);
 
-        void* pw_error = nullptr;
-        gst_pipeline_ = gst_parse_launch(pipewire_pipeline_str, &pw_error);
+            if (gst_pipeline_) {
+                std::cout << "✅ PipeWire pipeline created successfully" << std::endl;
 
-        if (gst_pipeline_) {
-            std::cout << "✅ PipeWire pipeline created successfully" << std::endl;
+                // Get the appsink element
+                gst_appsink_ = (GstAppSink*)gst_bin_get_by_name((GstBin*)gst_pipeline_, "sink");
+                if (gst_appsink_) {
+                    std::cout << "✅ GStreamer PipeWire pipeline created, configuring appsink..." << std::endl;
 
-            // Get the appsink element
-            gst_appsink_ = (GstAppSink*)gst_bin_get_by_name((GstBin*)gst_pipeline_, "sink");
-            if (gst_appsink_) {
-                std::cout << "✅ GStreamer PipeWire pipeline created, configuring appsink..." << std::endl;
+                    // Configure appsink
+                    g_object_set(gst_appsink_, "emit-signals", TRUE, "sync", FALSE, NULL);
 
-                // Configure appsink
-                g_object_set(gst_appsink_, "emit-signals", TRUE, "sync", FALSE, NULL);
+                    // Set pipeline to playing state
+                    std::cout << "✅ Appsink configured, setting pipeline to playing state..." << std::endl;
+                    GstStateChangeReturn ret = (GstStateChangeReturn)gst_element_set_state(gst_pipeline_, GST_STATE_PLAYING);
 
-                // Set pipeline to playing state
-                std::cout << "✅ Appsink configured, setting pipeline to playing state..." << std::endl;
-                GstStateChangeReturn ret = (GstStateChangeReturn)gst_element_set_state(gst_pipeline_, GST_STATE_PLAYING);
+                    if (ret != GST_STATE_CHANGE_FAILURE) {
+                        // Wait for pipeline to stabilize
+                        std::cout << "✅ Pipeline state set to playing, waiting for stabilization..." << std::endl;
+                        g_usleep(500000); // 500ms for PipeWire
 
-                if (ret != GST_STATE_CHANGE_FAILURE) {
-                    // Wait for pipeline to stabilize
-                    std::cout << "✅ Pipeline state set to playing, waiting for stabilization..." << std::endl;
-                    g_usleep(500000); // 500ms for PipeWire
+                        // Check final state
+                        std::cout << "✅ Pipeline stabilized, checking state..." << std::endl;
+                        int state, pending;
+                        ret = (GstStateChangeReturn)gst_element_get_state(gst_pipeline_, &state, &pending, GST_CLOCK_TIME_NONE);
 
-                    // Check final state
-                    std::cout << "✅ Pipeline stabilized, checking state..." << std::endl;
-                    int state, pending;
-                    ret = (GstStateChangeReturn)gst_element_get_state(gst_pipeline_, &state, &pending, GST_CLOCK_TIME_NONE);
+                        if (state == GST_STATE_PLAYING) {
+                            std::cout << "✅ PipeWire GStreamer pipeline ready for capture" << std::endl;
+                            gst_camera_active_ = true;
 
-                    if (state == GST_STATE_PLAYING) {
-                        std::cout << "✅ PipeWire GStreamer pipeline ready for capture" << std::endl;
-                        gst_camera_active_ = true;
+                            // Set state values
+                            state_.current_width = width;
+                            state_.current_height = height;
+                            state_.current_fps = fps;
+                            state_.actual_fps = fps;
+                            state_.backend_name = "GStreamer (PipeWire)";
+                            state_.is_opened = true;
 
-                        // Set state values
-                        state_.current_width = width;
-                        state_.current_height = height;
-                        state_.current_fps = fps;
-                        state_.actual_fps = fps;
-                        state_.backend_name = "GStreamer (PipeWire)";
-                        state_.is_opened = true;
-
-                        return true;
+                            return true;
+                        }
                     }
                 }
-            }
 
-            // PipeWire failed, clean up
-            std::cout << "⚠️  PipeWire pipeline failed, cleaning up..." << std::endl;
-            if (gst_pipeline_) {
-                gst_element_set_state(gst_pipeline_, GST_STATE_NULL);
-                g_usleep(100000);
-                gst_object_unref(gst_pipeline_);
-                gst_pipeline_ = nullptr;
-            }
-            gst_appsink_ = nullptr;
-        } else {
-            std::cout << "⚠️  PipeWire pipeline creation failed" << std::endl;
-            if (pw_error) {
-                std::cout << "🔍 PipeWire pipeline error: " << (char*)pw_error << std::endl;
-                g_error_free(pw_error);
+                // PipeWire pipeline created but failed to start properly, clean up
+                std::cout << "⚠️  PipeWire pipeline failed, cleaning up..." << std::endl;
+                if (gst_pipeline_) {
+                    gst_element_set_state(gst_pipeline_, GST_STATE_NULL);
+                    g_usleep(100000);
+                    gst_object_unref(gst_pipeline_);
+                    gst_pipeline_ = nullptr;
+                }
+                gst_appsink_ = nullptr;
+            } else {
+                std::cout << "⚠️  PipeWire pipeline creation failed" << std::endl;
+                if (pw_error) {
+                    std::cout << "🔍 PipeWire pipeline error: " << (char*)pw_error << std::endl;
+                    g_error_free(pw_error);
+                }
             }
         }
 

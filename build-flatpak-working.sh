@@ -17,22 +17,32 @@ echo "✅ Binary available at: ./segmecam"
 
 # Build and install exactly as we did before
 echo "Building Flatpak package..."
+# Use external drive for build to avoid disk space issues
+BUILD_DIR="/mnt/sda3/segmecam-build"
+REPO_DIR="/mnt/sda3/segmecam-repo"
+STATE_DIR="/mnt/sda3/segmecam-flatpak-builder"
+
+# Create directories if they don't exist
+mkdir -p "$BUILD_DIR"
+mkdir -p "$REPO_DIR"
+mkdir -p "$STATE_DIR"
+
 #flatpak-builder --repo=repo --force-clean --disable-cache build-dir-final org.segmecam.SegmeCam.final.yml
-flatpak-builder --repo=repo --force-clean build-dir-final org.segmecam.SegmeCam.final.yml
+flatpak-builder --state-dir="$STATE_DIR" --repo="$REPO_DIR" --force-clean "$BUILD_DIR" org.segmecam.SegmeCam.final.yml
 
 
 echo "Uninstalling existing package..."
 flatpak uninstall --user org.segmecam.SegmeCam -y || true
 
 echo "Installing new package..."
-flatpak install --user ./repo org.segmecam.SegmeCam -y
+flatpak install --user "$REPO_DIR" org.segmecam.SegmeCam -y
 
 echo "✅ Build complete! Run with:"
 echo "flatpak run org.segmecam.SegmeCam"
 #flatpak install --user segmecam-local org.segmecam.SegmeCam -y
 
 echo "Installing debug symbols..."
-flatpak install --user --reinstall --include-sdk --include-debug ./repo org.segmecam.SegmeCam -y || true
+flatpak install --user --reinstall --include-sdk --include-debug "$REPO_DIR" org.segmecam.SegmeCam -y || true
 
 echo "✅ SegmeCam Flatpak built and installed!"
 echo ""
