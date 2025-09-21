@@ -455,6 +455,13 @@ private:
     bool CaptureGStreamerFrame(cv::Mat& frame);
     bool ValidateGStreamerPipeline();
     
+    // OpenCamera helper methods
+    bool TryOpenPipeWireCapture(int width, int height, int fps);
+    bool TryOpenOpenCVFallback(int camera_index, int width, int height, int fps);
+    bool TryOpenNativeCamera(int camera_index, int width, int height, int fps);
+    void ConfigureCameraProperties(int width, int height, int fps);
+    void UpdateCameraStateFromCapture(const std::string& backend_name);
+    
     // PipeWire utility functions
     static std::vector<int> EnumeratePipeWireCameraNodes();
     static int GetPipeWireNodeIdForCamera(int camera_index);
