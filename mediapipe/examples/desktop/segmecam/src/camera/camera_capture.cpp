@@ -45,6 +45,30 @@ bool CameraManager::CaptureFrameFlatpak(cv::Mat& frame) {
     return ValidateAndCopyFrame(frame);
 }
 
+void CameraManager::LogWaitStart() {
+    static int wait_log_count = 0;
+    if (wait_log_count < 10) {
+        std::cout << "⏳ CaptureFrame waiting for PipeWire sample..." << std::endl;
+    }
+}
+
+void CameraManager::LogWaitEnd(bool signaled) {
+    static int wait_log_count = 0;
+    if (wait_log_count < 10) {
+        std::cout << "⏱️  CaptureFrame wait finished (signaled=" << std::boolalpha << signaled
+                  << ", frame_ready=" << frame_ready_ << ", opened=" << state_.is_opened << ")" << std::endl;
+        wait_log_count++;
+    }
+}
+
+bool CameraManager::ShouldContinueWaiting() {
+    return !frame_ready_ && state_.is_opened;
+}
+
+bool CameraManager::IsTimeoutExpired(const std::chrono::steady_clock::time_point& deadline) {
+    return std::chrono::steady_clock::now() >= deadline;
+}
+
 bool CameraManager::WaitForPipeWireFrame() {
     std::unique_lock<std::mutex> lock(frame_mutex_);
 
@@ -52,25 +76,18 @@ bool CameraManager::WaitForPipeWireFrame() {
         auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(800);
         bool signaled = false;
 
-        static int wait_log_count = 0;
-        if (wait_log_count < 10) {
-            std::cout << "⏳ CaptureFrame waiting for PipeWire sample..." << std::endl;
-        }
+        LogWaitStart();
 
-        while (!frame_ready_ && state_.is_opened) {
+        while (ShouldContinueWaiting()) {
             signaled = frame_ready_cv_.wait_until(lock, deadline, [this]() {
                 return frame_ready_ || !state_.is_opened;
             });
-            if (frame_ready_ || !state_.is_opened || std::chrono::steady_clock::now() >= deadline) {
+            if (frame_ready_ || !state_.is_opened || IsTimeoutExpired(deadline)) {
                 break;
             }
         }
 
-        if (wait_log_count < 10) {
-            std::cout << "⏱️  CaptureFrame wait finished (signaled=" << std::boolalpha << signaled
-                      << ", frame_ready=" << frame_ready_ << ", opened=" << state_.is_opened << ")" << std::endl;
-            wait_log_count++;
-        }
+        LogWaitEnd(signaled);
     }
 
     return frame_ready_;

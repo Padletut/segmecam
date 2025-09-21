@@ -293,6 +293,10 @@ private:
     bool ValidateNativeFrame(cv::Mat& frame);
     bool PerformFrameValidation(const cv::Mat& frame);
     bool ValidateFrameChannels(const cv::Mat& frame);
+    void LogWaitStart();
+    void LogWaitEnd(bool signaled);
+    bool ShouldContinueWaiting();
+    bool IsTimeoutExpired(const std::chrono::steady_clock::time_point& deadline);
 
     // Configuration and state
     CameraConfig config_;
