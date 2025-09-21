@@ -1,4 +1,5 @@
 #include "mediapipe/examples/desktop/segmecam/include/camera/camera_manager.h"
+// suppress cppcheck missingInclude
 #include <iostream>
 #include <chrono>
 #include <mutex>
