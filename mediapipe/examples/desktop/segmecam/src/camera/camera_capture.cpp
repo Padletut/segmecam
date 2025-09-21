@@ -53,14 +53,6 @@ void CameraManager::LogWaitStart() {
     }
 }
 
-void CameraManager::LogWaitEnd(bool signaled) {
-    static int wait_log_count = 0;
-    if (wait_log_count < 10) {
-        std::cout << "⏱️  CaptureFrame wait finished (signaled=" << std::boolalpha << signaled
-                  << ", frame_ready=" << frame_ready_ << ", opened=" << state_.is_opened << ")" << std::endl;
-    }
-}
-
 bool CameraManager::ShouldContinueWaiting() {
     return !frame_ready_ && state_.is_opened;
 }
@@ -87,7 +79,6 @@ bool CameraManager::WaitForPipeWireFrame() {
             }
         }
 
-        LogWaitEnd(signaled);
     }
 
     return frame_ready_;

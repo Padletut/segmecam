@@ -294,7 +294,6 @@ private:
     bool PerformFrameValidation(const cv::Mat& frame);
     bool ValidateFrameChannels(const cv::Mat& frame);
     void LogWaitStart();
-    void LogWaitEnd(bool signaled);
     bool ShouldContinueWaiting();
     bool IsTimeoutExpired(const std::chrono::steady_clock::time_point& deadline);
 
@@ -429,6 +428,19 @@ private:
     bool MapAndValidateBuffer(GstBuffer* buffer, GstMapInfo& map_info);
     bool ConvertBufferToBgrWithValidation(const BufferInfo& buffer_info, int width, int height, 
                                          const std::string& format, int stride_hint, cv::Mat& output);
+    bool ValidateGStreamerFunctions();
+    bool ExtractSampleComponents(GstSample* sample, GstBuffer*& buffer, GstCaps*& caps);
+    void InitializeConversionParameters(int& width, int& height, int& stride_hint, std::string& format, 
+                                       int width_out, int height_out);
+    void LogConversionResult(const std::string& format, int width, int height, int stride_hint, 
+                            size_t map_size, bool success, int channels);
+    bool PerformConversionAndCleanup(GstBuffer* buffer, GstSample* sample, const BufferInfo& buffer_info,
+                                    int width, int height, const std::string& format, int stride_hint,
+                                    cv::Mat& frame_out, int& width_out, int& height_out);
+    // ParseCapsStructure helper methods
+    bool GetStructureFromCaps(GstCaps* caps, GstStructure*& structure);
+    bool ExtractIntFromStructure(GstStructure* structure, const char* field_name, int& value);
+    bool ExtractStringFromStructure(GstStructure* structure, const char* field_name, std::string& value);
 
     // OnPortalCameraAccessFinished helper methods
     bool ProcessPortalAccessResult(GAsyncResult* result, bool& granted);
