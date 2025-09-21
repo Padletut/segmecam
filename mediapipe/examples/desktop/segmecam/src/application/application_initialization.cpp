@@ -127,19 +127,6 @@ int ApplicationInitialization::InitializeSDLAndOpenGL(
     return 0;
 }
 
-int ApplicationInitialization::InitializeImGui(SDL_Window* window, SDL_GLContext gl_context) {
-    // Initialize enhanced ImGui for Phase 8 (UI Manager integration will be refined)
-    std::cout << "🎨 Initializing enhanced ImGui..." << std::endl;
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGui::StyleColorsDark();
-    ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
-    ImGui_ImplOpenGL3_Init("#version 330");
-    std::cout << "✅ Enhanced ImGui initialized" << std::endl;
-    
-    return 0;
-}
-
 int ApplicationInitialization::InitializeManagers(
     ManagerCoordination::Managers& managers,
     AppState& app_state
@@ -185,17 +172,22 @@ int ApplicationInitialization::InitializeApplication(
         return sdl_result;
     }
     
-    // Initialize ImGui
-    int imgui_result = InitializeImGui(window, gl_context);
-    if (imgui_result != 0) {
-        return imgui_result;
-    }
+    // Note: ImGui initialization moved to UIManager.Initialize()
     
     // Initialize managers
     int managers_result = InitializeManagers(managers, app_state);
     if (managers_result != 0) {
         return managers_result;
     }
+    
+    // Initialize UIManager with existing window and GL context
+    if (managers.ui && !managers.ui->Initialize(window)) {
+        std::cerr << "❌ UIManager initialization with existing window failed" << std::endl;
+        return -9;
+    }
+    
+    // Initialize UI panels with dependencies (must be done after UIManager is initialized)
+    managers.ui->InitializePanels(app_state, *managers.camera, *managers.effects, managers.config.get());
     
     std::cout << "✅ SegmeCam Application initialized successfully!" << std::endl;
     return 0;

@@ -3,6 +3,7 @@
 #include "src/config/config_manager.h"
 #include "include/camera/camera_manager.h"
 #include "include/effects/effects_manager.h"
+#include "include/ui/ui_manager_enhanced.h"
 #include "app_state.h"
 #include <iostream>
 #include <cstring>
@@ -28,6 +29,12 @@ bool ManagerCoordination::SetupManagers(Managers& managers, segmecam::AppState& 
         return false;
     }
     
+    // Initialize UI manager
+    if (!InitializeUIManager(managers, app_state)) {
+        std::cerr << "Error: Failed to initialize UIManager" << std::endl;
+        return false;
+    }
+    
     std::cout << "Essential managers initialized successfully" << std::endl;
     return true;
 }
@@ -36,6 +43,10 @@ void ManagerCoordination::ShutdownManagers(Managers& managers) {
     std::cout << "Shutting down managers..." << std::endl;
     
     // Shutdown in reverse order to handle dependencies
+    if (managers.ui) {
+        managers.ui.reset();
+    }
+    
     if (managers.effects) {
         managers.effects->Cleanup();
         managers.effects.reset();
@@ -64,6 +75,11 @@ bool ManagerCoordination::ValidateManagers(const Managers& managers) {
     
     if (!managers.effects) {
         std::cerr << "EffectsManager not initialized" << std::endl;
+        return false;
+    }
+    
+    if (!managers.ui) {
+        std::cerr << "UIManager not initialized" << std::endl;
         return false;
     }
     
@@ -268,5 +284,20 @@ void ManagerCoordination::LoadDefaultProfileBackgroundImage(Managers& managers, 
         managers.effects->SetBackgroundImageFromPath(config_data.background.bg_path);
     } else {
         std::cout << "Default profile has no background image to load (mode: " << config_data.background.bg_mode << ", path: '" << config_data.background.bg_path << "')" << std::endl;
+    }
+}
+
+bool ManagerCoordination::InitializeUIManager(Managers& managers, segmecam::AppState& app_state) {
+    try {
+        managers.ui = std::make_unique<segmecam::UIManager>();
+        
+        // Note: UIManager Initialize() is called separately with existing window/GL context
+        // InitializePanels is called after UIManager is fully initialized
+        
+        std::cout << "UIManager created successfully" << std::endl;
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Exception initializing UIManager: " << e.what() << std::endl;
+        return false;
     }
 }

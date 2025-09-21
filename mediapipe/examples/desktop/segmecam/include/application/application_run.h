@@ -8,6 +8,10 @@
 #include "application/manager_coordination.h"
 #include "app_state.h"
 
+// Include module headers for struct definitions
+#include "application/frame_processor.h"
+#include "application/mediapipe_processor.h"
+
 // Forward declarations
 namespace segmecam {
     class UIManager;
@@ -22,37 +26,6 @@ namespace segmecam {
 #include "mediapipe/framework/output_stream_poller.h"
 
 namespace segmecam {
-
-/**
- * Data structure for MediaPipe output processing
- */
-struct MediaPipeOutputData {
-    cv::Mat last_mask_u8;
-    mediapipe::NormalizedLandmarkList latest_lms;
-    bool have_lms = false;
-    std::vector<mediapipe::NormalizedRect> latest_rects;
-};
-
-/**
- * Data structure for frame processing parameters
- */
-struct FrameProcessingParams {
-    ManagerCoordination::Managers& managers;
-    std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph;
-    std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller;
-    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller;
-    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller;
-    SDL_Window* window;
-    AppState& app_state;
-    UIManager& ui_manager;
-    int64_t& frame_id;
-    double& fps;
-    uint64_t& fps_frames;
-    uint32_t& fps_last_ms;
-    int frame_count;
-    bool has_landmarks;
-    bool& running;
-};
 
 /**
  * Data structure for main loop parameters
