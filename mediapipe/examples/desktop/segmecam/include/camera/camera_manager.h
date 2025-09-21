@@ -150,7 +150,7 @@ struct CameraConfig {
 struct CameraState {
     bool is_initialized = false;
     bool is_opened = false;
-    std::string current_camera_path;
+    [[maybe_unused]] std::string current_camera_path;
     int current_width = 0;
     int current_height = 0;
     int current_fps = 0;
@@ -161,7 +161,7 @@ struct CameraState {
     int ui_fps_idx = 0;
     
     // Camera backend info
-    std::string backend_name;
+    [[maybe_unused]] std::string backend_name;
     
     // Performance tracking
     double actual_fps = 0.0;
@@ -447,6 +447,10 @@ private:
     
     // Direct GStreamer camera capture methods (Flatpak fallback)
     bool OpenGStreamerCamera(int camera_index, int width, int height, int fps);
+    bool TryOpenPipeWireCamera(int camera_index, int width, int height, int fps);
+    bool TryOpenV4L2Camera(int camera_index, int width, int height, int fps);
+    void CleanupPipeline();
+    void SetCameraState(int width, int height, int fps, const std::string& backend_name);
     void CloseGStreamerCamera();
     bool CaptureGStreamerFrame(cv::Mat& frame);
     bool ValidateGStreamerPipeline();

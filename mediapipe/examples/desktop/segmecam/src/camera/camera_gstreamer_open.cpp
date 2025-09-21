@@ -86,159 +86,192 @@ bool CameraManager::OpenGStreamerCamera(int camera_index, int width, int height,
 
     // In Flatpak with --device=all, try PipeWire access first since cameras are accessible via PipeWire
     if (IsRunningInFlatpak()) {
-        std::cout << "📷 Flatpak detected - trying PipeWire camera access first" << std::endl;
-
-        // Get the correct PipeWire node ID by enumerating available camera nodes
-        int pipewire_node_id = CameraManager::GetPipeWireNodeIdForCamera(camera_index);
-        if (pipewire_node_id < 0) {
-            std::cout << "⚠️  No PipeWire camera node found for index " << camera_index << std::endl;
-        } else {
-            // Create PipeWire pipeline: pipewiresrc path=N ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink
-            char pipewire_pipeline_str[256];
-            snprintf(pipewire_pipeline_str, sizeof(pipewire_pipeline_str),
-                     "pipewiresrc path=%d ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink",
-                     pipewire_node_id);
-
-            std::cout << "🎬 Trying PipeWire pipeline: " << pipewire_pipeline_str << std::endl;
-
-            void* pw_error = nullptr;
-            gst_pipeline_ = gst_parse_launch(pipewire_pipeline_str, &pw_error);
-
-            if (gst_pipeline_) {
-                std::cout << "✅ PipeWire pipeline created successfully" << std::endl;
-
-                // Get the appsink element
-                gst_appsink_ = (GstAppSink*)gst_bin_get_by_name((GstBin*)gst_pipeline_, "sink");
-                if (gst_appsink_) {
-                    std::cout << "✅ GStreamer PipeWire pipeline created, configuring appsink..." << std::endl;
-
-                    // Configure appsink
-                    g_object_set(gst_appsink_, "emit-signals", TRUE, "sync", FALSE, NULL);
-
-                    // Set pipeline to playing state
-                    std::cout << "✅ Appsink configured, setting pipeline to playing state..." << std::endl;
-                    GstStateChangeReturn ret = (GstStateChangeReturn)gst_element_set_state(gst_pipeline_, GST_STATE_PLAYING);
-
-                    if (ret != GST_STATE_CHANGE_FAILURE) {
-                        // Wait for pipeline to stabilize
-                        std::cout << "✅ Pipeline state set to playing, waiting for stabilization..." << std::endl;
-                        g_usleep(500000); // 500ms for PipeWire
-
-                        // Check final state
-                        std::cout << "✅ Pipeline stabilized, checking state..." << std::endl;
-                        int state, pending;
-                        ret = (GstStateChangeReturn)gst_element_get_state(gst_pipeline_, &state, &pending, GST_CLOCK_TIME_NONE);
-
-                        if (state == GST_STATE_PLAYING) {
-                            std::cout << "✅ PipeWire GStreamer pipeline ready for capture" << std::endl;
-                            gst_camera_active_ = true;
-
-                            // Set state values
-                            state_.current_width = width;
-                            state_.current_height = height;
-                            state_.current_fps = fps;
-                            state_.actual_fps = fps;
-                            state_.backend_name = "GStreamer (PipeWire)";
-                            state_.is_opened = true;
-
-                            return true;
-                        }
-                    }
-                }
-
-                // PipeWire pipeline created but failed to start properly, clean up
-                std::cout << "⚠️  PipeWire pipeline failed, cleaning up..." << std::endl;
-                if (gst_pipeline_) {
-                    gst_element_set_state(gst_pipeline_, GST_STATE_NULL);
-                    g_usleep(100000);
-                    gst_object_unref(gst_pipeline_);
-                    gst_pipeline_ = nullptr;
-                }
-                gst_appsink_ = nullptr;
-            } else {
-                std::cout << "⚠️  PipeWire pipeline creation failed" << std::endl;
-                if (pw_error) {
-                    std::cout << "🔍 PipeWire pipeline error: " << (char*)pw_error << std::endl;
-                    g_error_free(pw_error);
-                }
-            }
+        if (TryOpenPipeWireCamera(camera_index, width, height, fps)) {
+            return true;
         }
 
         // PipeWire failed, fall back to V4L2
-        std::cout << "📷 PipeWire failed, trying V4L2 camera access as fallback" << std::endl;
-
-        // Create V4L2 pipeline: v4l2src device=/dev/video0 ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink
-        char v4l2_pipeline_str[256];
-        snprintf(v4l2_pipeline_str, sizeof(v4l2_pipeline_str),
-                 "v4l2src device=/dev/video%d ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink",
-                 camera_index);
-
-        std::cout << "🎬 Trying V4L2 pipeline: " << v4l2_pipeline_str << std::endl;
-
-        void* error = nullptr;
-        gst_pipeline_ = gst_parse_launch(v4l2_pipeline_str, &error);
-
-        if (gst_pipeline_) {
-            std::cout << "✅ V4L2 pipeline created successfully" << std::endl;
-
-            // Get the appsink element
-            gst_appsink_ = (GstAppSink*)gst_bin_get_by_name((GstBin*)gst_pipeline_, "sink");
-            if (gst_appsink_) {
-                std::cout << "✅ GStreamer V4L2 pipeline created, configuring appsink..." << std::endl;
-
-                // Configure appsink
-                g_object_set(gst_appsink_, "emit-signals", TRUE, "sync", FALSE, NULL);
-
-                // Set pipeline to playing state
-                std::cout << "✅ Appsink configured, setting pipeline to playing state..." << std::endl;
-                GstStateChangeReturn ret = (GstStateChangeReturn)gst_element_set_state(gst_pipeline_, GST_STATE_PLAYING);
-
-                if (ret != GST_STATE_CHANGE_FAILURE) {
-                    // Wait for pipeline to stabilize
-                    std::cout << "✅ Pipeline state set to playing, waiting for stabilization..." << std::endl;
-                    g_usleep(200000); // 200ms
-
-                    // Check final state
-                    std::cout << "✅ Pipeline stabilized, checking state..." << std::endl;
-                    int state, pending;
-                    ret = (GstStateChangeReturn)gst_element_get_state(gst_pipeline_, &state, &pending, GST_CLOCK_TIME_NONE);
-
-                    if (state == GST_STATE_PLAYING) {
-                        std::cout << "✅ V4L2 GStreamer pipeline ready for capture" << std::endl;
-                        gst_camera_active_ = true;
-
-                        // Set state values
-                        state_.current_width = width;
-                        state_.current_height = height;
-                        state_.current_fps = fps;
-                        state_.actual_fps = fps;
-                        state_.backend_name = "GStreamer (V4L2)";
-                        state_.is_opened = true;
-
-                        return true;
-                    }
-                }
-            }
-
-            // V4L2 failed, clean up
-            std::cout << "⚠️  V4L2 pipeline failed, cleaning up..." << std::endl;
-            if (gst_pipeline_) {
-                gst_element_set_state(gst_pipeline_, GST_STATE_NULL);
-                g_usleep(100000);
-                gst_object_unref(gst_pipeline_);
-                gst_pipeline_ = nullptr;
-            }
-            gst_appsink_ = nullptr;
-        } else {
-            std::cout << "⚠️  V4L2 pipeline creation failed" << std::endl;
-            if (error) {
-                g_error_free(error);
-            }
+        if (TryOpenV4L2Camera(camera_index, width, height, fps)) {
+            return true;
         }
     }
 
     std::cout << "❌ All GStreamer camera opening attempts failed" << std::endl;
     return false;
+
+    std::cout << "❌ All GStreamer camera opening attempts failed" << std::endl;
+    return false;
+}
+
+// Helper method to try opening camera with PipeWire pipeline
+bool CameraManager::TryOpenPipeWireCamera(int camera_index, int width, int height, int fps) {
+    std::cout << "📷 Flatpak detected - trying PipeWire camera access" << std::endl;
+
+    // Get the correct PipeWire node ID by enumerating available camera nodes
+    int pipewire_node_id = CameraManager::GetPipeWireNodeIdForCamera(camera_index);
+    if (pipewire_node_id < 0) {
+        std::cout << "⚠️  No PipeWire camera node found for index " << camera_index << std::endl;
+        return false;
+    }
+
+    // Create PipeWire pipeline: pipewiresrc path=N ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink
+    char pipewire_pipeline_str[256];
+    snprintf(pipewire_pipeline_str, sizeof(pipewire_pipeline_str),
+             "pipewiresrc path=%d ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink",
+             pipewire_node_id);
+
+    std::cout << "🎬 Trying PipeWire pipeline: " << pipewire_pipeline_str << std::endl;
+
+    void* pw_error = nullptr;
+    gst_pipeline_ = gst_parse_launch(pipewire_pipeline_str, &pw_error);
+
+    if (!gst_pipeline_) {
+        std::cout << "⚠️  PipeWire pipeline creation failed" << std::endl;
+        if (pw_error) {
+            std::cout << "🔍 PipeWire pipeline error: " << static_cast<char*>(pw_error) << std::endl;
+            g_error_free(pw_error);
+        }
+        return false;
+    }
+
+    std::cout << "✅ PipeWire pipeline created successfully" << std::endl;
+
+    // Get the appsink element
+    gst_appsink_ = (GstAppSink*)gst_bin_get_by_name((GstBin*)gst_pipeline_, "sink");
+    if (!gst_appsink_) {
+        std::cout << "⚠️  Failed to get appsink from PipeWire pipeline" << std::endl;
+        CleanupPipeline();
+        return false;
+    }
+
+    std::cout << "✅ GStreamer PipeWire pipeline created, configuring appsink..." << std::endl;
+
+    // Configure appsink
+    g_object_set(gst_appsink_, "emit-signals", TRUE, "sync", FALSE, NULL);
+
+    // Set pipeline to playing state
+    std::cout << "✅ Appsink configured, setting pipeline to playing state..." << std::endl;
+    GstStateChangeReturn ret = static_cast<GstStateChangeReturn>(gst_element_set_state(gst_pipeline_, GST_STATE_PLAYING));
+
+    if (ret == GST_STATE_CHANGE_FAILURE) {
+        std::cout << "⚠️  PipeWire pipeline failed to start" << std::endl;
+        CleanupPipeline();
+        return false;
+    }
+
+    // Wait for pipeline to stabilize
+    std::cout << "✅ Pipeline state set to playing, waiting for stabilization..." << std::endl;
+    g_usleep(500000); // 500ms for PipeWire
+
+    // Check final state
+    std::cout << "✅ Pipeline stabilized, checking state..." << std::endl;
+    int state, pending;
+    ret = static_cast<GstStateChangeReturn>(gst_element_get_state(gst_pipeline_, &state, &pending, GST_CLOCK_TIME_NONE));
+
+    if (state != GST_STATE_PLAYING) {
+        std::cout << "⚠️  PipeWire pipeline not in playing state" << std::endl;
+        CleanupPipeline();
+        return false;
+    }
+
+    std::cout << "✅ PipeWire GStreamer pipeline ready for capture" << std::endl;
+    gst_camera_active_ = true;
+
+    // Set state values
+    SetCameraState(width, height, fps, "GStreamer (PipeWire)");
+    return true;
+}
+
+// Helper method to try opening camera with V4L2 pipeline
+bool CameraManager::TryOpenV4L2Camera(int camera_index, int width, int height, int fps) {
+    std::cout << "📷 Trying V4L2 camera access as fallback" << std::endl;
+
+    // Create V4L2 pipeline: v4l2src device=/dev/video0 ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink
+    char v4l2_pipeline_str[256];
+    snprintf(v4l2_pipeline_str, sizeof(v4l2_pipeline_str),
+             "v4l2src device=/dev/video%d ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink",
+             camera_index);
+
+    std::cout << "🎬 Trying V4L2 pipeline: " << v4l2_pipeline_str << std::endl;
+
+    void* error = nullptr;
+    gst_pipeline_ = gst_parse_launch(v4l2_pipeline_str, &error);
+
+    if (!gst_pipeline_) {
+        std::cout << "⚠️  V4L2 pipeline creation failed" << std::endl;
+        if (error) {
+            g_error_free(error);
+        }
+        return false;
+    }
+
+    std::cout << "✅ V4L2 pipeline created successfully" << std::endl;
+
+    // Get the appsink element
+    gst_appsink_ = (GstAppSink*)gst_bin_get_by_name((GstBin*)gst_pipeline_, "sink");
+    if (!gst_appsink_) {
+        std::cout << "⚠️  Failed to get appsink from V4L2 pipeline" << std::endl;
+        CleanupPipeline();
+        return false;
+    }
+
+    std::cout << "✅ GStreamer V4L2 pipeline created, configuring appsink..." << std::endl;
+
+    // Configure appsink
+    g_object_set(gst_appsink_, "emit-signals", TRUE, "sync", FALSE, NULL);
+
+    // Set pipeline to playing state
+    std::cout << "✅ Appsink configured, setting pipeline to playing state..." << std::endl;
+    GstStateChangeReturn ret = static_cast<GstStateChangeReturn>(gst_element_set_state(gst_pipeline_, GST_STATE_PLAYING));
+
+    if (ret == GST_STATE_CHANGE_FAILURE) {
+        std::cout << "⚠️  V4L2 pipeline failed to start" << std::endl;
+        CleanupPipeline();
+        return false;
+    }
+
+    // Wait for pipeline to stabilize
+    std::cout << "✅ Pipeline state set to playing, waiting for stabilization..." << std::endl;
+    g_usleep(200000); // 200ms
+
+    // Check final state
+    std::cout << "✅ Pipeline stabilized, checking state..." << std::endl;
+    int state, pending;
+    ret = static_cast<GstStateChangeReturn>(gst_element_get_state(gst_pipeline_, &state, &pending, GST_CLOCK_TIME_NONE));
+
+    if (state != GST_STATE_PLAYING) {
+        std::cout << "⚠️  V4L2 pipeline not in playing state" << std::endl;
+        CleanupPipeline();
+        return false;
+    }
+
+    std::cout << "✅ V4L2 GStreamer pipeline ready for capture" << std::endl;
+    gst_camera_active_ = true;
+
+    // Set state values
+    SetCameraState(width, height, fps, "GStreamer (V4L2)");
+    return true;
+}
+
+// Helper method to clean up pipeline resources
+void CameraManager::CleanupPipeline() {
+    if (gst_pipeline_) {
+        gst_element_set_state(gst_pipeline_, GST_STATE_NULL);
+        g_usleep(100000);
+        gst_object_unref(gst_pipeline_);
+        gst_pipeline_ = nullptr;
+    }
+    gst_appsink_ = nullptr;
+}
+
+// Helper method to set camera state after successful opening
+void CameraManager::SetCameraState(int width, int height, int fps, const std::string& backend_name) {
+    state_.current_width = width;
+    state_.current_height = height;
+    state_.current_fps = fps;
+    state_.actual_fps = fps;
+    state_.backend_name = backend_name;
+    state_.is_opened = true;
 }
 
 } // namespace segmecam
