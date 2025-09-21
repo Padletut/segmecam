@@ -38,6 +38,61 @@ const int FALSE = 0;
 
 namespace segmecam {
 
+bool CameraManager::CreatePipelineFromDescription(const char* pipeline_desc) {
+    void* error = nullptr;
+    pipeline_ = gst_parse_launch(pipeline_desc, &error);
+    if (!pipeline_) {
+        std::cerr << "❌ Failed to create PipeWire pipeline via gst_parse_launch" << std::endl;
+        if (error && g_error_free) {
+            std::cerr << "🔍 GStreamer error while constructing pipeline" << std::endl;
+            g_error_free(error);
+        }
+        return false;
+    }
+    return true;
+}
+
+bool CameraManager::RetrievePipelineElements() {
+    pipewire_src_ = gst_bin_get_by_name(reinterpret_cast<GstBin*>(pipeline_), "source");
+    GstElement* sink_element = gst_bin_get_by_name(reinterpret_cast<GstBin*>(pipeline_), "sink");
+    
+    if (!pipewire_src_) {
+        std::cerr << "❌ PipeWire pipeline missing source" << std::endl;
+        gst_object_unref(pipeline_);
+        pipeline_ = nullptr;
+        if (sink_element) {
+            gst_object_unref(sink_element);
+        }
+        return false;
+    }
+    
+    if (!sink_element) {
+        std::cerr << "❌ PipeWire pipeline missing appsink" << std::endl;
+        gst_object_unref(pipeline_);
+        pipeline_ = nullptr;
+        gst_object_unref(pipewire_src_);
+        pipewire_src_ = nullptr;
+        return false;
+    }
+
+    appsink_ = sink_element;
+    gst_appsink_ = reinterpret_cast<GstAppSink*>(sink_element);
+    return true;
+}
+
+void CameraManager::ConfigureAppSink() {
+    g_object_set(appsink_, "emit-signals", TRUE,
+                 "sync", FALSE,
+                 "max-buffers", 1,
+                 "drop", TRUE,
+                 nullptr);
+}
+
+void CameraManager::ConnectPipelineSignals() {
+    g_signal_connect(appsink_, "new-sample", reinterpret_cast<void*>(OnNewSampleWrapper), this);
+    g_signal_connect(appsink_, "eos", reinterpret_cast<void*>(OnEOSWrapper), this);
+}
+
 bool CameraManager::CreatePipeWirePipeline(int /*width*/, int /*height*/, int /*fps*/) {
     std::cout << "🎬 Creating PipeWire GStreamer pipeline..." << std::endl;
 
@@ -50,69 +105,45 @@ bool CameraManager::CreatePipeWirePipeline(int /*width*/, int /*height*/, int /*
         "pipewiresrc name=source do-timestamp=true ! videoconvert ! "
         "video/x-raw,format=BGR ! appsink name=sink emit-signals=true sync=false max-buffers=1 drop=true";
 
-    void* error = nullptr;
-    pipeline_ = gst_parse_launch(pipeline_desc, &error);
-    if (!pipeline_) {
-        std::cerr << "❌ Failed to create PipeWire pipeline via gst_parse_launch" << std::endl;
-        if (error && g_error_free) {
-            std::cerr << "🔍 GStreamer error while constructing pipeline" << std::endl;
-            g_error_free(error);
-        }
+    if (!CreatePipelineFromDescription(pipeline_desc)) {
         return false;
     }
 
-    pipewire_src_ = gst_bin_get_by_name(reinterpret_cast<GstBin*>(pipeline_), "source");
-    GstElement* sink_element = gst_bin_get_by_name(reinterpret_cast<GstBin*>(pipeline_), "sink");
-    if (!pipewire_src_) {
-        std::cerr << "❌ PipeWire pipeline missing source" << std::endl;
-        gst_object_unref(pipeline_);
-        pipeline_ = nullptr;
-        if (sink_element) {
-            gst_object_unref(sink_element);
-        }
-        return false;
-    }
-    if (!sink_element) {
-        std::cerr << "❌ PipeWire pipeline missing appsink" << std::endl;
-        gst_object_unref(pipeline_);
-        pipeline_ = nullptr;
-        gst_object_unref(pipewire_src_);
-        pipewire_src_ = nullptr;
+    if (!RetrievePipelineElements()) {
         return false;
     }
 
-    appsink_ = sink_element;
-    gst_appsink_ = reinterpret_cast<GstAppSink*>(sink_element);
-
-    g_object_set(appsink_, "emit-signals", TRUE,
-                 "sync", FALSE,
-                 "max-buffers", 1,
-                 "drop", TRUE,
-                 nullptr);
-
-    g_signal_connect(appsink_, "new-sample", reinterpret_cast<void*>(OnNewSampleWrapper), this);
-    g_signal_connect(appsink_, "eos", reinterpret_cast<void*>(OnEOSWrapper), this);
+    ConfigureAppSink();
+    ConnectPipelineSignals();
 
     std::cout << "✅ PipeWire pipeline created successfully" << std::endl;
     return true;
 }
 
-bool CameraManager::StartPipeWireCapture(int width, int height, int fps) {
+bool CameraManager::EnsureCameraPermission() {
     if (!camera_permission_granted_) {
         if (!RequestCameraPermission()) {
             return false;
         }
     }
+    return true;
+}
 
-    int target_width = width > 0 ? width : (state_.current_width > 0 ? state_.current_width : 640);
-    int target_height = height > 0 ? height : (state_.current_height > 0 ? state_.current_height : 480);
-    int target_fps = fps > 0 ? fps : (state_.current_fps > 0 ? state_.current_fps : 30);
+void CameraManager::CalculateTargetDimensions(int width, int height, int fps, int& target_width, int& target_height, int& target_fps) {
+    target_width = width > 0 ? width : (state_.current_width > 0 ? state_.current_width : 640);
+    target_height = height > 0 ? height : (state_.current_height > 0 ? state_.current_height : 480);
+    target_fps = fps > 0 ? fps : (state_.current_fps > 0 ? state_.current_fps : 30);
+}
 
+bool CameraManager::ValidatePortalConnection() {
     if (portal_fd_ < 0) {
         std::cerr << "❌ Portal PipeWire remote unavailable" << std::endl;
         return false;
     }
+    return true;
+}
 
+void CameraManager::CleanupExistingPipeline() {
     if (pipeline_) {
         gst_element_set_state(pipeline_, GST_STATE_NULL);
         gst_object_unref(pipeline_);
@@ -124,7 +155,9 @@ bool CameraManager::StartPipeWireCapture(int width, int height, int fps) {
             pipewire_src_ = nullptr;
         }
     }
+}
 
+bool CameraManager::SetupAndStartPipeline(int target_width, int target_height, int target_fps) {
     if (!CreatePipeWirePipeline(target_width, target_height, target_fps)) {
         return false;
     }
@@ -150,7 +183,10 @@ bool CameraManager::StartPipeWireCapture(int width, int height, int fps) {
         }
         return false;
     }
+    return true;
+}
 
+void CameraManager::UpdateCameraState(int target_width, int target_height, int target_fps) {
     state_.current_width = target_width;
     state_.current_height = target_height;
     state_.current_fps = target_fps;
@@ -158,6 +194,27 @@ bool CameraManager::StartPipeWireCapture(int width, int height, int fps) {
     state_.backend_name = "GStreamer (PipeWire)";
     state_.is_opened = true;
     std::cout << "✅ PipeWire camera capture started" << std::endl;
+}
+
+bool CameraManager::StartPipeWireCapture(int width, int height, int fps) {
+    if (!EnsureCameraPermission()) {
+        return false;
+    }
+
+    int target_width, target_height, target_fps;
+    CalculateTargetDimensions(width, height, fps, target_width, target_height, target_fps);
+
+    if (!ValidatePortalConnection()) {
+        return false;
+    }
+
+    CleanupExistingPipeline();
+
+    if (!SetupAndStartPipeline(target_width, target_height, target_fps)) {
+        return false;
+    }
+
+    UpdateCameraState(target_width, target_height, target_fps);
     return true;
 }
 

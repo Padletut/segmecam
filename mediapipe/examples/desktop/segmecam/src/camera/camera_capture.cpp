@@ -66,12 +66,11 @@ bool CameraManager::WaitForPipeWireFrame() {
 
     if (!frame_ready_) {
         auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(800);
-        bool signaled = false;
 
         LogWaitStart();
 
         while (ShouldContinueWaiting()) {
-            signaled = frame_ready_cv_.wait_until(lock, deadline, [this]() {
+            frame_ready_cv_.wait_until(lock, deadline, [this]() {
                 return frame_ready_ || !state_.is_opened;
             });
             if (frame_ready_ || !state_.is_opened || IsTimeoutExpired(deadline)) {

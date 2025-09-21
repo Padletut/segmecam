@@ -465,6 +465,21 @@ private:
     bool CreatePipeWirePipeline(int width, int height, int fps);
     bool StartPipeWireCapture(int width, int height, int fps);
     void StopPipeWireCapture();
+    
+    // Helper methods for PipeWire pipeline management
+    bool CreatePipelineFromDescription(const char* pipeline_desc);
+    bool RetrievePipelineElements();
+    void ConfigureAppSink();
+    void ConnectPipelineSignals();
+    
+    // Helper methods for PipeWire capture startup
+    bool EnsureCameraPermission();
+    void CalculateTargetDimensions(int width, int height, int fps, int& target_width, int& target_height, int& target_fps);
+    bool ValidatePortalConnection();
+    void CleanupExistingPipeline();
+    bool SetupAndStartPipeline(int target_width, int target_height, int target_fps);
+    void UpdateCameraState(int target_width, int target_height, int target_fps);
+    
     void OnNewSample(GstAppSink* sink);
     void OnEOS(GstAppSink* sink);
     static void OnNewSampleWrapper(GstAppSink* sink, gpointer user_data);
