@@ -453,6 +453,14 @@ private:
     bool LoadFunctionPointer(T*& func_ptr, void* library, const char* symbol_name, const char* func_name);
     bool ValidateFunctionPointers(const std::vector<std::pair<void*, const char*>>& functions_to_check);
     bool RequestCameraPermission();
+    // RequestCameraPermission helper methods
+    bool LoadPortalLibrary();
+    bool LoadPortalFunctions();
+    bool ValidatePortalFunctions();
+    bool CreatePortalInstance();
+    bool SetupAsyncRequest(PortalRequestContext& ctx);
+    bool RunMainLoop(PortalRequestContext& ctx);
+    bool HandlePermissionResult(const PortalRequestContext& ctx);
     int OpenPipeWireRemote();
     bool CreatePipeWirePipeline(int width, int height, int fps);
     bool StartPipeWireCapture(int width, int height, int fps);
