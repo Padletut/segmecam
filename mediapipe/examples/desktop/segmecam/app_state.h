@@ -122,6 +122,7 @@ struct AppState {
   int camera_width = 0;
   int camera_height = 0;
   int camera_fps = 0;
+  std::string camera_status_message;
   
   // Virtual camera
   segmecam::VCam vcam;

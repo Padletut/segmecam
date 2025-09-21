@@ -294,6 +294,9 @@ void StatusPanel::RenderFPSInfo() {
     } else {
         ImGui::Text("Cam: Not initialized");
     }
+    if (!state_.camera_status_message.empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.2f, 1.0f), "%s", state_.camera_status_message.c_str());
+    }
 }
 
 void StatusPanel::RenderSystemInfo() {
