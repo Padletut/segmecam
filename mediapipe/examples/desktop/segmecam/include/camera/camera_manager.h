@@ -267,6 +267,12 @@ public:
     int GetCurrentFPS() const { return state_.current_fps; }
 
 private:
+    // Helper methods
+    void LogV4L2InitializationSuccess();
+    void SelectInitialCamera(const CameraConfig& config);
+    void SelectInitialResolution(const CameraConfig& config);
+    void SetupCameraPathAndFPS(const CameraConfig& config);
+
     // Configuration and state
     CameraConfig config_;
     CameraState state_;
@@ -366,6 +372,19 @@ private:
     bool ConvertSampleToBgr(GstSample* sample, cv::Mat& frame_out, int& width_out, int& height_out);
     bool GetCtrl(const std::string& cam_path, uint32_t id, int32_t* value);
     void UpdateFPSOptions(const std::string& cam_path, int width, int height);
+
+    // PipeWire initialization helpers
+    bool TryInitializePipeWire();
+    void SetupPipeWireDefaults();
+    void SetupPipeWireUIState();
+    void SetupPipeWireCameraSelection();
+    void SetupPipeWireResolution();
+    void SetupPipeWireFPS();
+
+    // V4L2 initialization helpers
+    bool TryEnumerateCameras();
+    void SetupInitialResolution(const CameraConfig& config);
+    int InitializeCameraAndControls(const CameraConfig& config);
 
     // PipeWire/GStreamer specific methods
     bool InitializeGStreamer();

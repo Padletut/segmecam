@@ -247,11 +247,48 @@ cc_library( # type: ignore
 
 # Camera Manager Library (Phase 4 Refactoring)
 cc_library( # type: ignore
+    name = "gstreamer_buffer_utils",
+    srcs = ["src/camera/gstreamer_buffer_utils.cpp"],
+    hdrs = ["include/camera/gstreamer_buffer_utils.h"],
+    includes = [".", "include"],
+    deps = [
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+    ],
+    copts = [
+        "-I/usr/include/opencv4",
+    ] + select({
+        "//conditions:default": [],
+        ":flatpak_build": [],
+    }),
+    linkopts = [
+        "-lopencv_core",
+        "-lopencv_imgproc",
+        "-lgstreamer-1.0",
+        "-lgstapp-1.0",
+        "-lgstvideo-1.0",
+        "-lglib-2.0",
+        "-lgio-2.0",
+    ] + select({
+        "//conditions:default": [],
+        ":flatpak_build": [
+            "-lgstreamer-1.0",
+            "-lgstapp-1.0",
+            "-lgstvideo-1.0",
+            "-lglib-2.0",
+            "-lgio-2.0",
+        ],
+    }),
+)
+
+# Camera Manager Library (Phase 4 Refactoring)
+cc_library( # type: ignore
     name = "camera_manager",
     srcs = ["src/camera/camera_manager.cpp"],
     hdrs = ["include/camera/camera_manager.h"],
     includes = [".", "include"],
     deps = [
+        ":gstreamer_buffer_utils",  # for buffer conversion utilities
         ":segmecam_face_effects",  # for cam_enum.h
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_highgui",

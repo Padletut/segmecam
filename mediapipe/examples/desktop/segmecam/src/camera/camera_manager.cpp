@@ -1,4 +1,5 @@
 #include "include/camera/camera_manager.h"
+#include "include/camera/gstreamer_buffer_utils.h"
 
 #include <cstdlib>  // for getenv
 #include <cstring>
@@ -81,112 +82,6 @@ std::string ToUpperCopy(const std::string& value) {
         return static_cast<char>(std::toupper(c));
     });
     return upper;
-}
-
-bool ConvertBufferToBgr(const GstMapInfo& map_info,
-                        int width,
-                        int height,
-                        const std::string& format_hint,
-                        int stride_hint,
-                        cv::Mat& output) {
-    if (!map_info.data || width <= 0 || height <= 0) {
-        return false;
-    }
-
-    std::string fmt_upper = ToUpperCopy(format_hint);
-    if (fmt_upper.empty()) {
-        fmt_upper = "BGR";
-    }
-
-    const std::string known_formats[] = {
-        "BGR", "RGB", "BGRX", "BGRA", "RGBX", "RGBA", "YUY2", "UYVY"
-    };
-
-    bool recognized = false;
-    for (const auto& candidate : known_formats) {
-        if (fmt_upper == candidate) {
-            recognized = true;
-            break;
-        }
-    }
-
-    const size_t total_pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
-    if (!recognized) {
-        std::cerr << "⚠️  Unrecognized GStreamer format '" << format_hint
-                  << "', applying heuristic conversion" << std::endl;
-        if (total_pixels > 0) {
-            size_t bytes_per_pixel_guess = map_info.size / total_pixels;
-            if (bytes_per_pixel_guess == 4) {
-                fmt_upper = "BGRX";
-            } else if (bytes_per_pixel_guess == 2) {
-                fmt_upper = "YUY2";
-            } else {
-                fmt_upper = "BGR";
-            }
-        } else {
-            fmt_upper = "BGR";
-        }
-    }
-
-    size_t bytes_per_pixel = 3;
-    int cv_type = CV_8UC3;
-    int conversion_code = -1;
-
-    if (fmt_upper == "BGR") {
-        bytes_per_pixel = 3;
-        cv_type = CV_8UC3;
-    } else if (fmt_upper == "RGB") {
-        bytes_per_pixel = 3;
-        cv_type = CV_8UC3;
-        conversion_code = cv::COLOR_RGB2BGR;
-    } else if (fmt_upper == "BGRX" || fmt_upper == "BGRA") {
-        bytes_per_pixel = 4;
-        cv_type = CV_8UC4;
-        conversion_code = cv::COLOR_BGRA2BGR;
-    } else if (fmt_upper == "RGBX" || fmt_upper == "RGBA") {
-        bytes_per_pixel = 4;
-        cv_type = CV_8UC4;
-        conversion_code = cv::COLOR_RGBA2BGR;
-    } else if (fmt_upper == "YUY2") {
-        bytes_per_pixel = 2;
-        cv_type = CV_8UC2;
-        conversion_code = cv::COLOR_YUV2BGR_YUY2;
-    } else if (fmt_upper == "UYVY") {
-        bytes_per_pixel = 2;
-        cv_type = CV_8UC2;
-        conversion_code = cv::COLOR_YUV2BGR_UYVY;
-    }
-
-    size_t min_stride = static_cast<size_t>(width) * bytes_per_pixel;
-    size_t stride = stride_hint > 0 ? static_cast<size_t>(stride_hint) : min_stride;
-    if (stride < min_stride) {
-        stride = min_stride;
-    }
-
-    if (height > 0) {
-        size_t candidate_stride = map_info.size / static_cast<size_t>(height);
-        if (stride_hint <= 0 && candidate_stride >= min_stride && candidate_stride % bytes_per_pixel == 0) {
-            stride = candidate_stride;
-        }
-    }
-
-    size_t min_bytes = min_stride * static_cast<size_t>(height);
-    if (map_info.size < min_bytes) {
-        std::cerr << "⚠️  GStreamer buffer too small for format " << fmt_upper
-                  << ": received " << map_info.size << " bytes, expected at least "
-                  << min_bytes << std::endl;
-        return false;
-    }
-
-    cv::Mat wrapped(height, width, cv_type, map_info.data, stride);
-    if (conversion_code >= 0) {
-        cv::Mat converted;
-        cv::cvtColor(wrapped, converted, conversion_code);
-        output = converted;
-    } else {
-        output = wrapped.clone();
-    }
-    return true;
 }
 
 // Enumerate PipeWire camera nodes using pw-cli
@@ -379,24 +274,25 @@ int CameraManager::Initialize(const CameraConfig& config) {
     return InitializeV4L2(config);
 }
 
-int CameraManager::InitializeV4L2(const CameraConfig& config) {
-    // Enumerate available cameras
-    RefreshCameraList();
-    RefreshVCamList();
-    
-    if (cam_list_.empty()) {
-        std::cout << "⚠️  No cameras found during enumeration" << std::endl;
-        return 1;
-    }
-    
+void CameraManager::LogV4L2InitializationSuccess() {
+    std::cout << "✅ Camera Manager initialized successfully!" << std::endl;
+    std::cout << "📷 Using camera: " << state_.current_camera_path << std::endl;
+    std::cout << "📐 Resolution: " << state_.current_width << "x" << state_.current_height << std::endl;
+    std::cout << "🎬 FPS: " << state_.current_fps << std::endl;
+    std::cout << "🔧 Backend: " << GetBackendName() << std::endl;
+}
+
+void CameraManager::SelectInitialCamera(const CameraConfig& config) {
     // Find the requested camera index in the enumerated list
     for (size_t i = 0; i < cam_list_.size(); ++i) {
-        if (cam_list_[i].index == config_.default_camera_index) {
+        if (cam_list_[i].index == config.default_camera_index) {
             state_.ui_cam_idx = (int)i;
             break;
         }
     }
-    
+}
+
+void CameraManager::SelectInitialResolution(const CameraConfig& config) {
     // Set initial resolution from available cameras
     if (!cam_list_.empty() && !cam_list_[state_.ui_cam_idx].resolutions.empty()) {
         auto resolutions = cam_list_[state_.ui_cam_idx].resolutions;
@@ -404,10 +300,10 @@ int CameraManager::InitializeV4L2(const CameraConfig& config) {
         // Try to find matching resolution or use the largest available
         int best_res_idx = (int)resolutions.size() - 1; // Default to largest
         
-        if (config_.default_width > 0 && config_.default_height > 0) {
+        if (config.default_width > 0 && config.default_height > 0) {
             for (size_t i = 0; i < resolutions.size(); ++i) {
-                if (resolutions[i].first == config_.default_width && 
-                    resolutions[i].second == config_.default_height) {
+                if (resolutions[i].first == config.default_width && 
+                    resolutions[i].second == config.default_height) {
                     best_res_idx = (int)i;
                     break;
                 }
@@ -419,7 +315,9 @@ int CameraManager::InitializeV4L2(const CameraConfig& config) {
         state_.current_width = wh.first;
         state_.current_height = wh.second;
     }
-    
+}
+
+void CameraManager::SetupCameraPathAndFPS(const CameraConfig& config) {
     // Setup camera path and FPS options
     if (!cam_list_.empty()) {
         state_.current_camera_path = cam_list_[state_.ui_cam_idx].path;
@@ -429,9 +327,9 @@ int CameraManager::InitializeV4L2(const CameraConfig& config) {
         if (!ui_fps_opts_.empty()) {
             state_.ui_fps_idx = (int)ui_fps_opts_.size() - 1; // Default to highest
             
-            if (config_.default_fps > 0) {
+            if (config.default_fps > 0) {
                 for (size_t i = 0; i < ui_fps_opts_.size(); ++i) {
-                    if (ui_fps_opts_[i] == config_.default_fps) {
+                    if (ui_fps_opts_[i] == config.default_fps) {
                         state_.ui_fps_idx = (int)i;
                         break;
                     }
@@ -441,23 +339,34 @@ int CameraManager::InitializeV4L2(const CameraConfig& config) {
             state_.current_fps = ui_fps_opts_[state_.ui_fps_idx];
         }
     }
+}
+
+int CameraManager::InitializeV4L2(const CameraConfig& config) {
+    // Enumerate available cameras
+    RefreshCameraList();
+    RefreshVCamList();
+    
+    if (cam_list_.empty()) {
+        std::cout << "⚠️  No cameras found during enumeration" << std::endl;
+        return 1;
+    }
+    
+    SelectInitialCamera(config);
+    SelectInitialResolution(config);
+    SetupCameraPathAndFPS(config);
     
     // Initialize camera controls
     RefreshControls();
     ApplyDefaultControls();
     
     // Open the camera
-    if (!OpenCamera(config_.default_camera_index, state_.current_width, state_.current_height, state_.current_fps)) {
-        std::cerr << "❌ Failed to open camera " << config_.default_camera_index << std::endl;
+    if (!OpenCamera(config.default_camera_index, state_.current_width, state_.current_height, state_.current_fps)) {
+        std::cerr << "❌ Failed to open camera " << config.default_camera_index << std::endl;
         return 2;
     }
     
     state_.is_initialized = true;
-    std::cout << "✅ Camera Manager initialized successfully!" << std::endl;
-    std::cout << "📷 Using camera: " << state_.current_camera_path << std::endl;
-    std::cout << "📐 Resolution: " << state_.current_width << "x" << state_.current_height << std::endl;
-    std::cout << "🎬 FPS: " << state_.current_fps << std::endl;
-    std::cout << "🔧 Backend: " << GetBackendName() << std::endl;
+    LogV4L2InitializationSuccess();
     
     return 0;
 }
@@ -1506,7 +1415,8 @@ bool CameraManager::ConvertSampleToBgr(GstSample* sample, cv::Mat& frame_out, in
     }
 
     cv::Mat converted;
-    bool success = ConvertBufferToBgr(map_info, width, height, format, stride_hint, converted);
+    BufferInfo buffer_info = {map_info.data, map_info.size};
+    bool success = segmecam::ConvertBufferToBgr(buffer_info, width, height, format, stride_hint, converted);
 
     static int format_log_count = 0;
     if (format_log_count < 5) {
