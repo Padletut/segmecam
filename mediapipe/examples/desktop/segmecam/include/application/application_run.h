@@ -55,6 +55,26 @@ struct FrameProcessingParams {
 };
 
 /**
+ * Data structure for main loop parameters
+ */
+struct MainLoopParams {
+    ManagerCoordination::Managers& managers;
+    std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph;
+    std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller;
+    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller;
+    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller;
+    SDL_Window* window;
+    AppState& app_state;
+    UIManager& ui_manager;
+    bool& running;
+    int64_t& frame_id;
+    double& fps;
+    uint64_t& fps_frames;
+    uint32_t& fps_last_ms;
+    bool has_landmarks;
+};
+
+/**
  * Application main loop module - handles the core application execution loop
  * 
  * This module follows the modular architecture pattern and provides the main
@@ -87,21 +107,7 @@ public:
     /**
      * Run the main processing loop
      */
-    static void RunMainLoop(
-        ManagerCoordination::Managers& managers,
-        std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph,
-        std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
-        std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
-        std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
-        SDL_Window* window,
-        AppState& app_state,
-        UIManager& ui_manager,
-        bool& running,
-        int64_t& frame_id,
-        double& fps,
-        uint64_t& fps_frames,
-        uint32_t& fps_last_ms,
-        bool has_landmarks);
+    static void RunMainLoop(MainLoopParams& params);
 
     /**
      * Sync status FROM EffectsManager back TO app_state (e.g., OpenCL availability)
@@ -183,6 +189,30 @@ private:
         int frame_count);
 
     /**
+     * Process face landmarks data (core logic without exception handling)
+     */
+    static void ProcessFaceLandmarksData(
+        MediaPipeOutputData& output_data,
+        std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
+        std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+        int frame_count);
+
+    /**
+     * Process landmark packets from MediaPipe poller
+     */
+    static void ProcessLandmarkPackets(
+        MediaPipeOutputData& output_data,
+        std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
+        int frame_count);
+
+    /**
+     * Process face rectangles from MediaPipe poller
+     */
+    static void ProcessFaceRects(
+        MediaPipeOutputData& output_data,
+        std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller);
+
+    /**
      * Process frame effects and prepare for display
      */
     static cv::Mat ProcessAndDisplayFrame(
@@ -221,6 +251,41 @@ private:
      * Process single frame in main loop
      */
     static bool ProcessFrame(FrameProcessingParams& params);
+
+    /**
+     * Process frame capture and initial updates
+     */
+    static bool ProcessFrameCaptureAndUpdates(FrameProcessingParams& params, cv::Mat& frame_bgr);
+
+    /**
+     * Process MediaPipe and effects for frame
+     */
+    static bool ProcessFrameMediaPipeAndEffects(FrameProcessingParams& params, const cv::Mat& frame_bgr, cv::Mat& display_rgb);
+
+    /**
+     * Process UI events and render frame
+     */
+    static bool ProcessFrameUIAndRender(FrameProcessingParams& params, const cv::Mat& display_rgb);
+
+    /**
+     * Update camera information in app state
+     */
+    static void UpdateCameraInfo(FrameProcessingParams& params);
+
+    /**
+     * Update auto FPS settings based on camera changes
+     */
+    static void UpdateAutoFPS(FrameProcessingParams& params);
+
+    /**
+     * Update auto processing scale if enabled
+     */
+    static void UpdateAutoProcessingScale(FrameProcessingParams& params);
+
+    /**
+     * Send frame to MediaPipe graph for processing
+     */
+    static bool SendFrameToMediaPipe(const cv::Mat& frame_bgr, FrameProcessingParams& params);
 
     /**
      * Render complete frame with UI overlay

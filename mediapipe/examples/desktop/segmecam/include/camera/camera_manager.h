@@ -189,6 +189,25 @@ struct PortalRequestContext {
     bool success = false;
 };
 
+// Parameter structs for PerformConversionAndCleanup method
+struct GStreamerObjects {
+    GstBuffer* buffer;
+    GstSample* sample;
+};
+
+struct ConversionInput {
+    int width;
+    int height;
+    std::string format;
+    int stride_hint;
+};
+
+struct ConversionOutput {
+    cv::Mat& frame_out;
+    int& width_out;
+    int& height_out;
+};
+
 // Camera system manager for initialization, enumeration, capture, and V4L2 controls
 class CameraManager {
 public:
@@ -442,9 +461,8 @@ private:
                                        int width_out, int height_out);
     void LogConversionResult(const std::string& format, int width, int height, int stride_hint, 
                             size_t map_size, bool success, int channels);
-    bool PerformConversionAndCleanup(GstBuffer* buffer, GstSample* sample,
-                                    int width, int height, const std::string& format, int stride_hint,
-                                    cv::Mat& frame_out, int& width_out, int& height_out);
+    bool PerformConversionAndCleanup(const GStreamerObjects& gst_objects, const ConversionInput& input,
+                                    ConversionOutput& output);
     // ParseCapsStructure helper methods
     bool GetStructureFromCaps(GstCaps* caps, GstStructure*& structure);
     bool ExtractIntFromStructure(GstStructure* structure, const char* field_name, int& value);

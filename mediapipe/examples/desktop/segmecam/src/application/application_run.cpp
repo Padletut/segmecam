@@ -268,44 +268,32 @@ int ApplicationRun::ExecuteMainLoop(
     std::cout << "✅ Main loop initialized, starting frame processing..." << std::endl;
     
     // Run the main processing loop
-    RunMainLoop(managers, mediapipe_graph, mask_poller, multi_face_landmarks_poller, 
-               face_rects_poller, window, app_state, ui_manager, running, frame_id, 
-               fps, fps_frames, fps_last_ms, has_landmarks);
+    MainLoopParams main_params = {
+        managers, mediapipe_graph, mask_poller, multi_face_landmarks_poller, 
+        face_rects_poller, window, app_state, ui_manager, running, frame_id, 
+        fps, fps_frames, fps_last_ms, has_landmarks
+    };
+    RunMainLoop(main_params);
     
     std::cout << "🛑 Main loop ended" << std::endl;
     return 0;
 }
 
-void ApplicationRun::RunMainLoop(
-    ManagerCoordination::Managers& managers,
-    std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph,
-    std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
-    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
-    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
-    SDL_Window* window,
-    AppState& app_state,
-    UIManager& ui_manager,
-    bool& running,
-    int64_t& frame_id,
-    double& fps,
-    uint64_t& fps_frames,
-    uint32_t& fps_last_ms,
-    bool has_landmarks
-) {
+void ApplicationRun::RunMainLoop(MainLoopParams& params) {
     int frame_count = 0;
     
     // Main application loop
-    while (running) {
+    while (params.running) {
         frame_count++;
         
         try {
-            FrameProcessingParams params = {
-                managers, mediapipe_graph, mask_poller, multi_face_landmarks_poller, 
-                face_rects_poller, window, app_state, ui_manager, frame_id, fps, 
-                fps_frames, fps_last_ms, frame_count, has_landmarks, running
+            FrameProcessingParams frame_params = {
+                params.managers, params.mediapipe_graph, params.mask_poller, params.multi_face_landmarks_poller, 
+                params.face_rects_poller, params.window, params.app_state, params.ui_manager, params.frame_id, params.fps, 
+                params.fps_frames, params.fps_last_ms, frame_count, params.has_landmarks, params.running
             };
             
-            if (!ProcessFrame(params)) {
+            if (!ProcessFrame(frame_params)) {
                 break; // Exit on error
             }
             
@@ -394,38 +382,63 @@ void ApplicationRun::ProcessFaceLandmarks(
     int frame_count
 ) {
     try {
-        mediapipe::Packet lp;
-        int queue_size = multi_face_landmarks_poller->QueueSize();
-        if (frame_count <= 5) {
-            std::cout << "📍 Landmarks queue size: " << queue_size << std::endl;
-        }
-        
-        while (queue_size > 0 && multi_face_landmarks_poller->Next(&lp)) {
-            try {
-                const auto& v = lp.Get<std::vector<mediapipe::NormalizedLandmarkList>>();
-                if (!v.empty()) { 
-                    output_data.latest_lms = v[0]; 
-                    output_data.have_lms = true;
-                    if (frame_count <= 5) {
-                        std::cout << "✅ Got landmarks with " << output_data.latest_lms.landmark_size() << " points" << std::endl;
-                    }
-                }
-                queue_size = multi_face_landmarks_poller->QueueSize();
-            } catch (const std::exception& e) {
-                std::cerr << "❌ Error processing landmarks packet: " << e.what() << std::endl;
-                break;
-            }
-        }
-        
-        // Process face rects if available
-        if (face_rects_poller) {
-            mediapipe::Packet rp;
-            while (face_rects_poller->QueueSize() > 0 && face_rects_poller->Next(&rp)) {
-                output_data.latest_rects = rp.Get<std::vector<mediapipe::NormalizedRect>>();
-            }
-        }
+        ProcessFaceLandmarksData(output_data, multi_face_landmarks_poller, face_rects_poller, frame_count);
     } catch (const std::exception& e) {
         std::cerr << "❌ Exception during landmarks polling: " << e.what() << std::endl;
+    }
+}
+
+void ApplicationRun::ProcessFaceLandmarksData(
+    MediaPipeOutputData& output_data,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+    int frame_count
+) {
+    // Process landmark packets
+    ProcessLandmarkPackets(output_data, multi_face_landmarks_poller, frame_count);
+
+    // Process face rects if available
+    if (face_rects_poller) {
+        ProcessFaceRects(output_data, face_rects_poller);
+    }
+}
+
+void ApplicationRun::ProcessLandmarkPackets(
+    MediaPipeOutputData& output_data,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
+    int frame_count
+) {
+    mediapipe::Packet lp;
+    int queue_size = multi_face_landmarks_poller->QueueSize();
+    if (frame_count <= 5) {
+        std::cout << "📍 Landmarks queue size: " << queue_size << std::endl;
+    }
+
+    while (queue_size > 0 && multi_face_landmarks_poller->Next(&lp)) {
+        try {
+            const auto& v = lp.Get<std::vector<mediapipe::NormalizedLandmarkList>>();
+            if (!v.empty()) {
+                output_data.latest_lms = v[0];
+                output_data.have_lms = true;
+                if (frame_count <= 5) {
+                    std::cout << "✅ Got landmarks with " << output_data.latest_lms.landmark_size() << " points" << std::endl;
+                }
+            }
+            queue_size = multi_face_landmarks_poller->QueueSize();
+        } catch (const std::exception& e) {
+            std::cerr << "❌ Error processing landmarks packet: " << e.what() << std::endl;
+            break;
+        }
+    }
+}
+
+void ApplicationRun::ProcessFaceRects(
+    MediaPipeOutputData& output_data,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller
+) {
+    mediapipe::Packet rp;
+    while (face_rects_poller->QueueSize() > 0 && face_rects_poller->Next(&rp)) {
+        output_data.latest_rects = rp.Get<std::vector<mediapipe::NormalizedRect>>();
     }
 }
 
@@ -575,76 +588,120 @@ bool ApplicationRun::InitializeApplication(
 }
 
 bool ApplicationRun::ProcessFrame(FrameProcessingParams& params) {
-    // Process frame capture
     cv::Mat frame_bgr;
-    if (!ProcessFrameCapture(*params.managers.camera, frame_bgr, params.frame_count)) {
+    cv::Mat display_rgb;
+
+    // Process frame capture and initial updates
+    if (!ProcessFrameCaptureAndUpdates(params, frame_bgr)) {
         return true; // Continue to next frame
     }
-    
+
+    // Process MediaPipe and effects
+    if (!ProcessFrameMediaPipeAndEffects(params, frame_bgr, display_rgb)) {
+        return false; // Exit on error
+    }
+
+    // Handle UI events and rendering
+    return ProcessFrameUIAndRender(params, display_rgb);
+}
+
+bool ApplicationRun::ProcessFrameCaptureAndUpdates(FrameProcessingParams& params, cv::Mat& frame_bgr) {
+    // Process frame capture
+    if (!ProcessFrameCapture(*params.managers.camera, frame_bgr, params.frame_count)) {
+        return false; // Continue to next frame
+    }
+
     // Update FPS tracking
     UpdateFPSTracking(params.fps, params.fps_frames, params.fps_last_ms);
-    
-    // Update app state with current frame and camera information
+
+    // Update camera information in app state
+    UpdateCameraInfo(params);
+
+    // Update auto FPS settings if camera changed
+    UpdateAutoFPS(params);
+
+    // Update auto processing scale if enabled
+    UpdateAutoProcessingScale(params);
+
+    return true;
+}
+
+bool ApplicationRun::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& params, const cv::Mat& frame_bgr, cv::Mat& display_rgb) {
+    // Send frame to MediaPipe graph
+    if (!SendFrameToMediaPipe(frame_bgr, params)) {
+        return false; // Exit on error
+    }
+
+    // Process MediaPipe outputs
+    MediaPipeOutputData output_data;
+    ProcessMediaPipeOutputs(output_data, params.mask_poller, params.multi_face_landmarks_poller, params.face_rects_poller,
+                           params.app_state, params.frame_count, params.has_landmarks);
+
+    // Process frame effects and prepare for display
+    const mediapipe::NormalizedLandmarkList* landmarks_ptr = (output_data.have_lms) ? &output_data.latest_lms : nullptr;
+    display_rgb = ProcessAndDisplayFrame(frame_bgr, output_data.last_mask_u8, landmarks_ptr,
+                                        *params.managers.effects, params.app_state, output_data.have_lms);
+
+    // Handle virtual camera output
+    HandleVirtualCameraOutput(*params.managers.camera, params.app_state, display_rgb);
+
+    return true;
+}
+
+bool ApplicationRun::ProcessFrameUIAndRender(FrameProcessingParams& params, const cv::Mat& display_rgb) {
+    // Let UIManager handle events first
+    if (!params.ui_manager.ProcessEvents(params.running)) {
+        std::cout << "🛑 UIManager ProcessEvents returned false, exiting..." << std::endl;
+        return false;
+    }
+
+    // Handle any dropped files
+    HandleDroppedFiles(params.ui_manager, params.app_state);
+
+    if (!params.running) {
+        std::cout << "🛑 Running flag set to false by event handler, exiting..." << std::endl;
+        return false;
+    }
+
+    // Render complete frame
+    RenderFrame(params.ui_manager, display_rgb, params.window, params.frame_count, params.running);
+
+    return true;
+}
+
+void ApplicationRun::UpdateCameraInfo(FrameProcessingParams& params) {
     params.app_state.fps = params.fps;
     params.app_state.camera_width = params.managers.camera->GetCurrentWidth();
     params.app_state.camera_height = params.managers.camera->GetCurrentHeight();
     params.app_state.camera_fps = params.managers.camera->GetCurrentFPS();
-    
-    // Auto-update target FPS based on camera settings
+}
+
+void ApplicationRun::UpdateAutoFPS(FrameProcessingParams& params) {
     static float last_camera_fps = -1.0f;
     if (std::abs(params.app_state.camera_fps - last_camera_fps) > 0.1f) {
         params.managers.effects->UpdateTargetFPSFromCamera(params.app_state.camera_fps);
         params.app_state.target_fps = params.managers.effects->GetTargetFPS();
         last_camera_fps = params.app_state.camera_fps;
     }
-    
-    // Update auto processing scale if enabled
+}
+
+void ApplicationRun::UpdateAutoProcessingScale(FrameProcessingParams& params) {
     if (params.app_state.auto_processing_scale && params.fps > 0.0) {
         params.managers.effects->UpdateAutoProcessingScale(params.fps);
         params.app_state.current_fps = params.managers.effects->GetCurrentFPS();
         params.app_state.fx_adv_scale = params.managers.effects->GetProcessingScale();
     }
-    
-    // Send frame to MediaPipe graph
+}
+
+bool ApplicationRun::SendFrameToMediaPipe(const cv::Mat& frame_bgr, FrameProcessingParams& params) {
     std::unique_ptr<mediapipe::ImageFrame> frame;
     MatToImageFrame(frame_bgr, frame);
     auto ts = mediapipe::Timestamp(params.frame_id++);
     auto st = params.mediapipe_graph->AddPacketToInputStream("input_video", mediapipe::Adopt(frame.release()).At(ts));
     if (!st.ok()) {
         std::cerr << "❌ AddPacket failed: " << st.message() << std::endl;
-        return false; // Exit on error
-    }
-    
-    // Process MediaPipe outputs
-    MediaPipeOutputData output_data;
-    ProcessMediaPipeOutputs(output_data, params.mask_poller, params.multi_face_landmarks_poller, params.face_rects_poller,
-                           params.app_state, params.frame_count, params.has_landmarks);
-    
-    // Process frame effects and prepare for display
-    const mediapipe::NormalizedLandmarkList* landmarks_ptr = (output_data.have_lms) ? &output_data.latest_lms : nullptr;
-    cv::Mat display_rgb = ProcessAndDisplayFrame(frame_bgr, output_data.last_mask_u8, landmarks_ptr,
-                                                *params.managers.effects, params.app_state, output_data.have_lms);
-    
-    // Handle virtual camera output
-    HandleVirtualCameraOutput(*params.managers.camera, params.app_state, display_rgb);
-    
-    // Let UIManager handle events first
-    if (!params.ui_manager.ProcessEvents(params.running)) {
-        std::cout << "🛑 UIManager ProcessEvents returned false, exiting..." << std::endl;
         return false;
     }
-    
-    // Handle any dropped files
-    HandleDroppedFiles(params.ui_manager, params.app_state);
-    
-    if (!params.running) {
-        std::cout << "🛑 Running flag set to false by event handler, exiting..." << std::endl;
-        return false;
-    }
-    
-    // Render complete frame
-    RenderFrame(params.ui_manager, display_rgb, params.window, params.frame_count, params.running);
-    
     return true;
 }
 

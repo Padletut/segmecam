@@ -602,8 +602,12 @@ bool CameraManager::ConvertSampleToBgr(GstSample* sample, cv::Mat& frame_out, in
     }
 
     BufferInfo buffer_info = {nullptr, 0};  // Will be set in PerformConversionAndCleanup
-    return PerformConversionAndCleanup(buffer, sample, width, height, format, stride_hint,
-                                      frame_out, width_out, height_out);
+    
+    GStreamerObjects gst_objects = {buffer, sample};
+    ConversionInput input = {width, height, format, stride_hint};
+    ConversionOutput output = {frame_out, width_out, height_out};
+    
+    return PerformConversionAndCleanup(gst_objects, input, output);
 }
 
 // ConvertSampleToBgr helper methods
@@ -702,34 +706,33 @@ void CameraManager::LogConversionResult(const std::string& format, int width, in
     }
 }
 
-bool CameraManager::PerformConversionAndCleanup(GstBuffer* buffer, GstSample* sample,
-                                               int width, int height, const std::string& format, int stride_hint,
-                                               cv::Mat& frame_out, int& width_out, int& height_out) {
+bool CameraManager::PerformConversionAndCleanup(const GStreamerObjects& gst_objects, const ConversionInput& input,
+                                               ConversionOutput& output) {
     GstMapInfo map_info = {};
-    if (!MapAndValidateBuffer(buffer, map_info)) {
-        gst_sample_unref(sample);
+    if (!MapAndValidateBuffer(gst_objects.buffer, map_info)) {
+        gst_sample_unref(gst_objects.sample);
         return false;
     }
 
     cv::Mat converted;
     BufferInfo actual_buffer_info = {map_info.data, map_info.size};
-    bool success = ConvertBufferToBgrWithValidation(actual_buffer_info, width, height, format, stride_hint, converted);
+    bool success = ConvertBufferToBgrWithValidation(actual_buffer_info, input.width, input.height, input.format, input.stride_hint, converted);
 
-    LogConversionResult(format, width, height, stride_hint, map_info.size, success, 
+    LogConversionResult(input.format, input.width, input.height, input.stride_hint, map_info.size, success, 
                        converted.empty() ? 0 : converted.channels());
 
-    gst_buffer_unmap(buffer, &map_info);
-    gst_sample_unref(sample);
+    gst_buffer_unmap(gst_objects.buffer, &map_info);
+    gst_sample_unref(gst_objects.sample);
 
     if (!success) {
-        std::cerr << "⚠️  Failed to convert PipeWire sample to BGR (format=" << format 
-                  << ", width=" << width << ", height=" << height << ", stride_hint=" << stride_hint << ")" << std::endl;
+        std::cerr << "⚠️  Failed to convert PipeWire sample to BGR (format=" << input.format 
+                  << ", width=" << input.width << ", height=" << input.height << ", stride_hint=" << input.stride_hint << ")" << std::endl;
         return false;
     }
 
-    frame_out = std::move(converted);
-    width_out = width;
-    height_out = height;
+    output.frame_out = std::move(converted);
+    output.width_out = input.width;
+    output.height_out = input.height;
     return true;
 }
 

@@ -23,6 +23,16 @@ bool IsFlatpakEnvironment() {
     }
     return std::filesystem::exists("/.flatpak-info");
 }
+
+// Safe string copy helper that ensures null termination
+void SafeStringCopy(char* dest, size_t dest_size, const std::string& src) {
+    if (dest_size == 0) return;
+    
+    size_t copy_len = std::min(src.length(), dest_size - 1);
+    std::memcpy(dest, src.c_str(), copy_len);
+    dest[copy_len] = '\0';
+}
+
 } // namespace
 
 // Camera Panel Implementation
@@ -416,20 +426,14 @@ void CameraPanel::RenderProfileSection() {
                 LoadProfileIntoState(profile_names[ui_profile_idx_]);
                 // Update name buffer to match loaded profile
                 std::string profile_name = profile_names[ui_profile_idx_];
-                if (profile_name.length() < sizeof(profile_name_buf_)) {
-                    std::strncpy(profile_name_buf_, profile_name.c_str(), sizeof(profile_name_buf_) - 1);
-                    profile_name_buf_[sizeof(profile_name_buf_) - 1] = '\0';
-                } else {
-                    std::strncpy(profile_name_buf_, profile_name.substr(0, sizeof(profile_name_buf_) - 1).c_str(), sizeof(profile_name_buf_) - 1);
-                    profile_name_buf_[sizeof(profile_name_buf_) - 1] = '\0';
-                }
+                SafeStringCopy(profile_name_buf_, sizeof(profile_name_buf_), profile_name);
             }
         }
         
         ImGui::InputText("Profile Name##camera_panel", profile_name_buf_, sizeof(profile_name_buf_));
         
         if (ImGui::Button("Save##prof")) {
-            if (std::strlen(profile_name_buf_) > 0) {
+            if (strnlen(profile_name_buf_, sizeof(profile_name_buf_)) > 0) {
                 if (SaveStateToProfile(profile_name_buf_)) {
                     std::cout << "Profile saved: " << profile_name_buf_ << std::endl;
                     // Update profile index after successful save
@@ -441,7 +445,7 @@ void CameraPanel::RenderProfileSection() {
         }
         ImGui::SameLine();
         
-        if (ImGui::Button("Set Default##prof") && std::strlen(profile_name_buf_) > 0) {
+        if (ImGui::Button("Set Default##prof") && strnlen(profile_name_buf_, sizeof(profile_name_buf_)) > 0) {
             config_mgr_->SetDefaultProfile(profile_name_buf_);
             std::cout << "Set default profile: " << profile_name_buf_ << std::endl;
         }
@@ -536,13 +540,7 @@ void CameraPanel::LoadProfileIntoState(const std::string& profile_name) {
     state_.bg_mode = config.background.bg_mode;
     state_.blur_strength = config.background.blur_strength;
     state_.feather_px = config.background.feather_px;
-    if (config.background.bg_path.length() < sizeof(state_.bg_path_buf)) {
-        std::strncpy(state_.bg_path_buf, config.background.bg_path.c_str(), sizeof(state_.bg_path_buf) - 1);
-        state_.bg_path_buf[sizeof(state_.bg_path_buf) - 1] = '\0';
-    } else {
-        std::strncpy(state_.bg_path_buf, config.background.bg_path.substr(0, sizeof(state_.bg_path_buf) - 1).c_str(), sizeof(state_.bg_path_buf) - 1);
-        state_.bg_path_buf[sizeof(state_.bg_path_buf) - 1] = '\0';
-    }
+    SafeStringCopy(state_.bg_path_buf, sizeof(state_.bg_path_buf), config.background.bg_path);
     state_.solid_color[0] = config.background.solid_color[0];
     state_.solid_color[1] = config.background.solid_color[1];
     state_.solid_color[2] = config.background.solid_color[2];
@@ -730,13 +728,7 @@ void CameraPanel::UpdateDefaultProfileDisplay() {
     std::string default_profile;
     if (config_mgr_->GetDefaultProfile(default_profile) && !default_profile.empty()) {
         // Update the profile name buffer to show the default profile
-        if (default_profile.length() < sizeof(profile_name_buf_)) {
-            std::strncpy(profile_name_buf_, default_profile.c_str(), sizeof(profile_name_buf_) - 1);
-            profile_name_buf_[sizeof(profile_name_buf_) - 1] = '\0';
-        } else {
-            std::strncpy(profile_name_buf_, default_profile.substr(0, sizeof(profile_name_buf_) - 1).c_str(), sizeof(profile_name_buf_) - 1);
-            profile_name_buf_[sizeof(profile_name_buf_) - 1] = '\0';
-        }
+        SafeStringCopy(profile_name_buf_, sizeof(profile_name_buf_), default_profile);
         
         // Update the dropdown index to match the default profile
         auto profile_names = config_mgr_->ListProfiles();
