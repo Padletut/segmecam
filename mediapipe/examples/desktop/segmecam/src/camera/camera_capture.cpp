@@ -38,6 +38,14 @@ bool CameraManager::CaptureFrameFlatpak(cv::Mat& frame) {
     }
 
     // For PipeWire, wait briefly for a frame if one is not yet ready
+    if (!WaitForPipeWireFrame()) {
+        return false;
+    }
+
+    return ValidateAndCopyFrame(frame);
+}
+
+bool CameraManager::WaitForPipeWireFrame() {
     std::unique_lock<std::mutex> lock(frame_mutex_);
 
     if (!frame_ready_) {
@@ -65,6 +73,10 @@ bool CameraManager::CaptureFrameFlatpak(cv::Mat& frame) {
         }
     }
 
+    return frame_ready_;
+}
+
+bool CameraManager::ValidateAndCopyFrame(cv::Mat& frame) {
     if (!frame_ready_ || current_frame_.empty()) {
         static int empty_log = 0;
         if (empty_log < 10) {
@@ -86,30 +98,38 @@ bool CameraManager::CaptureFrameNative(cv::Mat& frame) {
     // CWE-120/CWE-20: Check buffer boundaries and input validation
     bool success = cap_.read(frame);
     if (success && !frame.empty() && frame.cols > 0 && frame.rows > 0) {
-        // Validate reasonable frame dimensions to prevent memory exhaustion
-        // Maximum reasonable dimensions for camera frames (8K resolution limit)
-        const int MAX_FRAME_WIDTH = 7680;  // 8K width
-        const int MAX_FRAME_HEIGHT = 4320; // 8K height
-        const int MAX_FRAME_PIXELS = MAX_FRAME_WIDTH * MAX_FRAME_HEIGHT;
-
-        if (frame.cols > MAX_FRAME_WIDTH || frame.rows > MAX_FRAME_HEIGHT ||
-            (frame.cols * frame.rows) > MAX_FRAME_PIXELS) {
-            std::cerr << "❌ Invalid frame dimensions: " << frame.cols << "x" << frame.rows
-                      << " (max allowed: " << MAX_FRAME_WIDTH << "x" << MAX_FRAME_HEIGHT << ")" << std::endl;
-            return false;
-        }
-
-        // Additional validation: ensure frame has valid channels (1-4 for typical formats)
-        if (frame.channels() < 1 || frame.channels() > 4) {
-            std::cerr << "❌ Invalid frame channels: " << frame.channels()
-                      << " (expected 1-4 channels)" << std::endl;
-            return false;
-        }
-
-        state_.frames_captured++;
-        return true;
+        return PerformFrameValidation(frame);
     }
     return false;
+}
+
+bool CameraManager::PerformFrameValidation(const cv::Mat& frame) {
+    // Validate reasonable frame dimensions to prevent memory exhaustion
+    // Maximum reasonable dimensions for camera frames (8K resolution limit)
+    const int MAX_FRAME_WIDTH = 7680;  // 8K width
+    const int MAX_FRAME_HEIGHT = 4320; // 8K height
+    const int MAX_FRAME_PIXELS = MAX_FRAME_WIDTH * MAX_FRAME_HEIGHT;
+
+    if (frame.cols > MAX_FRAME_WIDTH || frame.rows > MAX_FRAME_HEIGHT ||
+        (frame.cols * frame.rows) > MAX_FRAME_PIXELS) {
+        std::cerr << "❌ Invalid frame dimensions: " << frame.cols << "x" << frame.rows
+                  << " (max allowed: " << MAX_FRAME_WIDTH << "x" << MAX_FRAME_HEIGHT << ")" << std::endl;
+        return false;
+    }
+
+    return ValidateFrameChannels(frame);
+}
+
+bool CameraManager::ValidateFrameChannels(const cv::Mat& frame) {
+    // Additional validation: ensure frame has valid channels (1-4 for typical formats)
+    if (frame.channels() < 1 || frame.channels() > 4) {
+        std::cerr << "❌ Invalid frame channels: " << frame.channels()
+                  << " (expected 1-4 channels)" << std::endl;
+        return false;
+    }
+
+    state_.frames_captured++;
+    return true;
 }
 
 } // namespace segmecam

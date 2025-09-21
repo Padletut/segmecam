@@ -275,6 +275,13 @@ private:
     void SelectInitialResolution(const CameraConfig& config);
     void SetupCameraPathAndFPS(const CameraConfig& config);
 
+    // Frame capture helpers
+    bool WaitForPipeWireFrame();
+    bool ValidateAndCopyFrame(cv::Mat& frame);
+    bool ValidateNativeFrame(cv::Mat& frame);
+    bool PerformFrameValidation(const cv::Mat& frame);
+    bool ValidateFrameChannels(const cv::Mat& frame);
+
     // Configuration and state
     CameraConfig config_;
     CameraState state_;
