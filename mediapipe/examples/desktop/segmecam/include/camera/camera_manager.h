@@ -146,6 +146,14 @@ struct CameraConfig {
     bool enable_auto_exposure = true;
 };
 
+// Parameters for camera opening operations
+struct CameraOpeningParams {
+    int camera_index;
+    int width;
+    int height;
+    int fps;
+};
+
 // State tracking for camera system
 struct CameraState {
     bool is_initialized = false;
@@ -434,7 +442,7 @@ private:
                                        int width_out, int height_out);
     void LogConversionResult(const std::string& format, int width, int height, int stride_hint, 
                             size_t map_size, bool success, int channels);
-    bool PerformConversionAndCleanup(GstBuffer* buffer, GstSample* sample, const BufferInfo& buffer_info,
+    bool PerformConversionAndCleanup(GstBuffer* buffer, GstSample* sample,
                                     int width, int height, const std::string& format, int stride_hint,
                                     cv::Mat& frame_out, int& width_out, int& height_out);
     // ParseCapsStructure helper methods
@@ -503,6 +511,10 @@ private:
     bool StartAndValidatePipeWirePipeline();
     
     // OpenCamera helper methods
+    void LogCameraOpening(int camera_index, int width, int height, int fps);
+    CameraOpeningParams PrepareCameraParameters(int camera_index, int width, int height, int fps);
+    bool OpenCameraInFlatpak(const CameraOpeningParams& params);
+    bool OpenCameraNatively(const CameraOpeningParams& params);
     bool TryOpenPipeWireCapture(int width, int height, int fps);
     bool TryOpenOpenCVFallback(int camera_index, int width, int height, int fps);
     bool TryOpenNativeCamera(int camera_index, int width, int height, int fps);

@@ -12,30 +12,51 @@ static bool IsRunningInFlatpak() {
 
 namespace segmecam {
 
-bool CameraManager::OpenCamera(int camera_index, int width, int height, int fps) {
-    CloseCamera();
-
+// Helper method to log camera opening attempt
+void CameraManager::LogCameraOpening(int camera_index, int width, int height, int fps) {
     std::cout << "📷 Opening camera " << camera_index << " with resolution: " << width << "x" << height;
     if (fps > 0) std::cout << " @ " << fps << " FPS";
     std::cout << std::endl;
+}
 
-    // Check if we should use PipeWire (Flatpak environment)
+// Helper method to prepare camera parameters with defaults
+CameraOpeningParams CameraManager::PrepareCameraParameters(int camera_index, int width, int height, int fps) {
+    CameraOpeningParams params;
+    params.camera_index = camera_index;
+    params.width = width > 0 ? width : (state_.current_width > 0 ? state_.current_width : 640);
+    params.height = height > 0 ? height : (state_.current_height > 0 ? state_.current_height : 480);
+    params.fps = fps > 0 ? fps : (state_.current_fps > 0 ? state_.current_fps : 30);
+    return params;
+}
+
+// Helper method to open camera in Flatpak environment
+bool CameraManager::OpenCameraInFlatpak(const CameraOpeningParams& params) {
+    std::cout << "📷 Flatpak detected - using PipeWire camera access (primary method)" << std::endl;
+
+    // Try PipeWire first
+    if (TryOpenPipeWireCapture(params.width, params.height, params.fps)) {
+        return true;
+    }
+
+    // Try OpenCV fallbacks
+    return TryOpenOpenCVFallback(params.camera_index, params.width, params.height, params.fps);
+}
+
+// Helper method to open camera natively (non-Flatpak)
+bool CameraManager::OpenCameraNatively(const CameraOpeningParams& params) {
+    return TryOpenNativeCamera(params.camera_index, params.width, params.height, params.fps);
+}
+
+bool CameraManager::OpenCamera(int camera_index, int width, int height, int fps) {
+    CloseCamera();
+    LogCameraOpening(camera_index, width, height, fps);
+
+    CameraOpeningParams params = PrepareCameraParameters(camera_index, width, height, fps);
+
     if (IsRunningInFlatpak()) {
-        std::cout << "📷 Flatpak detected - using PipeWire camera access (primary method)" << std::endl;
-        int target_width = width > 0 ? width : (state_.current_width > 0 ? state_.current_width : 640);
-        int target_height = height > 0 ? height : (state_.current_height > 0 ? state_.current_height : 480);
-        int target_fps = fps > 0 ? fps : (state_.current_fps > 0 ? state_.current_fps : 30);
-
-        // Try PipeWire first
-        if (TryOpenPipeWireCapture(target_width, target_height, target_fps)) {
-            return true;
-        }
-
-        // Try OpenCV fallbacks
-        return TryOpenOpenCVFallback(camera_index, target_width, target_height, target_fps);
+        return OpenCameraInFlatpak(params);
     } else {
-        // Try native camera opening
-        return TryOpenNativeCamera(camera_index, width, height, fps);
+        return OpenCameraNatively(params);
     }
 }
 

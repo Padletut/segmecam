@@ -602,7 +602,7 @@ bool CameraManager::ConvertSampleToBgr(GstSample* sample, cv::Mat& frame_out, in
     }
 
     BufferInfo buffer_info = {nullptr, 0};  // Will be set in PerformConversionAndCleanup
-    return PerformConversionAndCleanup(buffer, sample, buffer_info, width, height, format, stride_hint,
+    return PerformConversionAndCleanup(buffer, sample, width, height, format, stride_hint,
                                       frame_out, width_out, height_out);
 }
 
@@ -702,7 +702,7 @@ void CameraManager::LogConversionResult(const std::string& format, int width, in
     }
 }
 
-bool CameraManager::PerformConversionAndCleanup(GstBuffer* buffer, GstSample* sample, const BufferInfo& /*buffer_info*/,
+bool CameraManager::PerformConversionAndCleanup(GstBuffer* buffer, GstSample* sample,
                                                int width, int height, const std::string& format, int stride_hint,
                                                cv::Mat& frame_out, int& width_out, int& height_out) {
     GstMapInfo map_info = {};
@@ -849,9 +849,7 @@ void CameraManager::OnPortalCameraAccessFinished(GObject* /*source*/, GAsyncResu
     if (!ctx) return;
 
     if (!ctx->self) {
-        if (ctx->loop && ctx->self && ctx->self->g_main_loop_quit) {
-            ctx->self->g_main_loop_quit(ctx->loop);
-        }
+        // If context self is null, we can't do anything meaningful
         return;
     }
 
