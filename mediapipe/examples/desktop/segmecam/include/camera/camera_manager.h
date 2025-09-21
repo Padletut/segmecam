@@ -8,6 +8,7 @@
 #include <opencv2/opencv.hpp>
 #include <linux/videodev2.h>
 #include "cam_enum.h"
+#include "gstreamer_buffer_utils.h"
 
 // Forward declarations for GStreamer types (to avoid header dependencies)
 #ifdef __cplusplus
@@ -170,6 +171,16 @@ struct CameraState {
     std::string status_message;
 }; 
 
+#include "cam_enum.h"
+#include "gstreamer_buffer_utils.h"
+
+// Portal request context for async camera permission operations
+struct PortalRequestContext {
+    class CameraManager* self = nullptr;
+    GMainLoop* loop = nullptr;
+    bool success = false;
+};
+
 // Camera system manager for initialization, enumeration, capture, and V4L2 controls
 class CameraManager {
 public:
@@ -182,6 +193,7 @@ public:
     bool InitializePortal();
     std::vector<CameraDesc> EnumerateCamerasPortal();
     void Cleanup();
+    void CleanupGStreamer();
     
     // Camera operations
     bool OpenCamera(int camera_index);
@@ -398,12 +410,25 @@ private:
 
     // PipeWire/GStreamer specific methods
     bool InitializeGStreamer();
+    
+    // GStreamer library loading helpers
     bool LoadRequiredLibraries(void*& gst_lib, void*& gstapp_lib, void*& gstvideo_lib, void*& glib_lib, void*& gobject_lib);
     bool LoadGStreamerCoreFunctions(void* gst_lib);
     bool LoadGStreamerAppFunctions(void* gstapp_lib);
     bool LoadGLibFunctions(void* glib_lib, void* gobject_lib);
     bool ValidateFunctionLoading();
-    void CleanupGStreamer();
+
+    // ConvertSampleToBgr helper methods
+    bool ParseCapsStructure(GstCaps* caps, int& width, int& height, int& stride_hint, std::string& format);
+    bool MapAndValidateBuffer(GstBuffer* buffer, GstMapInfo& map_info);
+    bool ConvertBufferToBgrWithValidation(const BufferInfo& buffer_info, int width, int height, 
+                                         const std::string& format, int stride_hint, cv::Mat& output);
+
+    // OnPortalCameraAccessFinished helper methods
+    bool ProcessPortalAccessResult(GAsyncResult* result, bool& granted);
+    bool OpenPipeWireRemote(bool& granted);
+    void HandlePortalError(GError* error);
+    void CleanupPortalRequestContext(PortalRequestContext* ctx);
     
     // Helper methods for function loading
     template<typename T>

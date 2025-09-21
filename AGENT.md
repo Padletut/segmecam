@@ -6,7 +6,9 @@ It describes **how the AI should contribute to this repository**.
 ---
 
 ## 🎯 Project Overview
+
 SegmeCam is a **Linux-native AI webcam application** that combines:
+
 - **Selfie Segmentation** (TensorFlow Lite / MediaPipe models)
 - **Face Landmark Detection** (TensorFlow Lite / MediaPipe models)
 - **OpenGL Shader Pipeline** (background blur, skin smoothing, teeth whitening)
@@ -18,6 +20,7 @@ The goal: **real-time beauty and background effects** for Linux video calls & st
 ---
 
 ## 📐 Code Style
+
 - **Language:** C++17
 - **Build System:** **Bazel**
 - **Project Structure:**
@@ -36,7 +39,9 @@ The goal: **real-time beauty and background effects** for Linux video calls & st
 ---
 
 ## 🧠 AI Agent Rules
+
 When suggesting code or docs, the AI should:
+
 1. **Keep code clean and modular** – small, reusable functions and classes.
 2. **Stay layered** – `engine`, `render`, `ui`, and `io` must not mix responsibilities.
 3. **Prefer clarity** – readable, maintainable code over “clever hacks”.
@@ -47,6 +52,7 @@ When suggesting code or docs, the AI should:
 ---
 
 ## 🚧 Things to Avoid
+
 - Do **not** switch to CMake or other build systems unless explicitly requested.
 - Do **not** add Windows/Mac-specific APIs unless explicitly requested.
 - Do **not** introduce GPL dependencies (keep licensing Apache-2.0 compatible).
@@ -55,6 +61,7 @@ When suggesting code or docs, the AI should:
 ---
 
 ## ✅ Good Contribution Examples
+
 - Adding a new shader pass (Gaussian blur, LUT filter)
 - Improving TFLite inference wrapper (async, batching)
 - Expanding ImGui panel with new sliders
@@ -64,6 +71,7 @@ When suggesting code or docs, the AI should:
 ---
 
 ## 🔮 Future Directions (AI can assist with)
+
 - Background replacement with custom images
 - Multi-face support
 - Real-time profile system

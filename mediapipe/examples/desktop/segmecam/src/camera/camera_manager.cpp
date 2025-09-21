@@ -74,11 +74,7 @@ namespace segmecam {
 
 namespace {
 constexpr unsigned int kXdpCameraFlagNone = 0;
-struct PortalRequestContext {
-    CameraManager* self = nullptr;
-   GMainLoop* loop = nullptr;
-   bool success = false;
-};
+#include "camera/camera_manager.h"
 
 std::string ToUpperCopy(const std::string& value) {
     std::string upper = value;
@@ -596,33 +592,9 @@ bool CameraManager::ConvertSampleToBgr(GstSample* sample, cv::Mat& frame_out, in
     int stride_hint = 0;
     std::string format = "BGR";
 
-    std::string format_logged;
-    if (gst_caps_get_structure) {
-        GstStructure* structure = gst_caps_get_structure(caps, 0);
-        if (structure) {
-            int cap_width = 0;
-            if (gst_structure_get_int && gst_structure_get_int(structure, "width", &cap_width) && cap_width > 0) {
-                width = cap_width;
-            }
-
-            int cap_height = 0;
-            if (gst_structure_get_int && gst_structure_get_int(structure, "height", &cap_height) && cap_height > 0) {
-                height = cap_height;
-            }
-
-            int cap_stride = 0;
-            if (gst_structure_get_int && gst_structure_get_int(structure, "stride", &cap_stride) && cap_stride > 0) {
-                stride_hint = cap_stride;
-            }
-
-            if (gst_structure_get_string) {
-                const char* fmt = gst_structure_get_string(structure, "format");
-                if (fmt && *fmt) {
-                    format = fmt;
-                    format_logged = fmt;
-                }
-            }
-        }
+    if (!ParseCapsStructure(caps, width, height, stride_hint, format)) {
+        gst_sample_unref(sample);
+        return false;
     }
 
     if (width <= 0 || height <= 0) {
@@ -631,24 +603,21 @@ bool CameraManager::ConvertSampleToBgr(GstSample* sample, cv::Mat& frame_out, in
     }
 
     GstMapInfo map_info = {};
-    if (!gst_buffer_map(buffer, &map_info, GST_MAP_READ)) {
+    if (!MapAndValidateBuffer(buffer, map_info)) {
         gst_sample_unref(sample);
         return false;
     }
 
     cv::Mat converted;
     BufferInfo buffer_info = {map_info.data, map_info.size};
-    bool success = segmecam::ConvertBufferToBgr(buffer_info, width, height, format, stride_hint, converted);
+    bool success = ConvertBufferToBgrWithValidation(buffer_info, width, height, format, stride_hint, converted);
 
     static int format_log_count = 0;
     if (format_log_count < 5) {
-        std::cout << "📄 PipeWire sample format: caps_format="
-                  << (format_logged.empty() ? format : format_logged)
-                  << " (post-heuristic: " << format << ") width=" << width
-                  << " height=" << height << " stride_hint=" << stride_hint
+        std::cout << "📄 PipeWire sample format: caps_format=" << format
+                  << " width=" << width << " height=" << height << " stride_hint=" << stride_hint
                   << " map_size=" << map_info.size << " success=" << std::boolalpha << success
-                  << " channels=" << (converted.empty() ? 0 : converted.channels())
-                  << std::endl;
+                  << " channels=" << (converted.empty() ? 0 : converted.channels()) << std::endl;
         format_log_count++;
     }
 
@@ -656,9 +625,8 @@ bool CameraManager::ConvertSampleToBgr(GstSample* sample, cv::Mat& frame_out, in
     gst_sample_unref(sample);
 
     if (!success) {
-        std::cerr << "⚠️  Failed to convert PipeWire sample to BGR (format="
-                  << format << ", width=" << width << ", height=" << height
-                  << ", stride_hint=" << stride_hint << ")" << std::endl;
+        std::cerr << "⚠️  Failed to convert PipeWire sample to BGR (format=" << format 
+                  << ", width=" << width << ", height=" << height << ", stride_hint=" << stride_hint << ")" << std::endl;
         return false;
     }
 
@@ -666,6 +634,118 @@ bool CameraManager::ConvertSampleToBgr(GstSample* sample, cv::Mat& frame_out, in
     width_out = width;
     height_out = height;
     return true;
+}
+
+// ConvertSampleToBgr helper methods
+bool CameraManager::ParseCapsStructure(GstCaps* caps, int& width, int& height, int& stride_hint, std::string& format) {
+    if (!gst_caps_get_structure) {
+        return false;
+    }
+
+    GstStructure* structure = gst_caps_get_structure(caps, 0);
+    if (!structure) {
+        return false;
+    }
+
+    // Get width
+    if (gst_structure_get_int) {
+        int cap_width = 0;
+        if (gst_structure_get_int(structure, "width", &cap_width) && cap_width > 0) {
+            width = cap_width;
+        }
+    }
+
+    // Get height
+    if (gst_structure_get_int) {
+        int cap_height = 0;
+        if (gst_structure_get_int(structure, "height", &cap_height) && cap_height > 0) {
+            height = cap_height;
+        }
+    }
+
+    // Get stride
+    if (gst_structure_get_int) {
+        int cap_stride = 0;
+        if (gst_structure_get_int(structure, "stride", &cap_stride) && cap_stride > 0) {
+            stride_hint = cap_stride;
+        }
+    }
+
+    // Get format
+    if (gst_structure_get_string) {
+        const char* fmt = gst_structure_get_string(structure, "format");
+        if (fmt && *fmt) {
+            format = fmt;
+        }
+    }
+
+    return true;
+}
+
+bool CameraManager::MapAndValidateBuffer(GstBuffer* buffer, GstMapInfo& map_info) {
+    if (!gst_buffer_map) {
+        return false;
+    }
+
+    return gst_buffer_map(buffer, &map_info, GST_MAP_READ);
+}
+
+bool CameraManager::ConvertBufferToBgrWithValidation(const BufferInfo& buffer_info, int width, int height, 
+                                                    const std::string& format, int stride_hint, cv::Mat& output) {
+    return segmecam::ConvertBufferToBgr(buffer_info, width, height, format, stride_hint, output);
+}
+
+// OnPortalCameraAccessFinished helper methods
+bool CameraManager::ProcessPortalAccessResult(GAsyncResult* result, bool& granted) {
+    if (!xdp_portal_access_camera_finish) {
+        return false;
+    }
+
+    GError* error = nullptr;
+    gboolean allow = xdp_portal_access_camera_finish(portal_instance_, result, &error);
+    
+    if (allow) {
+        granted = true;
+    } else {
+        std::cerr << "❌ Camera access denied by portal" << std::endl;
+        state_.status_message = "Camera permission denied";
+    }
+
+    HandlePortalError(error);
+    return true;
+}
+
+bool CameraManager::OpenPipeWireRemote(bool& granted) {
+    if (!xdp_portal_open_pipewire_remote_for_camera) {
+        return false;
+    }
+
+    if (portal_fd_ >= 0) {
+        close(portal_fd_);
+        portal_fd_ = -1;
+    }
+
+    int fd = xdp_portal_open_pipewire_remote_for_camera(portal_instance_);
+    if (fd >= 0) {
+        portal_fd_ = fd;
+        granted = true;
+        return true;
+    } else {
+        std::cerr << "❌ Unable to open PipeWire remote via portal" << std::endl;
+        return false;
+    }
+}
+
+void CameraManager::HandlePortalError(GError* error) {
+    if (error && g_error_free) {
+        g_error_free(error);
+    }
+}
+
+void CameraManager::CleanupPortalRequestContext(PortalRequestContext* ctx) {
+    if (ctx && ctx->loop && g_main_loop_quit) {
+        g_main_loop_quit(ctx->loop);
+    }
 }
 
 void CameraManager::OnNewSample(GstAppSink* sink) {
@@ -736,42 +816,20 @@ void CameraManager::OnPortalCameraAccessFinished(GObject* /*source*/, GAsyncResu
     }
 
     CameraManager* self = ctx->self;
-
     bool granted = false;
-    if (self->xdp_portal_access_camera_finish) {
-        GError* error = nullptr;
-        gboolean allow = self->xdp_portal_access_camera_finish(self->portal_instance_, result, &error);
-        if (allow) {
-            if (self->portal_fd_ >= 0) {
-                close(self->portal_fd_);
-                self->portal_fd_ = -1;
-            }
-            if (self->xdp_portal_open_pipewire_remote_for_camera) {
-                int fd = self->xdp_portal_open_pipewire_remote_for_camera(self->portal_instance_);
-                if (fd >= 0) {
-                    self->portal_fd_ = fd;
-                    granted = true;
-                } else {
-                    std::cerr << "❌ Unable to open PipeWire remote via portal" << std::endl;
-                }
-            }
-        } else {
-            std::cerr << "❌ Camera access denied by portal" << std::endl;
-            self->state_.status_message = "Camera permission denied";
-        }
-        if (error) {
-            if (self->g_error_free) {
-                self->g_error_free(error);
-            }
-        }
+
+    if (!self->ProcessPortalAccessResult(result, granted)) {
+        ctx->success = false;
+        self->CleanupPortalRequestContext(ctx);
+        return;
+    }
+
+    if (granted) {
+        self->OpenPipeWireRemote(granted);
     }
 
     ctx->success = granted;
-    if (ctx->loop) {
-        if (self->g_main_loop_quit) {
-            self->g_main_loop_quit(ctx->loop);
-        }
-    }
+    self->CleanupPortalRequestContext(ctx);
 }
 
 // GStreamer direct capture methods for Flatpak

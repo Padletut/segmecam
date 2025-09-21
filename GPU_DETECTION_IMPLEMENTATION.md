@@ -29,7 +29,7 @@ Successfully implemented robust GPU detection and environment adaptation system 
 
 ### Native Environment (NVIDIA RTX 3080 Ti)
 
-```
+```bash
 🔍 Detecting GPU capabilities...
 🎮 NVIDIA GPU detected: /proc/driver/nvidia/version
 🖥️  Environment: Native

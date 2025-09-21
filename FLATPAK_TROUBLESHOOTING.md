@@ -12,7 +12,7 @@ This document captures the key issues encountered and solutions found during Seg
 
 **Symptom**:
 
-```
+```bash
 EGL display error (0x300c EGL_BAD_DISPLAY)
 Failed to initialize EGL context
 Application crashes or falls back to software rendering
@@ -77,7 +77,7 @@ flatpak run org.segmecam.SegmeCam
 
 #### ✅ **Success Indicators**
 
-```
+```bash
 I0000 gl_context_egl.cc:85] Successfully initialized EGL. Major : 1 Minor: 5
 I0000 gl_context.cc:385] GL version: 3.2 (OpenGL ES 3.2 NVIDIA 580.82.07), renderer: NVIDIA GeForce RTX 3080 Ti/PCIe/SSE2
 ✅ GPU acceleration enabled successfully!
@@ -85,7 +85,7 @@ I0000 gl_context.cc:385] GL version: 3.2 (OpenGL ES 3.2 NVIDIA 580.82.07), rende
 
 #### ❌ **Failure Indicators**
 
-```
+```bash
 EGL display error (0x300c EGL_BAD_DISPLAY)
 Failed to initialize EGL context
 E0000 gl_context_egl.cc:XX] EGL initialization failed
@@ -250,7 +250,7 @@ exec /app/bin/segmecam_gui_gpu "$GRAPH_PATH" "/app/mediapipe_runfiles" 0 "$@"
 
 **Symptom**:
 
-```
+```bash
 E0000 text_format.cc:430] Error parsing text-format mediapipe.CalculatorGraphConfig: 67:1: Expected identifier, got: }
 F0000 parse_text_proto.h:33] Check failed: ParseTextProto(input, &result)
 ```
@@ -330,14 +330,14 @@ export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/GL/nvidia-580-82-07/lib:/usr/l
 
 ### EGL Error Codes - Quick Reference
 
-```
+```bash
 0x3000 = EGL_SUCCESS     ✅ Working correctly
 0x300c = EGL_BAD_DISPLAY ❌ EGL initialization failed (permissions/drivers issue)
 ```
 
 ### Expected Output for Basic Mode
 
-```
+```bash
 ✅ GPU acceleration enabled successfully!
 Landmarks stream not available (graph without face mesh)
 I0000 gl_context_egl.cc:85] Successfully initialized EGL. Major : 1 Minor: 5
@@ -346,7 +346,7 @@ I0000 gl_context.cc:385] GL version: 3.2 (OpenGL ES 3.2 NVIDIA 580.82.07), rende
 
 ### Expected Output for Face Mode
 
-```
+```bash
 ✅ GPU acceleration enabled successfully!
 W0000 model_task_graph.cc:222] A local ModelResources object is created...  # ✅ Face model loading
 I0000 gl_context_egl.cc:85] Successfully initialized EGL. Major : 1 Minor: 5
@@ -356,7 +356,7 @@ I0000 gl_context.cc:385] GL version: 3.2 (OpenGL ES 3.2 NVIDIA 580.82.07), rende
 
 ### ❌ Error Indicators to Watch For
 
-```
+```bash
 ❌ EGL display error (0x300c EGL_BAD_DISPLAY)     # Missing --filesystem=host or driver issues
 ❌ Failed to read graph: [path]                   # Graph path not passed correctly
 ❌ Expected identifier, got: }                    # Protobuf syntax error in graph file

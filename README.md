@@ -270,7 +270,6 @@ docker run --rm -it \
 >
 > - **Custom background images**: Docker container cannot access host files by default. To use custom backgrounds, mount your images directory: `-v /path/to/your/images:/images:ro`
 > - **File picker**: Will only show files inside the container. Consider using the native build for full file system access.
-
 > **Note**: Ensure virtual webcam is set up: `sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="SegmeCam"`
 
 ---
