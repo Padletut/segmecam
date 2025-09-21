@@ -103,27 +103,20 @@ bool CameraManager::OpenGStreamerCamera(int camera_index, int width, int height,
     return false;
 }
 
-// Helper method to try opening camera with PipeWire pipeline
-bool CameraManager::TryOpenPipeWireCamera(int camera_index, int width, int height, int fps) {
-    std::cout << "📷 Flatpak detected - trying PipeWire camera access" << std::endl;
-
-    // Get the correct PipeWire node ID by enumerating available camera nodes
-    int pipewire_node_id = CameraManager::GetPipeWireNodeIdForCamera(camera_index);
-    if (pipewire_node_id < 0) {
-        std::cout << "⚠️  No PipeWire camera node found for index " << camera_index << std::endl;
-        return false;
-    }
-
-    // Create PipeWire pipeline: pipewiresrc path=N ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink
-    char pipewire_pipeline_str[256];
-    snprintf(pipewire_pipeline_str, sizeof(pipewire_pipeline_str),
+// PipeWire camera helper methods
+std::string CameraManager::CreatePipeWirePipelineString(int pipewire_node_id) {
+    char pipeline_str[256];
+    snprintf(pipeline_str, sizeof(pipeline_str),
              "pipewiresrc path=%d ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink",
              pipewire_node_id);
+    return std::string(pipeline_str);
+}
 
-    std::cout << "🎬 Trying PipeWire pipeline: " << pipewire_pipeline_str << std::endl;
+bool CameraManager::CreateAndValidatePipeWirePipeline(const std::string& pipeline_str) {
+    std::cout << "🎬 Trying PipeWire pipeline: " << pipeline_str << std::endl;
 
     void* pw_error = nullptr;
-    gst_pipeline_ = gst_parse_launch(pipewire_pipeline_str, &pw_error);
+    gst_pipeline_ = gst_parse_launch(pipeline_str.c_str(), &pw_error);
 
     if (!gst_pipeline_) {
         std::cout << "⚠️  PipeWire pipeline creation failed" << std::endl;
@@ -135,9 +128,12 @@ bool CameraManager::TryOpenPipeWireCamera(int camera_index, int width, int heigh
     }
 
     std::cout << "✅ PipeWire pipeline created successfully" << std::endl;
+    return true;
+}
 
+bool CameraManager::ConfigurePipeWireAppSink() {
     // Get the appsink element
-    gst_appsink_ = (GstAppSink*)gst_bin_get_by_name((GstBin*)gst_pipeline_, "sink");
+    gst_appsink_ = reinterpret_cast<GstAppSink*>(gst_bin_get_by_name(reinterpret_cast<GstBin*>(gst_pipeline_), "sink"));
     if (!gst_appsink_) {
         std::cout << "⚠️  Failed to get appsink from PipeWire pipeline" << std::endl;
         CleanupPipeline();
@@ -148,7 +144,10 @@ bool CameraManager::TryOpenPipeWireCamera(int camera_index, int width, int heigh
 
     // Configure appsink
     g_object_set(gst_appsink_, "emit-signals", TRUE, "sync", FALSE, NULL);
+    return true;
+}
 
+bool CameraManager::StartAndValidatePipeWirePipeline() {
     // Set pipeline to playing state
     std::cout << "✅ Appsink configured, setting pipeline to playing state..." << std::endl;
     GstStateChangeReturn ret = static_cast<GstStateChangeReturn>(gst_element_set_state(gst_pipeline_, GST_STATE_PLAYING));
@@ -171,6 +170,36 @@ bool CameraManager::TryOpenPipeWireCamera(int camera_index, int width, int heigh
     if (state != GST_STATE_PLAYING) {
         std::cout << "⚠️  PipeWire pipeline not in playing state" << std::endl;
         CleanupPipeline();
+        return false;
+    }
+
+    return true;
+}
+
+// Helper method to try opening camera with PipeWire pipeline
+bool CameraManager::TryOpenPipeWireCamera(int camera_index, int width, int height, int fps) {
+    std::cout << "📷 Flatpak detected - trying PipeWire camera access" << std::endl;
+
+    // Get the correct PipeWire node ID by enumerating available camera nodes
+    int pipewire_node_id = CameraManager::GetPipeWireNodeIdForCamera(camera_index);
+    if (pipewire_node_id < 0) {
+        std::cout << "⚠️  No PipeWire camera node found for index " << camera_index << std::endl;
+        return false;
+    }
+
+    // Create and validate PipeWire pipeline
+    std::string pipeline_str = CreatePipeWirePipelineString(pipewire_node_id);
+    if (!CreateAndValidatePipeWirePipeline(pipeline_str)) {
+        return false;
+    }
+
+    // Configure appsink
+    if (!ConfigurePipeWireAppSink()) {
+        return false;
+    }
+
+    // Start and validate pipeline
+    if (!StartAndValidatePipeWirePipeline()) {
         return false;
     }
 
@@ -208,7 +237,7 @@ bool CameraManager::TryOpenV4L2Camera(int camera_index, int width, int height, i
     std::cout << "✅ V4L2 pipeline created successfully" << std::endl;
 
     // Get the appsink element
-    gst_appsink_ = (GstAppSink*)gst_bin_get_by_name((GstBin*)gst_pipeline_, "sink");
+    gst_appsink_ = reinterpret_cast<GstAppSink*>(gst_bin_get_by_name(reinterpret_cast<GstBin*>(gst_pipeline_), "sink"));
     if (!gst_appsink_) {
         std::cout << "⚠️  Failed to get appsink from V4L2 pipeline" << std::endl;
         CleanupPipeline();
