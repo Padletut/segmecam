@@ -242,7 +242,7 @@ int ApplicationRun::ExecuteMainLoop(
 ) {
     std::cout << "🎥 Starting main application loop..." << std::endl;
     
-    // Check if face landmarks are available (multi_face_landmarks is required, face_rects is optional)
+    // Check if face landmarks are available
     bool has_landmarks = (multi_face_landmarks_poller != nullptr);
     if (has_landmarks) {
         std::cout << "✅ Face landmarks pollers available for processing" << std::endl;
@@ -250,22 +250,15 @@ int ApplicationRun::ExecuteMainLoop(
         std::cout << "ℹ️  Face landmarks not enabled for this session" << std::endl;
     }
     
-    // Initialize UIManager Enhanced for comprehensive panels
+    // Initialize UIManager Enhanced
     UIManager ui_manager;
-    if (!ui_manager.Initialize(window)) {
-        std::cerr << "❌ Failed to initialize UIManager Enhanced" << std::endl;
+    if (!InitializeApplication(managers, window, app_state, ui_manager)) {
         return -1;
     }
-    
-    // Initialize UI panels with dependencies
-    ui_manager.InitializePanels(app_state, *managers.camera, *managers.effects, managers.config.get());
-    std::cout << "✅ UIManager Enhanced initialized successfully" << std::endl;
     
     // Initialize application state
     bool running = true;
     int64_t frame_id = 0;
-    cv::Mat last_mask_u8;
-    cv::Mat last_display_rgb;
     
     // FPS tracking
     double fps = 0.0;
@@ -274,307 +267,385 @@ int ApplicationRun::ExecuteMainLoop(
     
     std::cout << "✅ Main loop initialized, starting frame processing..." << std::endl;
     
-    // Debug: Check camera manager state
-    if (!managers.camera) {
-        std::cerr << "❌ Camera manager is null!" << std::endl;
-        return -1;
-    }
-    std::cout << "✅ Camera manager is valid" << std::endl;
+    // Run the main processing loop
+    RunMainLoop(managers, mediapipe_graph, mask_poller, multi_face_landmarks_poller, 
+               face_rects_poller, window, app_state, ui_manager, running, frame_id, 
+               fps, fps_frames, fps_last_ms, has_landmarks);
     
+    std::cout << "🛑 Main loop ended" << std::endl;
+    return 0;
+}
+
+void ApplicationRun::RunMainLoop(
+    ManagerCoordination::Managers& managers,
+    std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+    SDL_Window* window,
+    AppState& app_state,
+    UIManager& ui_manager,
+    bool& running,
+    int64_t& frame_id,
+    double& fps,
+    uint64_t& fps_frames,
+    uint32_t& fps_last_ms,
+    bool has_landmarks
+) {
     int frame_count = 0;
     
     // Main application loop
     while (running) {
-        if (frame_count <= 5) {
-            std::cout << "🔄 Starting frame " << frame_count + 1 << " processing..." << std::endl;
-        }
+        frame_count++;
         
         try {
-            frame_count++;
+            FrameProcessingParams params = {
+                managers, mediapipe_graph, mask_poller, multi_face_landmarks_poller, 
+                face_rects_poller, window, app_state, ui_manager, frame_id, fps, 
+                fps_frames, fps_last_ms, frame_count, has_landmarks, running
+            };
             
-            if (frame_count <= 5) {
-                std::cout << "📸 Attempting to capture frame " << frame_count << "..." << std::endl;
-            }
-            
-            // Capture frame from camera using CameraManager
-            cv::Mat frame_bgr;
-            if (frame_count <= 5) {
-                std::cout << "📸 Calling CaptureFrame()..." << std::endl;
-            }
-            if (!managers.camera->CaptureFrame(frame_bgr) || frame_bgr.empty()) {
-                if (frame_count < 10) {  // Only log first few failures
-                    std::cout << "⚠️  Frame capture failed or empty on frame " << frame_count << std::endl;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(16));
-                continue;
+            if (!ProcessFrame(params)) {
+                break; // Exit on error
             }
             
-            if (frame_count <= 5) {
-                std::cout << "✅ Frame " << frame_count << " captured successfully: " << frame_bgr.cols << "x" << frame_bgr.rows << std::endl;
-                // Debug: Show camera frame format and sample pixel values
-                if (!frame_bgr.empty()) {
-                    cv::Vec3b center_pixel = frame_bgr.at<cv::Vec3b>(frame_bgr.rows/2, frame_bgr.cols/2);
-                    cv::Vec3b corner_pixel = frame_bgr.at<cv::Vec3b>(10, 10);
-                    std::cout << "🔍 CAMERA DEBUG - Frame format: " << frame_bgr.type() << " (CV_8UC3=" << CV_8UC3 << ")" << std::endl;
-                    std::cout << "🔍 CAMERA DEBUG - Center pixel BGR(" << frame_bgr.rows/2 << "," << frame_bgr.cols/2 << "): [" 
-                              << (int)center_pixel[0] << "," << (int)center_pixel[1] << "," << (int)center_pixel[2] << "]" << std::endl;
-                    std::cout << "🔍 CAMERA DEBUG - Corner pixel BGR(10,10): [" 
-                              << (int)corner_pixel[0] << "," << (int)corner_pixel[1] << "," << (int)corner_pixel[2] << "]" << std::endl;
-                }
-            }
-        
-            // Update FPS tracking
-            UpdateFPSTracking(fps, fps_frames, fps_last_ms);
-            
-            // Update app state with current frame and camera information
-        app_state.fps = fps;
-        app_state.camera_width = managers.camera->GetCurrentWidth();
-        app_state.camera_height = managers.camera->GetCurrentHeight();
-        app_state.camera_fps = managers.camera->GetCurrentFPS();
-        
-        // Auto-update target FPS based on camera settings
-        static float last_camera_fps = -1.0f;
-        if (std::abs(app_state.camera_fps - last_camera_fps) > 0.1f) {
-            managers.effects->UpdateTargetFPSFromCamera(app_state.camera_fps);
-            app_state.target_fps = managers.effects->GetTargetFPS();
-            last_camera_fps = app_state.camera_fps;
-        }
-        
-        // Update auto processing scale if enabled
-        if (app_state.auto_processing_scale && fps > 0.0) {
-            managers.effects->UpdateAutoProcessingScale(fps);
-            // Update app state with current values for UI display
-            app_state.current_fps = managers.effects->GetCurrentFPS();
-            app_state.fx_adv_scale = managers.effects->GetProcessingScale();
-        }
-        
-        // Send frame to MediaPipe graph
-        {
-            if (frame_count <= 5) {
-                std::cout << "📤 Sending frame " << frame_count << " to MediaPipe..." << std::endl;
-            }
-            std::unique_ptr<mediapipe::ImageFrame> frame;
-            MatToImageFrame(frame_bgr, frame);
-            auto ts = mediapipe::Timestamp(frame_id++);
-            auto st = mediapipe_graph->AddPacketToInputStream("input_video", mediapipe::Adopt(frame.release()).At(ts));
-            if (!st.ok()) {
-                std::cerr << "❌ AddPacket failed: " << st.message() << std::endl;
-                break;
-            }
-            if (frame_count <= 5) {
-                std::cout << "✅ Frame " << frame_count << " sent to MediaPipe successfully" << std::endl;
-            }
-            
-            if (frame_count <= 5) {
-                std::cout << "✅ Frame " << frame_count << " sent, waiting before polling..." << std::endl;
-            }
-        }
-        
-        // Poll for mask output (non-blocking)
-        mediapipe::Packet pkt;
-        while (mask_poller->QueueSize() > 0 && mask_poller->Next(&pkt)) {
-            const auto& mask = pkt.Get<mediapipe::ImageFrame>();
-            
-            // Use the proper mask decoding function (same as original implementation)
-            static bool first_mask_info = false;
-            last_mask_u8 = DecodeMaskToU8(mask, &first_mask_info);
-            
-            // Update app state with mask
-            app_state.last_mask_u8 = last_mask_u8.clone();
-            
-            if (frame_count <= 5) {
-                double min_val, max_val;
-                cv::minMaxLoc(last_mask_u8, &min_val, &max_val);
-                std::cout << "✅ Mask received: " << mask.Width() << "x" << mask.Height() 
-                          << " (format: " << mask.NumberOfChannels() << "ch, " << mask.ByteDepth() << "bd -> 8UC1: " << min_val << "-" << max_val << ")" << std::endl;
-            }
-        }
-        
-        // Poll latest face landmarks (non-blocking) - WITH DEFENSIVE ERROR HANDLING
-        mediapipe::NormalizedLandmarkList latest_lms;
-        bool have_lms = false;
-        std::vector<mediapipe::NormalizedRect> latest_rects;
-        if (has_landmarks && multi_face_landmarks_poller) {
-            try {
-                mediapipe::Packet lp;
-                // Use non-blocking polling with queue size check
-                int queue_size = multi_face_landmarks_poller->QueueSize();
-                if (frame_count <= 5) {
-                    std::cout << "📍 Landmarks queue size: " << queue_size << std::endl;
-                }
-                
-                while (queue_size > 0 && multi_face_landmarks_poller->Next(&lp)) {
-                    try {
-                        // Expecting vector<NormalizedLandmarkList>
-                        const auto& v = lp.Get<std::vector<mediapipe::NormalizedLandmarkList>>();
-                        if (!v.empty()) { 
-                            latest_lms = v[0]; 
-                            have_lms = true;
-                            if (frame_count <= 5) {
-                                std::cout << "✅ Got landmarks with " << latest_lms.landmark_size() << " points" << std::endl;
-                            }
-                        }
-                        queue_size = multi_face_landmarks_poller->QueueSize(); // Update queue size
-                    } catch (const std::exception& e) {
-                        std::cerr << "❌ Error processing landmarks packet: " << e.what() << std::endl;
-                        break;
-                    }
-                }
-                
-                // Process face rects if available
-                if (face_rects_poller) {
-                    mediapipe::Packet rp;
-                    while (face_rects_poller->QueueSize() > 0 && face_rects_poller->Next(&rp)) {
-                        latest_rects = rp.Get<std::vector<mediapipe::NormalizedRect>>();
-                    }
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "❌ Exception during landmarks polling: " << e.what() << std::endl;
-                // Don't exit, just continue without landmarks for this frame
-            }
-        }
-        
-        // Process frame for display
-        cv::Mat display_rgb;
-        cv::Mat processed_frame = frame_bgr;
-        
-        // Apply effects if EffectsManager is available
-        if (managers.effects) {
-            // Sync app_state settings to EffectsManager before processing
-            SyncSettingsToEffectsManager(*managers.effects, app_state);
-            
-            // Only process if we have a mask or face landmarks
-            if (!last_mask_u8.empty() || have_lms) {
-                // Use EffectsManager to process the frame with segmentation mask and face landmarks
-                const mediapipe::NormalizedLandmarkList* landmarks_ptr = (have_lms) ? &latest_lms : nullptr;
-                processed_frame = managers.effects->ProcessFrame(frame_bgr, last_mask_u8, landmarks_ptr);
-            } else {
-                // No processing needed - use original frame
-            }
-        }
-        
-        // EffectsManager now returns RGB directly, no conversion needed
-        display_rgb = processed_frame.clone();
-        
-        // Update app state with current frame
-        app_state.last_display_rgb = display_rgb.clone();
-        
-        // Virtual Camera Output - write to v4l2loopback device
-        if (app_state.vcam.IsOpen() && !display_rgb.empty()) {
-            // Check if frame size matches vcam, reopen if needed
-            if (display_rgb.cols != app_state.vcam.Width() || display_rgb.rows != app_state.vcam.Height()) {
-                // Get virtual camera list and reopen with correct size
-                auto vcam_list = managers.camera->GetVCamList();
-                if (app_state.ui_vcam_idx >= 0 && app_state.ui_vcam_idx < (int)vcam_list.size()) {
-                    app_state.vcam.Open(vcam_list[app_state.ui_vcam_idx].path, display_rgb.cols, display_rgb.rows);
-                }
-            }
-            
-            // Convert RGB to BGR and write to virtual camera
-            cv::Mat display_bgr;
-            cv::cvtColor(display_rgb, display_bgr, cv::COLOR_RGB2BGR);
-            app_state.vcam.WriteBGR(display_bgr);
-        }
-        
-        // Let UIManager handle events first
-        if (!ui_manager.ProcessEvents(running)) {
-            std::cout << "🛑 UIManager ProcessEvents returned false, exiting..." << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "❌ Exception in main loop: " << e.what() << std::endl;
+            break;
+        } catch (...) {
+            std::cerr << "❌ Unknown exception in main loop" << std::endl;
             break;
         }
-        
-        // Handle any dropped files
-        auto dropped_files = ui_manager.GetDroppedFiles();
-        for (const auto& file_path : dropped_files) {
-            std::cout << "🖼️  Processing dropped file: " << file_path << std::endl;
-            cv::Mat img;
-            std::string resolved_path;
-            if (LoadBackgroundImageWithPortal(file_path, img, resolved_path)) {
-                app_state.bg_image = img.clone();
-                app_state.bg_mode = 2; // Automatically switch to Image mode (0=None, 1=Blur, 2=Image, 3=Solid)
-                // Update the background path for profile persistence
-                // Safe string copy with null-termination guarantee
-                if (!resolved_path.empty()) {
-                    std::size_t copy_len = std::min(resolved_path.length(), sizeof(app_state.bg_path_buf) - 1);
-                    std::memcpy(app_state.bg_path_buf, resolved_path.c_str(), copy_len);
-                    app_state.bg_path_buf[copy_len] = '\0';
-                } else {
-                    app_state.bg_path_buf[0] = '\0'; // Ensure null-termination even for empty string
-                }
-                std::cout << "✅ Background image loaded: " << img.cols << "x" << img.rows
-                          << " (auto-switched to Image mode)" << std::endl;
-                std::cout << "🔖 Background path saved: " << app_state.bg_path_buf << std::endl;
-            } else {
-                std::cout << "❌ Failed to load dropped file as image after portal fallback." << std::endl;
-            }
-        }
-        
-        if (!running) {
-            std::cout << "🛑 Running flag set to false by event handler, exiting..." << std::endl;
-            break;
-        }
-        
-        if (frame_count <= 5) {
-            std::cout << "✅ UI events processed successfully for frame " << frame_count << std::endl;
-        }
-        
-        // Get window size for rendering
-        int dw, dh;
-        SDL_GL_GetDrawableSize(window, &dw, &dh);
-        glViewport(0, 0, dw, dh);
-        
-        // Clear screen with dark background (matching original)
-        glClearColor(0.06f, 0.06f, 0.07f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        
-        // Create OpenGL texture from processed frame for background display
-        GLuint video_texture = CreateVideoTexture(display_rgb);
-        
-        // Render camera feed as fullscreen background
-        if (video_texture && !display_rgb.empty()) {
-            glBindTexture(GL_TEXTURE_2D, video_texture);
-            RenderVideoBackground(display_rgb, dw, dh);
-        }
-        
-        // Begin ImGui frame and render UI panels on top
-        ui_manager.BeginFrame();
-        ui_manager.RenderUI();
-        ui_manager.EndFrame();
-        
-        if (frame_count <= 5) {
-            std::cout << "✅ UI rendered successfully for frame " << frame_count << std::endl;
-        }
-        
-        // Clean up texture
-        if (video_texture) {
-            glDeleteTextures(1, &video_texture);
-        }
-        
-        if (frame_count <= 5) {
-            std::cout << "✅ Frame " << frame_count << " completed successfully" << std::endl;
-        }
-        
-        // Check if running flag is still true after each iteration
-        if (!running) {
-            std::cout << "🛑 Running flag became false at end of frame " << frame_count << std::endl;
-            break;
-        }
-        
-        // Log when we're about to continue to the next iteration
-        if (frame_count <= 5) {
-            std::cout << "🔄 Frame " << frame_count << " loop completed, continuing..." << std::endl;
-        }
-        
-    } catch (const std::exception& e) {
-        std::cerr << "❌ Exception in main loop: " << e.what() << std::endl;
-        break;
-    } catch (...) {
-        std::cerr << "❌ Unknown exception in main loop" << std::endl;
-        break;
     }
 }
+
+bool ApplicationRun::ProcessFrameCapture(CameraManager& camera_mgr, cv::Mat& frame_bgr, int frame_count) {
+    if (frame_count <= 5) {
+        std::cout << "📸 Calling CaptureFrame()..." << std::endl;
+    }
+    if (!camera_mgr.CaptureFrame(frame_bgr) || frame_bgr.empty()) {
+        if (frame_count < 10) {  // Only log first few failures
+            std::cout << "⚠️  Frame capture failed or empty on frame " << frame_count << std::endl;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        return false;
+    }
     
-    std::cout << "🛑 Main loop ended" << std::endl;
-    return 0;
+    if (frame_count <= 5) {
+        std::cout << "✅ Frame " << frame_count << " captured successfully: " << frame_bgr.cols << "x" << frame_bgr.rows << std::endl;
+        // Debug: Show camera frame format and sample pixel values
+        if (!frame_bgr.empty()) {
+            cv::Vec3b center_pixel = frame_bgr.at<cv::Vec3b>(frame_bgr.rows/2, frame_bgr.cols/2);
+            cv::Vec3b corner_pixel = frame_bgr.at<cv::Vec3b>(10, 10);
+            std::cout << "🔍 CAMERA DEBUG - Frame format: " << frame_bgr.type() << " (CV_8UC3=" << CV_8UC3 << ")" << std::endl;
+            std::cout << "🔍 CAMERA DEBUG - Center pixel BGR(" << frame_bgr.rows/2 << "," << frame_bgr.cols/2 << "): [" 
+                      << (int)center_pixel[0] << "," << (int)center_pixel[1] << "," << (int)center_pixel[2] << "]" << std::endl;
+            std::cout << "🔍 CAMERA DEBUG - Corner pixel BGR(10,10): [" 
+                      << (int)corner_pixel[0] << "," << (int)corner_pixel[1] << "," << (int)corner_pixel[2] << "]" << std::endl;
+        }
+    }
+    return true;
+}
+
+void ApplicationRun::ProcessMediaPipeOutputs(
+    MediaPipeOutputData& output_data,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+    AppState& app_state,
+    int frame_count,
+    bool has_landmarks
+) {
+    // Process mask output
+    ProcessMaskOutput(output_data, mask_poller, app_state, frame_count);
+    
+    // Process face landmarks if available
+    if (has_landmarks && multi_face_landmarks_poller) {
+        ProcessFaceLandmarks(output_data, multi_face_landmarks_poller, face_rects_poller, frame_count);
+    }
+}
+
+void ApplicationRun::ProcessMaskOutput(
+    MediaPipeOutputData& output_data,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
+    AppState& app_state,
+    int frame_count
+) {
+    mediapipe::Packet pkt;
+    while (mask_poller->QueueSize() > 0 && mask_poller->Next(&pkt)) {
+        const auto& mask = pkt.Get<mediapipe::ImageFrame>();
+        static bool first_mask_info = false;
+        output_data.last_mask_u8 = DecodeMaskToU8(mask, &first_mask_info);
+        app_state.last_mask_u8 = output_data.last_mask_u8.clone();
+        
+        if (frame_count <= 5) {
+            double min_val, max_val;
+            cv::minMaxLoc(output_data.last_mask_u8, &min_val, &max_val);
+            std::cout << "✅ Mask received: " << mask.Width() << "x" << mask.Height() 
+                      << " (format: " << mask.NumberOfChannels() << "ch, " << mask.ByteDepth() << "bd -> 8UC1: " << min_val << "-" << max_val << ")" << std::endl;
+        }
+    }
+}
+
+void ApplicationRun::ProcessFaceLandmarks(
+    MediaPipeOutputData& output_data,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+    int frame_count
+) {
+    try {
+        mediapipe::Packet lp;
+        int queue_size = multi_face_landmarks_poller->QueueSize();
+        if (frame_count <= 5) {
+            std::cout << "📍 Landmarks queue size: " << queue_size << std::endl;
+        }
+        
+        while (queue_size > 0 && multi_face_landmarks_poller->Next(&lp)) {
+            try {
+                const auto& v = lp.Get<std::vector<mediapipe::NormalizedLandmarkList>>();
+                if (!v.empty()) { 
+                    output_data.latest_lms = v[0]; 
+                    output_data.have_lms = true;
+                    if (frame_count <= 5) {
+                        std::cout << "✅ Got landmarks with " << output_data.latest_lms.landmark_size() << " points" << std::endl;
+                    }
+                }
+                queue_size = multi_face_landmarks_poller->QueueSize();
+            } catch (const std::exception& e) {
+                std::cerr << "❌ Error processing landmarks packet: " << e.what() << std::endl;
+                break;
+            }
+        }
+        
+        // Process face rects if available
+        if (face_rects_poller) {
+            mediapipe::Packet rp;
+            while (face_rects_poller->QueueSize() > 0 && face_rects_poller->Next(&rp)) {
+                output_data.latest_rects = rp.Get<std::vector<mediapipe::NormalizedRect>>();
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Exception during landmarks polling: " << e.what() << std::endl;
+    }
+}
+
+cv::Mat ApplicationRun::ProcessAndDisplayFrame(
+    const cv::Mat& frame_bgr,
+    const cv::Mat& last_mask_u8,
+    const mediapipe::NormalizedLandmarkList* landmarks_ptr,
+    EffectsManager& effects_mgr,
+    AppState& app_state,
+    bool have_lms) {
+    
+    cv::Mat processed_frame = frame_bgr;
+    
+    // Apply effects if EffectsManager is available
+    if (!last_mask_u8.empty() || have_lms) {
+        // Use EffectsManager to process the frame with segmentation mask and face landmarks
+        processed_frame = effects_mgr.ProcessFrame(frame_bgr, last_mask_u8, landmarks_ptr);
+    }
+    
+    // EffectsManager now returns RGB directly, no conversion needed
+    cv::Mat display_rgb = processed_frame.clone();
+    
+    // Update app state with current frame
+    app_state.last_display_rgb = display_rgb.clone();
+    
+    return display_rgb;
+}
+
+void ApplicationRun::HandleVirtualCameraOutput(
+    CameraManager& camera_mgr,
+    AppState& app_state,
+    const cv::Mat& display_rgb) {
+    
+    if (!app_state.vcam.IsOpen() || display_rgb.empty()) {
+        return;
+    }
+    
+    // Check if frame size matches vcam, reopen if needed
+    if (display_rgb.cols != app_state.vcam.Width() || display_rgb.rows != app_state.vcam.Height()) {
+        // Get virtual camera list and reopen with correct size
+        auto vcam_list = camera_mgr.GetVCamList();
+        if (app_state.ui_vcam_idx >= 0 && app_state.ui_vcam_idx < (int)vcam_list.size()) {
+            app_state.vcam.Open(vcam_list[app_state.ui_vcam_idx].path, display_rgb.cols, display_rgb.rows);
+        }
+    }
+    
+    // Convert RGB to BGR and write to virtual camera
+    cv::Mat display_bgr;
+    cv::cvtColor(display_rgb, display_bgr, cv::COLOR_RGB2BGR);
+    app_state.vcam.WriteBGR(display_bgr);
+}
+
+void ApplicationRun::HandleDroppedFiles(
+    UIManager& ui_manager,
+    AppState& app_state) {
+    
+    auto dropped_files = ui_manager.GetDroppedFiles();
+    for (const auto& file_path : dropped_files) {
+        std::cout << "🖼️  Processing dropped file: " << file_path << std::endl;
+        cv::Mat img;
+        std::string resolved_path;
+        if (LoadBackgroundImageWithPortal(file_path, img, resolved_path)) {
+            app_state.bg_image = img.clone();
+            app_state.bg_mode = 2; // Automatically switch to Image mode (0=None, 1=Blur, 2=Image, 3=Solid)
+            // Update the background path for profile persistence
+            // Safe string copy with null-termination guarantee
+            if (!resolved_path.empty()) {
+                std::size_t copy_len = std::min(resolved_path.length(), sizeof(app_state.bg_path_buf) - 1);
+                std::memcpy(app_state.bg_path_buf, resolved_path.c_str(), copy_len);
+                app_state.bg_path_buf[copy_len] = '\0';
+            } else {
+                app_state.bg_path_buf[0] = '\0'; // Ensure null-termination even for empty string
+            }
+            std::cout << "✅ Background image loaded: " << img.cols << "x" << img.rows
+                      << " (auto-switched to Image mode)" << std::endl;
+            std::cout << "🔖 Background path saved: " << app_state.bg_path_buf << std::endl;
+        } else {
+            std::cout << "❌ Failed to load dropped file as image after portal fallback." << std::endl;
+        }
+    }
+}
+
+void ApplicationRun::RenderFrame(
+    UIManager& ui_manager,
+    const cv::Mat& display_rgb,
+    SDL_Window* window,
+    int frame_count,
+    bool& running
+) {
+    // Get window size for rendering
+    int dw, dh;
+    SDL_GL_GetDrawableSize(window, &dw, &dh);
+    glViewport(0, 0, dw, dh);
+    
+    // Clear screen with dark background
+    glClearColor(0.06f, 0.06f, 0.07f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    
+    // Create OpenGL texture from processed frame for background display
+    GLuint video_texture = CreateVideoTexture(display_rgb);
+    
+    // Render camera feed as fullscreen background
+    if (video_texture && !display_rgb.empty()) {
+        glBindTexture(GL_TEXTURE_2D, video_texture);
+        RenderVideoBackground(display_rgb, dw, dh);
+    }
+    
+    // Begin ImGui frame and render UI panels on top
+    ui_manager.BeginFrame();
+    ui_manager.RenderUI();
+    ui_manager.EndFrame();
+    
+    if (frame_count <= 5) {
+        std::cout << "✅ UI rendered successfully for frame " << frame_count << std::endl;
+    }
+    
+    // Clean up texture
+    if (video_texture) {
+        glDeleteTextures(1, &video_texture);
+    }
+}
+
+bool ApplicationRun::InitializeApplication(
+    ManagerCoordination::Managers& managers,
+    SDL_Window* window,
+    AppState& app_state,
+    UIManager& ui_manager
+) {
+    // Initialize UIManager Enhanced for comprehensive panels
+    if (!ui_manager.Initialize(window)) {
+        std::cerr << "❌ Failed to initialize UIManager Enhanced" << std::endl;
+        return false;
+    }
+    
+    // Initialize UI panels with dependencies
+    ui_manager.InitializePanels(app_state, *managers.camera, *managers.effects, managers.config.get());
+    std::cout << "✅ UIManager Enhanced initialized successfully" << std::endl;
+    
+    // Debug: Check camera manager state
+    if (!managers.camera) {
+        std::cerr << "❌ Camera manager is null!" << std::endl;
+        return false;
+    }
+    std::cout << "✅ Camera manager is valid" << std::endl;
+    
+    return true;
+}
+
+bool ApplicationRun::ProcessFrame(FrameProcessingParams& params) {
+    // Process frame capture
+    cv::Mat frame_bgr;
+    if (!ProcessFrameCapture(*params.managers.camera, frame_bgr, params.frame_count)) {
+        return true; // Continue to next frame
+    }
+    
+    // Update FPS tracking
+    UpdateFPSTracking(params.fps, params.fps_frames, params.fps_last_ms);
+    
+    // Update app state with current frame and camera information
+    params.app_state.fps = params.fps;
+    params.app_state.camera_width = params.managers.camera->GetCurrentWidth();
+    params.app_state.camera_height = params.managers.camera->GetCurrentHeight();
+    params.app_state.camera_fps = params.managers.camera->GetCurrentFPS();
+    
+    // Auto-update target FPS based on camera settings
+    static float last_camera_fps = -1.0f;
+    if (std::abs(params.app_state.camera_fps - last_camera_fps) > 0.1f) {
+        params.managers.effects->UpdateTargetFPSFromCamera(params.app_state.camera_fps);
+        params.app_state.target_fps = params.managers.effects->GetTargetFPS();
+        last_camera_fps = params.app_state.camera_fps;
+    }
+    
+    // Update auto processing scale if enabled
+    if (params.app_state.auto_processing_scale && params.fps > 0.0) {
+        params.managers.effects->UpdateAutoProcessingScale(params.fps);
+        params.app_state.current_fps = params.managers.effects->GetCurrentFPS();
+        params.app_state.fx_adv_scale = params.managers.effects->GetProcessingScale();
+    }
+    
+    // Send frame to MediaPipe graph
+    std::unique_ptr<mediapipe::ImageFrame> frame;
+    MatToImageFrame(frame_bgr, frame);
+    auto ts = mediapipe::Timestamp(params.frame_id++);
+    auto st = params.mediapipe_graph->AddPacketToInputStream("input_video", mediapipe::Adopt(frame.release()).At(ts));
+    if (!st.ok()) {
+        std::cerr << "❌ AddPacket failed: " << st.message() << std::endl;
+        return false; // Exit on error
+    }
+    
+    // Process MediaPipe outputs
+    MediaPipeOutputData output_data;
+    ProcessMediaPipeOutputs(output_data, params.mask_poller, params.multi_face_landmarks_poller, params.face_rects_poller,
+                           params.app_state, params.frame_count, params.has_landmarks);
+    
+    // Process frame effects and prepare for display
+    const mediapipe::NormalizedLandmarkList* landmarks_ptr = (output_data.have_lms) ? &output_data.latest_lms : nullptr;
+    cv::Mat display_rgb = ProcessAndDisplayFrame(frame_bgr, output_data.last_mask_u8, landmarks_ptr,
+                                                *params.managers.effects, params.app_state, output_data.have_lms);
+    
+    // Handle virtual camera output
+    HandleVirtualCameraOutput(*params.managers.camera, params.app_state, display_rgb);
+    
+    // Let UIManager handle events first
+    if (!params.ui_manager.ProcessEvents(params.running)) {
+        std::cout << "🛑 UIManager ProcessEvents returned false, exiting..." << std::endl;
+        return false;
+    }
+    
+    // Handle any dropped files
+    HandleDroppedFiles(params.ui_manager, params.app_state);
+    
+    if (!params.running) {
+        std::cout << "🛑 Running flag set to false by event handler, exiting..." << std::endl;
+        return false;
+    }
+    
+    // Render complete frame
+    RenderFrame(params.ui_manager, display_rgb, params.window, params.frame_count, params.running);
+    
+    return true;
 }
 
 } // namespace segmecam
