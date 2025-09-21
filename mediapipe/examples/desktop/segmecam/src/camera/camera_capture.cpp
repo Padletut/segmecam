@@ -36,15 +36,16 @@ bool CameraManager::CaptureFrame(cv::Mat& frame) {
 
         // For PipeWire, wait briefly for a frame if one is not yet ready
         std::unique_lock<std::mutex> lock(frame_mutex_);
-        static int wait_log_count = 0;
 
         if (!frame_ready_) {
+            auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(800);
+            bool signaled = false;
+            
+            static int wait_log_count = 0;
             if (wait_log_count < 10) {
                 std::cout << "⏳ CaptureFrame waiting for PipeWire sample..." << std::endl;
             }
 
-            auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(800);
-            bool signaled = false;
             while (!frame_ready_ && state_.is_opened) {
                 signaled = frame_ready_cv_.wait_until(lock, deadline, [this]() {
                     return frame_ready_ || !state_.is_opened;
@@ -78,7 +79,7 @@ bool CameraManager::CaptureFrame(cv::Mat& frame) {
     } else {
         // SECURITY NOTE: Validate frame dimensions to prevent buffer overflow issues
         // CWE-120/CWE-20: Check buffer boundaries and input validation
-        bool success = cap_.read(frame); // cppcheck-suppress
+        bool success = cap_.read(frame);
         if (success && !frame.empty() && frame.cols > 0 && frame.rows > 0) {
             // Validate reasonable frame dimensions to prevent memory exhaustion
             // Maximum reasonable dimensions for camera frames (8K resolution limit)

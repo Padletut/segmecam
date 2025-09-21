@@ -495,7 +495,7 @@ void CameraPanel::LoadProfileIntoState(const std::string& profile_name) {
             std::cout << "Profile loaded: Camera changed to index " << ui_cam_idx_ 
                       << " with resolution index " << ui_res_idx_ 
                       << " and FPS index " << ui_fps_idx_ << std::endl;
-        } else if (!in_flatpak) {
+        } else {
             // Same camera, but possibly different resolution/FPS using actual values
             if (config.camera.res_w > 0 && config.camera.res_h > 0) {
                 camera_mgr_.SetResolution(config.camera.res_w, config.camera.res_h);

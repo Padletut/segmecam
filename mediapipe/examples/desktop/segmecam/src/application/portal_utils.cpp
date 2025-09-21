@@ -1,9 +1,9 @@
 #include "include/application/portal_utils.h"
 
-#include <vector>  // NOLINT - Standard library header resolved by build system
-#include <iostream> // NOLINT - Standard library header resolved by build system
-#include <dlfcn.h>  // NOLINT - Standard library header resolved by build system
-#include <gio/gio.h> // NOLINT - Standard library header resolved by build system
+#include <vector>  
+#include <iostream>
+#include <dlfcn.h>
+#include <gio/gio.h>
 
 #ifndef XDP_PUBLIC
 #define XDP_PUBLIC
