@@ -377,8 +377,12 @@ cc_library( # type: ignore
         "src/ui/background_panel.cpp", 
         "src/ui/beauty_panel.cpp",
         "src/ui/profile_debug_panels.cpp",
+        "src/ui/ui_utils.cpp",
     ],
-    hdrs = ["include/ui/ui_panels.h"],
+    hdrs = [
+        "include/ui/ui_panels.h",
+        "include/ui/ui_utils.h",
+    ],
     includes = [".", "include"],
     deps = [
         ":app_state",

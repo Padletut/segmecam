@@ -10,6 +10,7 @@
 #include "cam_enum.h"
 #include "gstreamer_buffer_utils.h"
 #include "camera_controls.h"
+#include "gstreamer_utils.h"
 
 // Forward declarations for GStreamer types (to avoid header dependencies)
 #ifdef __cplusplus
@@ -72,47 +73,10 @@ typedef unsigned int XdpCameraFlags;
 }
 #endif
 
-// GStreamer function pointer types
-typedef void (*gst_init_func)(int*, char***);
-typedef GstElement* (*gst_pipeline_new_func)(const char*);
-typedef GstElement* (*gst_element_factory_make_func)(const char*, const char*);
-typedef int (*gst_element_set_state_func)(GstElement*, int);
-typedef int (*gst_bin_add_many_func)(void*, ...);
-typedef int (*gst_element_link_many_func)(void*, ...);
-typedef void (*gst_object_unref_func)(void*);
-typedef void* (*gst_app_sink_pull_sample_func)(GstAppSink*);
-typedef void* (*gst_sample_get_buffer_func)(GstSample*);
-typedef void* (*gst_sample_get_caps_func)(GstSample*);
-typedef int (*gst_buffer_map_func)(GstBuffer*, GstMapInfo*, int);
-typedef void (*gst_buffer_unmap_func)(GstBuffer*, GstMapInfo*);
-typedef void (*gst_sample_unref_func)(GstSample*);
-
-// Additional GStreamer function pointer types
-typedef GstCaps* (*gst_caps_new_simple_func)(const char*, ...);
-typedef GstCaps* (*gst_caps_from_string_func)(const char*);
-typedef void (*gst_caps_unref_func)(GstCaps*);
-typedef void (*gst_message_parse_error_func)(void*, void**, void**);
-typedef void* (*gst_bus_timed_pop_filtered_func)(void*, uint64_t, int);
-typedef void* (*gst_element_get_bus_func)(GstElement*);
-typedef void (*gst_bus_unref_func)(void*);
-typedef void (*gst_message_unref_func)(void*);
-typedef int (*gst_app_sink_is_eos_func)(GstAppSink*);
-typedef GstElement* (*gst_parse_launch_func)(const char*, void**);
-typedef GstElement* (*gst_bin_get_by_name_func)(void*, const char*);
-typedef int (*gst_element_get_state_func)(GstElement*, int*, int*, uint64_t);
-typedef const char* (*gst_structure_get_string_func)(const GstStructure*, const char*);
-typedef void (*g_usleep_func)(unsigned long);
-typedef void (*g_error_free_func)(void*);
-
-// GLib function pointer types
-typedef void (*g_main_loop_quit_func)(GMainLoop*);
-typedef void (*g_main_loop_unref_func)(GMainLoop*);
-typedef void (*g_object_set_func)(void*, const char*, ...);
-typedef unsigned long (*g_signal_connect_func)(void*, const char*, void*, void*);
-
-typedef GMainLoop* (*g_main_loop_new_func)(void*, gboolean);
-typedef void (*g_main_loop_run_func)(GMainLoop*);
-typedef void (*g_object_unref_func)(void*);
+// Forward declarations for GStreamer types (to avoid header dependencies)
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // GStreamer constants
 #define GST_STATE_NULL 0
@@ -124,6 +88,10 @@ typedef void (*g_object_unref_func)(void*);
 #define G_OBJECT(obj) ((void*)(obj))
 #define GST_ELEMENT(obj) ((GstElement*)(obj))
 #define GST_APP_SINK(obj) ((GstAppSink*)(obj))
+
+#ifdef __cplusplus
+}
+#endif
 
 namespace segmecam {
 

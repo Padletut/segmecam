@@ -4,7 +4,6 @@
 #include <dlfcn.h>
 
 // Constants from original file
-const int FALSE = 0;
 constexpr unsigned int kXdpCameraFlagNone = 0;
 
 namespace {

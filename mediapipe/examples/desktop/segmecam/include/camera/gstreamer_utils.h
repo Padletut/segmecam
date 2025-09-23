@@ -23,6 +23,7 @@ typedef struct _GstSample GstSample;
 typedef struct _GstBuffer GstBuffer;
 typedef struct _GstCaps GstCaps;
 typedef struct _GstMapInfo GstMapInfo;
+typedef struct _GstStructure GstStructure;
 typedef struct _GMainLoop GMainLoop;
 typedef struct _GError GError;
 
@@ -48,6 +49,33 @@ typedef void (*gst_buffer_unmap_func)(GstBuffer*, GstMapInfo*);
 
 // GStreamer sample unref function
 typedef void (*gst_sample_unref_func)(GstSample*);
+
+// Additional GStreamer function pointer types
+typedef GstCaps* (*gst_caps_new_simple_func)(const char*, ...);
+typedef GstCaps* (*gst_caps_from_string_func)(const char*);
+typedef void (*gst_caps_unref_func)(GstCaps*);
+typedef void (*gst_message_parse_error_func)(void*, void**, void**);
+typedef void* (*gst_bus_timed_pop_filtered_func)(void*, uint64_t, int);
+typedef void* (*gst_element_get_bus_func)(GstElement*);
+typedef void (*gst_bus_unref_func)(void*);
+typedef void (*gst_message_unref_func)(void*);
+typedef GstElement* (*gst_parse_launch_func)(const char*, void**);
+typedef GstElement* (*gst_bin_get_by_name_func)(void*, const char*);
+
+// GLib function pointer types
+typedef void (*g_main_loop_quit_func)(GMainLoop*);
+typedef void (*g_main_loop_unref_func)(GMainLoop*);
+typedef void (*g_object_set_func)(void*, const char*, ...);
+typedef unsigned long (*g_signal_connect_func)(void*, const char*, void*, void*);
+
+typedef GMainLoop* (*g_main_loop_new_func)(void*, gboolean);
+typedef void (*g_main_loop_run_func)(GMainLoop*);
+typedef void (*g_object_unref_func)(void*);
+
+// Additional utility function pointer types
+typedef const char* (*gst_structure_get_string_func)(const GstStructure*, const char*);
+typedef void (*g_usleep_func)(unsigned long);
+typedef void (*g_error_free_func)(void*);
 
 // External function pointers (shared across camera files)
 extern gst_init_func gst_init;

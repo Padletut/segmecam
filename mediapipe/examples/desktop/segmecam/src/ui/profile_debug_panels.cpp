@@ -1,4 +1,5 @@
 #include "include/ui/ui_panels.h"
+#include "include/ui/ui_utils.h"
 #include "include/camera/camera_manager.h"
 #include "src/config/config_manager.h"
 #include <iostream>
@@ -17,61 +18,29 @@ void ProfilePanel::Render() {
     
     ImGui::Text("Profile");
     
-    // List existing profiles (if ConfigManager is available)
-    if (config_mgr_) {
+    // Use common profile selection UI
+    if (ui_utils::RenderProfileSelection(config_mgr_, ui_profile_idx_, profile_name_buf_,
+                                       sizeof(profile_name_buf_), "Name", true)) {
+        // Profile load was requested
         auto profile_names = config_mgr_->ListProfiles();
-        if (profile_names.empty()) {
-            ImGui::TextDisabled("No profiles yet");
-        } else {
-            std::vector<const char*> items;
-            for (const auto& name : profile_names) {
-                items.push_back(name.c_str());
-            }
-            
-            // Ensure ui_profile_idx_ is valid
-            if (ui_profile_idx_ < 0 || ui_profile_idx_ >= (int)profile_names.size()) {
-                ui_profile_idx_ = 0;
-            }
-            
-            ImGui::Combo("Select", &ui_profile_idx_, items.data(), (int)items.size());
-            ImGui::SameLine();
-            
-            if (ImGui::Button("Load##prof") && ui_profile_idx_ >= 0) {
-                LoadProfileIntoState(profile_names[ui_profile_idx_]);
-                // Update name buffer to match loaded profile
-                strncpy(profile_name_buf_, profile_names[ui_profile_idx_].c_str(), sizeof(profile_name_buf_) - 1);
-                profile_name_buf_[sizeof(profile_name_buf_) - 1] = '\0';
-            }
+        if (ui_profile_idx_ >= 0 && ui_profile_idx_ < (int)profile_names.size()) {
+            LoadProfileIntoState(profile_names[ui_profile_idx_]);
+            // Update name buffer to match loaded profile
+            strncpy(profile_name_buf_, profile_names[ui_profile_idx_].c_str(), sizeof(profile_name_buf_) - 1);
+            profile_name_buf_[sizeof(profile_name_buf_) - 1] = '\0';
         }
-        
-        ImGui::InputText("Name", profile_name_buf_, sizeof(profile_name_buf_));
-        
-        if (ImGui::Button("Save##prof")) {
-            if (strlen(profile_name_buf_) > 0) {
-                if (SaveStateToProfile(profile_name_buf_)) {
-                    std::cout << "Profile saved: " << profile_name_buf_ << std::endl;
-                    // Update profile index after successful save
-                    auto profile_names = config_mgr_->ListProfiles();
-                    auto it = std::find(profile_names.begin(), profile_names.end(), profile_name_buf_);
-                    ui_profile_idx_ = (it == profile_names.end()) ? -1 : (int)std::distance(profile_names.begin(), it);
-                }
+    }
+    
+    // Handle save button (this needs to be done after the common function call)
+    if (config_mgr_ && ImGui::Button("Save##prof")) {
+        if (strlen(profile_name_buf_) > 0) {
+            if (SaveStateToProfile(profile_name_buf_)) {
+                std::cout << "Profile saved: " << profile_name_buf_ << std::endl;
+                // Update profile index after successful save
+                auto profile_names = config_mgr_->ListProfiles();
+                auto it = std::find(profile_names.begin(), profile_names.end(), profile_name_buf_);
+                ui_profile_idx_ = (it == profile_names.end()) ? -1 : (int)std::distance(profile_names.begin(), it);
             }
-        }
-        ImGui::SameLine();
-        
-        if (ImGui::Button("Set Default##prof") && strlen(profile_name_buf_) > 0) {
-            config_mgr_->SetDefaultProfile(profile_name_buf_);
-            std::cout << "Set default profile: " << profile_name_buf_ << std::endl;
-        }
-    } else {
-        ImGui::TextDisabled("Profile system not available");
-        ImGui::InputText("Name", profile_name_buf_, sizeof(profile_name_buf_));
-        if (ImGui::Button("Save##prof")) {
-            ImGui::TextDisabled("Config manager not initialized");
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Set Default##prof")) {
-            ImGui::TextDisabled("Config manager not initialized");
         }
     }
     

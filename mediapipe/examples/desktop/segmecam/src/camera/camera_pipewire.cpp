@@ -29,10 +29,6 @@ extern void (*g_signal_connect)(void*, const char*, void*, void*);
 #define GST_STATE_CHANGE_FAILURE -1
 #define GST_STATE_PLAYING 4
 
-// GLib constants
-const int TRUE = 1;
-const int FALSE = 0;
-
 // Macros
 #define G_CALLBACK(f) ((void*)(f))
 
