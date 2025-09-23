@@ -138,3 +138,4 @@ build_ios_examples.sh
 .github/instructions/codacy.instructions.md
 codacy-fixes.patch
 .codacy/results.sarif
+.continue/mcpServers/new-mcp-server.yaml
