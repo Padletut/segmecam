@@ -29,47 +29,6 @@ namespace segmecam {
 namespace segmecam {
 
 /**
- * Data structure for main loop parameters
- */
-struct MainLoopParams {
-    ManagerCoordination::Managers& managers;
-    std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph;
-    std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller;
-    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller;
-    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller;
-    SDL_Window* window;
-    AppState& app_state;
-    UIManager& ui_manager;
-    bool& running;
-    int64_t& frame_id;
-    double& fps;
-    uint64_t& fps_frames;
-    uint32_t& fps_last_ms;
-    bool has_landmarks;
-};
-
-/**
- * Parameters for initializing FrameProcessingParams structure
- */
-struct FrameProcessingInitParams {
-    ManagerCoordination::Managers& managers;
-    std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph;
-    std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller;
-    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller;
-    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller;
-    SDL_Window* window;
-    AppState& app_state;
-    UIManager& ui_manager;
-    int64_t& frame_id;
-    double& fps;
-    uint64_t& fps_frames;
-    uint32_t& fps_last_ms;
-    int& frame_count;
-    bool& running;
-    bool& has_landmarks;
-};
-
-/**
  * Application main loop module - handles the core application execution loop
  * 
  * This module follows the modular architecture pattern and provides the main
@@ -100,11 +59,6 @@ public:
     );
 
     /**
-     * Run the main processing loop
-     */
-    static void RunMainLoop(MainLoopParams& params);
-
-    /**
      * Sync status FROM EffectsManager back TO app_state (e.g., OpenCL availability)
      */
     static void SyncStatusFromEffectsManager(const EffectsManager& effects_manager, AppState& app_state);
@@ -121,14 +75,6 @@ private:
      * @return true if all managers are available, false otherwise
      */
     static bool VerifyRequiredManagers(const ManagerCoordination::Managers& managers);
-
-    /**
-     * Initialize frame processing state and create parameters structure
-     * @param init_params Parameters needed to initialize FrameProcessingParams
-     * @return Initialized FrameProcessingParams structure
-     */
-    static FrameProcessingParams InitializeFrameProcessingState(
-        const FrameProcessingInitParams& init_params);
 
 };
 

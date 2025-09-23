@@ -100,14 +100,6 @@ typedef GstElement* (*gst_parse_launch_func)(const char*, void**);
 typedef GstElement* (*gst_bin_get_by_name_func)(void*, const char*);
 typedef int (*gst_element_get_state_func)(GstElement*, int*, int*, uint64_t);
 typedef const char* (*gst_structure_get_string_func)(const GstStructure*, const char*);
-typedef void (*g_error_free_func)(void*);
-typedef void* (*gst_element_get_bus_func)(GstElement*);
-typedef void (*gst_bus_unref_func)(void*);
-typedef void (*gst_message_unref_func)(void*);
-typedef int (*gst_app_sink_is_eos_func)(GstAppSink*);
-typedef GstElement* (*gst_parse_launch_func)(const char*, void**);
-typedef GstElement* (*gst_bin_get_by_name_func)(void*, const char*);
-typedef int (*gst_element_get_state_func)(GstElement*, int*, int*, uint64_t);
 typedef void (*g_usleep_func)(unsigned long);
 typedef void (*g_error_free_func)(void*);
 

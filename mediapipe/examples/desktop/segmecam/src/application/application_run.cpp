@@ -29,31 +29,6 @@ bool ApplicationRun::VerifyRequiredManagers(const ManagerCoordination::Managers&
     return true;
 }
 
-FrameProcessingParams ApplicationRun::InitializeFrameProcessingState(
-    const FrameProcessingInitParams& init_params) {
-
-    // Set up frame processing parameters
-    FrameProcessingParams params = {
-        init_params.managers,
-        init_params.mediapipe_graph,
-        init_params.mask_poller,
-        init_params.multi_face_landmarks_poller,
-        init_params.face_rects_poller,
-        init_params.window,
-        init_params.app_state,
-        init_params.ui_manager,
-        init_params.frame_id,
-        init_params.fps,
-        init_params.fps_frames,
-        init_params.fps_last_ms,
-        init_params.frame_count,
-        init_params.running,
-        init_params.has_landmarks
-    };
-
-    return params;
-}
-
 int ApplicationRun::ExecuteMainLoop(
     ManagerCoordination::Managers& managers,
     std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph,
@@ -80,13 +55,11 @@ int ApplicationRun::ExecuteMainLoop(
     bool has_landmarks = (multi_face_landmarks_poller != nullptr);
 
     // Initialize frame processing state and parameters
-    FrameProcessingInitParams init_params = {
+    FrameProcessingParams params = {
         managers, mediapipe_graph, mask_poller, multi_face_landmarks_poller,
         face_rects_poller, window, app_state, *managers.ui,
         frame_id, fps, fps_frames, fps_last_ms, frame_count, running, has_landmarks
     };
-
-    FrameProcessingParams params = InitializeFrameProcessingState(init_params);
 
     std::cout << "🎬 Starting main event loop..." << std::endl;
 
