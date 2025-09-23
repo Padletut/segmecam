@@ -55,13 +55,13 @@ mediapipe/examples/desktop/segmecam/
 │       └── settings_panel.cpp
 ├── segmecam_gui_gpu.cpp          # Minimal main() that coordinates components
 ├── segmecam_composite.h          # Existing files
-├── segmecam_composite.cc
+├── segmecam_composite.cpp
 ├── segmecam_face_effects.h
-├── segmecam_face_effects.cc
+├── segmecam_face_effects.cpp
 ├── presets.h
-├── presets.cc
+├── presets.cpp
 ├── vcam.h
-├── vcam.cc
+├── vcam.cpp
 ├── cam_enum.h
 ├── cam_enum.cc
 └── gpu_detector.h

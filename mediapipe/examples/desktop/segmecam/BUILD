@@ -2,7 +2,7 @@ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library") # type: ignore
 
 cc_library( # type: ignore
     name = "segmecam_composite",
-    srcs = ["src/render/segmecam_composite.cc"],
+    srcs = ["src/render/segmecam_composite.cpp"],
     hdrs = ["include/render/segmecam_composite.h"],
     includes = ["."],
     deps = [
@@ -14,7 +14,7 @@ cc_library( # type: ignore
 
 cc_library( # type: ignore
     name = "segmecam_face_effects",
-    srcs = ["src/effects/segmecam_face_effects.cc", "src/camera/cam_enum.cc"],
+    srcs = ["src/effects/segmecam_face_effects.cpp", "src/camera/cam_enum.cpp"],
     hdrs = ["include/effects/segmecam_face_effects.h", "include/camera/cam_enum.h"],
     includes = [".", "include"],
     deps = [
@@ -26,15 +26,13 @@ cc_library( # type: ignore
         "//mediapipe/framework/formats:landmark_cc_proto",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
-        "//mediapipe/framework/port:opencv_highgui",
     ],
     copts = ["-I/usr/include/opencv4"],
-    linkopts = ["-lopencv_core", "-lopencv_imgproc", "-lopencv_highgui"],
 )
 
 cc_library( # type: ignore
     name = "presets",
-    srcs = ["src/effects/presets.cc"],
+    srcs = ["src/effects/presets.cpp"],
     hdrs = ["include/effects/presets.h"],
     includes = ["."],
     deps = [],
@@ -43,7 +41,7 @@ cc_library( # type: ignore
 
 cc_library( # type: ignore
     name = "vcam",
-    srcs = ["src/camera/vcam.cc"],
+    srcs = ["src/camera/vcam.cpp"],
     hdrs = ["include/camera/vcam.h"],
     includes = ["."],
     deps = [
@@ -307,7 +305,7 @@ cc_library( # type: ignore
         "src/camera/camera_controls.cpp",
         "src/camera/camera_enumeration.cpp",
         "src/camera/camera_setup.cpp",
-        "src/camera/cam_enum.cc",  # V4L2 control functions
+        "src/camera/cam_enum.cpp",  # V4L2 control functions
     ],
     hdrs = [
         "include/camera/camera_manager.h", 
@@ -453,7 +451,7 @@ cc_library( # type: ignore
 # Effects Manager Library (Phase 5 Refactoring)
 cc_library( # type: ignore
     name = "face_regions",
-    srcs = ["src/effects/face_regions.cc"],
+    srcs = ["src/effects/face_regions.cpp"],
     hdrs = ["include/effects/face_regions.h"],
     includes = [".", "include"],
     deps = [
@@ -466,7 +464,7 @@ cc_library( # type: ignore
 
 cc_library( # type: ignore
     name = "lip_effects",
-    srcs = ["src/effects/lip_effects.cc"],
+    srcs = ["src/effects/lip_effects.cpp"],
     hdrs = ["include/effects/lip_effects.h"],
     includes = [".", "include"],
     deps = [
@@ -480,7 +478,7 @@ cc_library( # type: ignore
 
 cc_library( # type: ignore
     name = "teeth_effects",
-    srcs = ["src/effects/teeth_effects.cc"],
+    srcs = ["src/effects/teeth_effects.cpp"],
     hdrs = ["include/effects/teeth_effects.h"],
     includes = [".", "include"],
     deps = [
@@ -494,7 +492,7 @@ cc_library( # type: ignore
 
 cc_library( # type: ignore
     name = "skin_effects",
-    srcs = ["src/effects/skin_effects.cc"],
+    srcs = ["src/effects/skin_effects.cpp"],
     hdrs = ["include/effects/skin_effects.h"],
     includes = [".", "include"],
     deps = [
@@ -508,7 +506,7 @@ cc_library( # type: ignore
 
 cc_library( # type: ignore
     name = "advanced_skin_effects",
-    srcs = ["src/effects/advanced_skin_effects.cc"],
+    srcs = ["src/effects/advanced_skin_effects.cpp"],
     hdrs = ["include/effects/advanced_skin_effects.h"],
     includes = [".", "include"],
     deps = [
@@ -578,7 +576,7 @@ cc_binary( # pyright: ignore[reportUndefinedVariable]
         "include/application/render_utils.h",
         "src/application/app_state.cpp",
         "include/application/app_state.h",
-        "src/camera/vcam.cc",
+        "src/camera/vcam.cpp",
         "include/camera/vcam.h",
     ],
     includes = [".", "include"],
