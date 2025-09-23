@@ -134,6 +134,11 @@ typedef void (*g_object_unref_func)(void*);
 
 namespace segmecam {
 
+// Forward declarations for modular components
+class CameraControls;
+class CameraEnumeration;
+class CameraSetup;
+
 // Configuration for camera system
 struct CameraConfig {
     int default_camera_index = 0;
@@ -310,9 +315,6 @@ public:
 private:
     // Helper methods
     void LogV4L2InitializationSuccess();
-    void SelectInitialCamera(const CameraConfig& config);
-    void SelectInitialResolution(const CameraConfig& config);
-    void SetupCameraPathAndFPS(const CameraConfig& config);
 
     // Frame capture helpers
     bool WaitForPipeWireFrame();
@@ -332,6 +334,11 @@ private:
     std::vector<CameraDesc> cam_list_;
     std::vector<LoopbackDesc> vcam_list_;
     std::vector<int> ui_fps_opts_;
+    
+    // New modular components
+    std::unique_ptr<CameraControls> camera_controls_;
+    std::unique_ptr<CameraEnumeration> camera_enumeration_;
+    std::unique_ptr<CameraSetup> camera_setup_;
     
     // OpenCV capture
     cv::VideoCapture cap_;
@@ -418,10 +425,7 @@ private:
     
     // Helper methods
     cv::VideoCapture OpenCapture(int idx, int w, int h);
-    void QueryCtrl(const std::string& cam_path, uint32_t id, CtrlRange* out);
-    bool SetCtrl(const std::string& cam_path, uint32_t id, int32_t value);
     bool ConvertSampleToBgr(GstSample* sample, cv::Mat& frame_out, int& width_out, int& height_out);
-    bool GetCtrl(const std::string& cam_path, uint32_t id, int32_t* value);
     void UpdateFPSOptions(const std::string& cam_path, int width, int height);
 
     // PipeWire initialization helpers

@@ -1,6 +1,9 @@
 #include "include/camera/camera_manager.h"
 #include "include/camera/gstreamer_utils.h"
 #include "include/camera/gstreamer_buffer_utils.h"
+#include "include/camera/camera_controls.h"
+#include "include/camera/camera_enumeration.h"
+#include "include/camera/camera_setup.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -34,7 +37,10 @@ std::string ToUpperCopy(const std::string& value) {
 
 } // namespace
 
-CameraManager::CameraManager() {
+CameraManager::CameraManager() 
+    : camera_controls_(std::make_unique<CameraControls>()),
+      camera_enumeration_(std::make_unique<CameraEnumeration>()),
+      camera_setup_(std::make_unique<CameraSetup>()) {
     // Constructor - GStreamer will be initialized at runtime if needed
 }
 
@@ -103,66 +109,13 @@ void CameraManager::LogV4L2InitializationSuccess() {
     std::cout << "🔧 Backend: " << GetBackendName() << std::endl;
 }
 
-void CameraManager::SelectInitialCamera(const CameraConfig& config) {
-    // Find the requested camera index in the enumerated list
-    for (size_t i = 0; i < cam_list_.size(); ++i) {
-        if (cam_list_[i].index == config.default_camera_index) {
-            state_.ui_cam_idx = (int)i;
-            break;
-        }
-    }
-}
-
-void CameraManager::SelectInitialResolution(const CameraConfig& config) {
-    // Set initial resolution from available cameras
-    if (!cam_list_.empty() && !cam_list_[state_.ui_cam_idx].resolutions.empty()) {
-        auto resolutions = cam_list_[state_.ui_cam_idx].resolutions;
-        
-        // Try to find matching resolution or use the largest available
-        int best_res_idx = (int)resolutions.size() - 1; // Default to largest
-        
-        if (config.default_width > 0 && config.default_height > 0) {
-            for (size_t i = 0; i < resolutions.size(); ++i) {
-                if (resolutions[i].first == config.default_width && 
-                    resolutions[i].second == config.default_height) {
-                    best_res_idx = (int)i;
-                    break;
-                }
-            }
-        }
-        
-        state_.ui_res_idx = best_res_idx;
-        auto wh = resolutions[best_res_idx];
-        state_.current_width = wh.first;
-        state_.current_height = wh.second;
-    }
-}
-
-void CameraManager::SetupCameraPathAndFPS(const CameraConfig& config) {
-    // Setup camera path and FPS options
-    if (!cam_list_.empty()) {
-        state_.current_camera_path = cam_list_[state_.ui_cam_idx].path;
-        UpdateFPSOptions(state_.current_camera_path, state_.current_width, state_.current_height);
-        
-        // Find best FPS option
-        if (!ui_fps_opts_.empty()) {
-            state_.ui_fps_idx = (int)ui_fps_opts_.size() - 1; // Default to highest
-            
-            if (config.default_fps > 0) {
-                for (size_t i = 0; i < ui_fps_opts_.size(); ++i) {
-                    if (ui_fps_opts_[i] == config.default_fps) {
-                        state_.ui_fps_idx = (int)i;
-                        break;
-                    }
-                }
-            }
-            
-            state_.current_fps = ui_fps_opts_[state_.ui_fps_idx];
-        }
-    }
-}
-
 int CameraManager::InitializeV4L2(const CameraConfig& config) {
+    // Store config
+    config_ = config;
+    
+    // Initialize camera enumeration
+    camera_enumeration_->Initialize();
+    
     // Enumerate available cameras
     RefreshCameraList();
     RefreshVCamList();
@@ -172,11 +125,14 @@ int CameraManager::InitializeV4L2(const CameraConfig& config) {
         return 1;
     }
     
-    SelectInitialCamera(config);
-    SelectInitialResolution(config);
-    SetupCameraPathAndFPS(config);
+    // Use CameraSetup for initial camera selection and configuration
+    camera_setup_->Initialize(config, cam_list_, state_);
+    camera_setup_->SelectInitialCamera(cam_list_, config, state_);
+    camera_setup_->SelectInitialResolution(cam_list_, config, state_);
+    camera_setup_->SetupCameraPathAndFPS(cam_list_, config, state_, ui_fps_opts_);
     
     // Initialize camera controls
+    camera_controls_->Initialize(state_.current_camera_path);
     RefreshControls();
     ApplyDefaultControls();
     
@@ -219,9 +175,9 @@ bool CameraManager::IsOpened() const {
 void CameraManager::RefreshCameraList() {
     std::cout << "🔍 Enumerating cameras..." << std::endl;
     if (IsRunningInFlatpak()) {
-        cam_list_ = EnumerateCamerasPortal();
+        cam_list_ = camera_enumeration_->EnumerateCamerasPortal(config_);
     } else {
-        cam_list_ = EnumerateCameras();
+        cam_list_ = camera_enumeration_->EnumerateCameras();
     }
     
     std::cout << "📷 Found " << cam_list_.size() << " camera(s):" << std::endl;
@@ -233,7 +189,7 @@ void CameraManager::RefreshCameraList() {
 
 void CameraManager::RefreshVCamList() {
     std::cout << "🔍 Enumerating virtual cameras..." << std::endl;
-    vcam_list_ = EnumerateLoopbackDevices();
+    vcam_list_ = camera_enumeration_->EnumerateLoopbackDevices();
     
     std::cout << "📹 Found " << vcam_list_.size() << " virtual camera(s):" << std::endl;
     for (const auto& vcam : vcam_list_) {
@@ -329,102 +285,74 @@ bool CameraManager::SetFPS(int fps) {
 }
 
 void CameraManager::RefreshControls() {
-    if (state_.current_camera_path.empty()) return;
-    
-    std::cout << "🔧 Refreshing camera controls for " << state_.current_camera_path << std::endl;
-    
-    QueryCtrl(state_.current_camera_path, V4L2_CID_BRIGHTNESS, &r_brightness_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_CONTRAST, &r_contrast_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_SATURATION, &r_saturation_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_GAIN, &r_gain_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_SHARPNESS, &r_sharpness_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_ZOOM_ABSOLUTE, &r_zoom_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_FOCUS_ABSOLUTE, &r_focus_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_AUTOGAIN, &r_autogain_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_FOCUS_AUTO, &r_autofocus_);
-    
-    // Exposure controls
-    QueryCtrl(state_.current_camera_path, V4L2_CID_EXPOSURE_AUTO, &r_autoexposure_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_EXPOSURE_ABSOLUTE, &r_exposure_abs_);
-    
-    // White balance controls
-    QueryCtrl(state_.current_camera_path, V4L2_CID_AUTO_WHITE_BALANCE, &r_awb_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_WHITE_BALANCE_TEMPERATURE, &r_wb_temp_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_BACKLIGHT_COMPENSATION, &r_backlight_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_EXPOSURE_AUTO_PRIORITY, &r_expo_dynfps_);
+    camera_controls_->RefreshControls(state_.current_camera_path);
 }
 
 void CameraManager::ApplyDefaultControls() {
     if (!config_.enable_auto_focus || state_.current_camera_path.empty()) return;
     
-    // Set auto focus enabled by default if supported
-    if (r_autofocus_.available && r_autofocus_.val == 0) {
-        if (SetCtrl(state_.current_camera_path, V4L2_CID_FOCUS_AUTO, 1)) {
-            r_autofocus_.val = 1;
-            std::cout << "🔧 Enabled auto focus by default" << std::endl;
-        }
-    }
+    camera_controls_->ApplyDefaultControls(state_.current_camera_path, config_.enable_auto_focus);
 }
 
 // Control setter methods
 bool CameraManager::SetBrightness(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_BRIGHTNESS, value);
+    return camera_controls_->SetBrightness(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetContrast(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_CONTRAST, value);
+    return camera_controls_->SetContrast(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetSaturation(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_SATURATION, value);
+    return camera_controls_->SetSaturation(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetGain(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_GAIN, value);
+    return camera_controls_->SetGain(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetSharpness(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_SHARPNESS, value);
+    return camera_controls_->SetSharpness(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetZoom(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_ZOOM_ABSOLUTE, value);
+    return camera_controls_->SetZoom(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetFocus(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_FOCUS_ABSOLUTE, value);
+    return camera_controls_->SetFocus(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetAutoGain(bool enabled) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_AUTOGAIN, enabled ? 1 : 0);
+    return camera_controls_->SetAutoGain(state_.current_camera_path, enabled);
 }
 
 bool CameraManager::SetAutoFocus(bool enabled) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_FOCUS_AUTO, enabled ? 1 : 0);
+    return camera_controls_->SetAutoFocus(state_.current_camera_path, enabled);
 }
 
 bool CameraManager::SetAutoExposure(bool enabled) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_EXPOSURE_AUTO, enabled ? V4L2_EXPOSURE_AUTO : V4L2_EXPOSURE_MANUAL);
+    return camera_controls_->SetAutoExposure(state_.current_camera_path, enabled);
 }
 
 bool CameraManager::SetExposure(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_EXPOSURE_ABSOLUTE, value);
+    return camera_controls_->SetExposure(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetWhiteBalance(bool auto_enabled) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_AUTO_WHITE_BALANCE, auto_enabled ? 1 : 0);
+    return camera_controls_->SetWhiteBalance(state_.current_camera_path, auto_enabled);
 }
 
 bool CameraManager::SetWhiteBalanceTemperature(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_WHITE_BALANCE_TEMPERATURE, value);
+    return camera_controls_->SetWhiteBalanceTemperature(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetBacklightCompensation(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_BACKLIGHT_COMPENSATION, value);
+    return camera_controls_->SetBacklightCompensation(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetControl(uint32_t control_id, int value) {
-    return SetCtrl(state_.current_camera_path, control_id, value);
+    return camera_controls_->SetControl(state_.current_camera_path, control_id, value);
 }
 
 std::string CameraManager::GetBackendName() const {
@@ -471,34 +399,8 @@ cv::VideoCapture CameraManager::OpenCapture(int idx, int w, int h) {
     return c;
 }
 
-void CameraManager::QueryCtrl(const std::string& cam_path, uint32_t id, CtrlRange* out) {
-    if (!::QueryCtrl(cam_path, id, out)) {
-        *out = CtrlRange{}; // Reset to defaults if query fails
-    }
-}
-
-bool CameraManager::SetCtrl(const std::string& cam_path, uint32_t id, int32_t value) {
-    bool success = ::SetCtrl(cam_path, id, value);
-    if (success) {
-        // Update the cached value in the appropriate range
-        // This is a simplified approach - in a full implementation you'd want
-        // to identify which control was set and update its cached val
-        RefreshControls();
-    }
-    return success;
-}
-
-bool CameraManager::GetCtrl(const std::string& cam_path, uint32_t id, int32_t* value) {
-    return ::GetCtrl(cam_path, id, value);
-}
-
 void CameraManager::UpdateFPSOptions(const std::string& cam_path, int width, int height) {
-    if (cam_path == "PipeWire" || cam_path == "pipewire") {
-        ui_fps_opts_ = {15, 24, 30, 45, 60};
-        return;
-    }
-
-    ui_fps_opts_ = EnumerateFPS(cam_path, width, height);
+    ui_fps_opts_ = camera_enumeration_->UpdateFPSOptions(cam_path, width, height);
     
     if (!ui_fps_opts_.empty()) {
         std::cout << "🎬 Available FPS options: ";

@@ -297,8 +297,18 @@ cc_library( # type: ignore
         "src/camera/camera_gstreamer_close.cpp",
         "src/camera/camera_gstreamer_capture.cpp",
         "src/camera/gstreamer_utils.cpp",
+        "src/camera/camera_controls.cpp",
+        "src/camera/camera_enumeration.cpp",
+        "src/camera/camera_setup.cpp",
+        "cam_enum.cc",  # V4L2 control functions
     ],
-    hdrs = ["include/camera/camera_manager.h", "include/camera/gstreamer_utils.h"],
+    hdrs = [
+        "include/camera/camera_manager.h", 
+        "include/camera/gstreamer_utils.h",
+        "include/camera/camera_controls.h",
+        "include/camera/camera_enumeration.h",
+        "include/camera/camera_setup.h",
+    ],
     includes = [".", "include"],
     deps = [
         ":gstreamer_buffer_utils",  # for buffer conversion utilities
