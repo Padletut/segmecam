@@ -16,8 +16,13 @@ cc_library( # type: ignore
     name = "segmecam_face_effects",
     srcs = ["src/effects/segmecam_face_effects.cc", "src/camera/cam_enum.cc"],
     hdrs = ["include/effects/segmecam_face_effects.h", "include/camera/cam_enum.h"],
-    includes = ["."],
+    includes = [".", "include"],
     deps = [
+        ":face_regions",
+        ":lip_effects",
+        ":teeth_effects",
+        ":skin_effects",
+        ":advanced_skin_effects",
         "//mediapipe/framework/formats:landmark_cc_proto",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
@@ -446,6 +451,77 @@ cc_library( # type: ignore
 )
 
 # Effects Manager Library (Phase 5 Refactoring)
+cc_library( # type: ignore
+    name = "face_regions",
+    srcs = ["src/effects/face_regions.cc"],
+    hdrs = ["include/effects/face_regions.h"],
+    includes = [".", "include"],
+    deps = [
+        "//mediapipe/framework/formats:landmark_cc_proto",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+    ],
+    copts = ["-I/usr/include/opencv4"],
+)
+
+cc_library( # type: ignore
+    name = "lip_effects",
+    srcs = ["src/effects/lip_effects.cc"],
+    hdrs = ["include/effects/lip_effects.h"],
+    includes = [".", "include"],
+    deps = [
+        ":face_regions",
+        "//mediapipe/framework/formats:landmark_cc_proto",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+    ],
+    copts = ["-I/usr/include/opencv4"],
+)
+
+cc_library( # type: ignore
+    name = "teeth_effects",
+    srcs = ["src/effects/teeth_effects.cc"],
+    hdrs = ["include/effects/teeth_effects.h"],
+    includes = [".", "include"],
+    deps = [
+        ":face_regions",
+        "//mediapipe/framework/formats:landmark_cc_proto",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+    ],
+    copts = ["-I/usr/include/opencv4"],
+)
+
+cc_library( # type: ignore
+    name = "skin_effects",
+    srcs = ["src/effects/skin_effects.cc"],
+    hdrs = ["include/effects/skin_effects.h"],
+    includes = [".", "include"],
+    deps = [
+        ":face_regions",
+        "//mediapipe/framework/formats:landmark_cc_proto",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+    ],
+    copts = ["-I/usr/include/opencv4"],
+)
+
+cc_library( # type: ignore
+    name = "advanced_skin_effects",
+    srcs = ["src/effects/advanced_skin_effects.cc"],
+    hdrs = ["include/effects/advanced_skin_effects.h"],
+    includes = [".", "include"],
+    deps = [
+        ":face_regions",
+        ":skin_effects",
+        "//mediapipe/framework/formats:landmark_cc_proto",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+    ],
+    copts = ["-I/usr/include/opencv4"],
+)
+
+# Face Effects Manager Library (Phase 5 Refactoring)
 cc_library( # type: ignore
     name = "effects_manager",
     srcs = ["src/effects/effects_manager.cpp"],
