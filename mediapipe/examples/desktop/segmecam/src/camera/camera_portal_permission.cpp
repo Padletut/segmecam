@@ -23,45 +23,57 @@ bool CameraManager::RequestCameraPermission() {
     std::cout << "📷 Requesting camera permission via Portal..." << std::endl;
 
     if (camera_permission_granted_ && portal_fd_ >= 0) {
+        std::cout << "✅ Camera permission already granted (fd=" << portal_fd_ << ")" << std::endl;
         return true;
     }
 
     if (!LoadPortalLibrary()) {
+        std::cerr << "❌ Failed to load portal library" << std::endl;
         return false;
     }
 
     LoadPortalFunctions();
     if (!ValidatePortalFunctions()) {
+        std::cerr << "❌ Portal functions validation failed" << std::endl;
         return false;
     }
 
     if (!CreatePortalInstance()) {
+        std::cerr << "❌ Failed to create portal instance" << std::endl;
         return false;
     }
 
     PortalRequestContext ctx;
     if (!SetupAsyncRequest(ctx)) {
+        std::cerr << "❌ Failed to setup async request" << std::endl;
         return false;
     }
 
+    std::cout << "⏳ Running main loop for portal request..." << std::endl;
     RunMainLoop(ctx);
+    std::cout << "✅ Portal request completed" << std::endl;
     return HandlePermissionResult(ctx);
 }
 
 // RequestCameraPermission helper methods
 bool CameraManager::LoadPortalLibrary() {
     if (portal_library_handle_) {
+        std::cout << "✅ Portal library already loaded" << std::endl;
         return true;  // Already loaded
     }
 
+    std::cout << "🔍 Loading libportal library..." << std::endl;
     portal_library_handle_ = dlopen("libportal-1.so.0", RTLD_LAZY);
     if (!portal_library_handle_) {
+        std::cout << "⚠️  libportal-1.so.0 not found, trying libportal.so.1..." << std::endl;
         portal_library_handle_ = dlopen("libportal.so.1", RTLD_LAZY);
     }
     if (!portal_library_handle_) {
+        std::cout << "⚠️  libportal.so.1 not found, trying libportal.so.0..." << std::endl;
         portal_library_handle_ = dlopen("libportal.so.0", RTLD_LAZY);
     }
     if (!portal_library_handle_) {
+        std::cout << "⚠️  libportal.so.0 not found, trying libportal.so..." << std::endl;
         portal_library_handle_ = dlopen("libportal.so", RTLD_LAZY);
     }
     if (!portal_library_handle_) {
@@ -69,6 +81,7 @@ bool CameraManager::LoadPortalLibrary() {
         state_.status_message = "Flatpak camera portal unavailable";
         return false;
     }
+    std::cout << "✅ Portal library loaded successfully" << std::endl;
     return true;
 }
 
@@ -102,15 +115,19 @@ bool CameraManager::ValidatePortalFunctions() {
 
 bool CameraManager::CreatePortalInstance() {
     if (!portal_instance_) {
+        std::cout << "🏗️  Creating XdpPortal instance..." << std::endl;
         portal_instance_ = xdp_portal_new();
         if (!portal_instance_) {
             std::cerr << "❌ Unable to create XdpPortal instance" << std::endl;
             return false;
         }
+        std::cout << "✅ XdpPortal instance created" << std::endl;
     }
 
     if (xdp_portal_is_camera_present && !xdp_portal_is_camera_present(portal_instance_)) {
-        std::cerr << "⚠️  Camera portal reports no camera present" << std::endl;
+        std::cout << "⚠️  Camera portal reports no camera present" << std::endl;
+    } else {
+        std::cout << "📷 Camera portal reports camera is present" << std::endl;
     }
 
     return true;
@@ -155,7 +172,7 @@ bool CameraManager::HandlePermissionResult(const PortalRequestContext& ctx) {
             close(portal_fd_);
             portal_fd_ = -1;
         }
-        std::cerr << "❌ Camera permission denied by portal" << std::endl;
+        std::cerr << "❌ Camera permission denied by portal (ctx.success=false)" << std::endl;
         state_.status_message = "Camera permission denied";
         return false;
     }
@@ -168,15 +185,19 @@ bool CameraManager::HandlePermissionResult(const PortalRequestContext& ctx) {
 // Missing methods called from camera_gstreamer_callbacks.cpp
 bool CameraManager::ProcessPortalAccessResult(GAsyncResult* result, bool& granted) {
     if (!xdp_portal_access_camera_finish) {
+        std::cerr << "❌ xdp_portal_access_camera_finish function unavailable" << std::endl;
         return false;
     }
 
+    std::cout << "🔍 Processing portal access result..." << std::endl;
     GError* error = nullptr;
     gboolean allow = xdp_portal_access_camera_finish(portal_instance_, result, &error);
     
     if (allow) {
+        std::cout << "✅ Portal access granted" << std::endl;
         granted = true;
     } else {
+        std::cout << "❌ Portal access denied" << std::endl;
         std::cerr << "❌ Camera access denied by portal" << std::endl;
         state_.status_message = "Camera permission denied";
     }
@@ -187,6 +208,7 @@ bool CameraManager::ProcessPortalAccessResult(GAsyncResult* result, bool& grante
 
 bool CameraManager::OpenPipeWireRemote(bool& granted) {
     if (!xdp_portal_open_pipewire_remote_for_camera) {
+        std::cerr << "❌ xdp_portal_open_pipewire_remote_for_camera function unavailable" << std::endl;
         return false;
     }
 
@@ -195,13 +217,15 @@ bool CameraManager::OpenPipeWireRemote(bool& granted) {
         portal_fd_ = -1;
     }
 
+    std::cout << "🔌 Opening PipeWire remote via portal..." << std::endl;
     int fd = xdp_portal_open_pipewire_remote_for_camera(portal_instance_);
     if (fd >= 0) {
         portal_fd_ = fd;
         granted = true;
+        std::cout << "✅ PipeWire remote opened successfully (fd=" << fd << ")" << std::endl;
         return true;
     } else {
-        std::cerr << "❌ Unable to open PipeWire remote via portal" << std::endl;
+        std::cerr << "❌ Unable to open PipeWire remote via portal (fd=" << fd << ")" << std::endl;
         return false;
     }
 }

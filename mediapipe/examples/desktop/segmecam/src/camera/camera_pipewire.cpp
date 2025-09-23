@@ -49,11 +49,31 @@ bool CameraManager::CreatePipelineFromDescription(const char* pipeline_desc) {
 }
 
 bool CameraManager::RetrievePipelineElements() {
+    // Try to get PipeWire source first (named "source")
     pipewire_src_ = gst_bin_get_by_name(reinterpret_cast<GstBin*>(pipeline_), "source");
+    
+    // If no PipeWire source, try V4L2 source
+    if (!pipewire_src_) {
+        pipewire_src_ = gst_bin_get_by_name(reinterpret_cast<GstBin*>(pipeline_), "v4l2src0");
+        if (pipewire_src_) {
+            std::cout << "📷 Using V4L2 source element" << std::endl;
+        }
+    } else {
+        std::cout << "📷 Using PipeWire source element" << std::endl;
+    }
+    
+    // If still no source, try videotestsrc (for testing)
+    if (!pipewire_src_) {
+        pipewire_src_ = gst_bin_get_by_name(reinterpret_cast<GstBin*>(pipeline_), "videotestsrc0");
+        if (pipewire_src_) {
+            std::cout << "📷 Using test video source element" << std::endl;
+        }
+    }
+    
     GstElement* sink_element = gst_bin_get_by_name(reinterpret_cast<GstBin*>(pipeline_), "sink");
     
     if (!pipewire_src_) {
-        std::cerr << "❌ PipeWire pipeline missing source" << std::endl;
+        std::cerr << "❌ Pipeline missing source element (neither PipeWire nor V4L2)" << std::endl;
         gst_object_unref(pipeline_);
         pipeline_ = nullptr;
         if (sink_element) {
@@ -63,7 +83,7 @@ bool CameraManager::RetrievePipelineElements() {
     }
     
     if (!sink_element) {
-        std::cerr << "❌ PipeWire pipeline missing appsink" << std::endl;
+        std::cerr << "❌ Pipeline missing appsink" << std::endl;
         gst_object_unref(pipeline_);
         pipeline_ = nullptr;
         gst_object_unref(pipewire_src_);
@@ -97,12 +117,43 @@ bool CameraManager::CreatePipeWirePipeline(int /*width*/, int /*height*/, int /*
         return false;
     }
 
+    // In Flatpak, prioritize V4L2 since portal PipeWire access may not work
+    // Outside Flatpak, try PipeWire first as originally designed
+    if (IsRunningInFlatpak()) {
+        std::cout << "📷 Flatpak detected - trying V4L2 pipeline first..." << std::endl;
+        const char* v4l2_pipeline_desc =
+            "v4l2src device=/dev/video0 ! videoconvert ! "
+            "video/x-raw,format=BGR ! appsink name=sink emit-signals=true sync=false max-buffers=1 drop=true";
+
+        if (CreatePipelineFromDescription(v4l2_pipeline_desc)) {
+            std::cout << "✅ V4L2 pipeline created successfully in Flatpak" << std::endl;
+            using_v4l2_source_ = true;
+            return true;
+        } else {
+            std::cout << "⚠️  V4L2 pipeline failed in Flatpak, trying PipeWire..." << std::endl;
+        }
+    }
+
+    // Try PipeWire source (for non-Flatpak or as fallback)
     const char* pipeline_desc =
         "pipewiresrc name=source do-timestamp=true ! videoconvert ! "
         "video/x-raw,format=BGR ! appsink name=sink emit-signals=true sync=false max-buffers=1 drop=true";
 
+    std::cout << "🔍 Trying PipeWire pipeline: " << pipeline_desc << std::endl;
+
     if (!CreatePipelineFromDescription(pipeline_desc)) {
-        return false;
+        std::cout << "⚠️  PipeWire pipeline failed, trying V4L2 pipeline..." << std::endl;
+        // Fallback to V4L2 pipeline
+        const char* v4l2_pipeline_desc =
+            "v4l2src device=/dev/video0 ! videoconvert ! "
+            "video/x-raw,format=BGR ! appsink name=sink emit-signals=true sync=false max-buffers=1 drop=true";
+
+        if (!CreatePipelineFromDescription(v4l2_pipeline_desc)) {
+            return false;
+        }
+        using_v4l2_source_ = true;  // Using V4L2 fallback
+    } else {
+        using_v4l2_source_ = false; // Using PipeWire
     }
 
     if (!RetrievePipelineElements()) {
@@ -141,15 +192,12 @@ bool CameraManager::ValidatePortalConnection() {
 
 void CameraManager::CleanupExistingPipeline() {
     if (pipeline_) {
-        gst_element_set_state(pipeline_, GST_STATE_NULL);
-        gst_object_unref(pipeline_);
-        pipeline_ = nullptr;
-        appsink_ = nullptr;
-        gst_appsink_ = nullptr;
-        if (pipewire_src_) {
-            gst_object_unref(pipewire_src_);
-            pipewire_src_ = nullptr;
+        // Stop the pipeline and wait for state change to complete
+        int ret = gst_element_set_state(pipeline_, GST_STATE_NULL);
+        if (ret != GST_STATE_CHANGE_FAILURE) {
+            gst_element_get_state(pipeline_, nullptr, nullptr, GST_CLOCK_TIME_NONE);
         }
+        // Don't unref here - let CleanupGStreamer handle final cleanup
     }
 }
 
@@ -160,9 +208,36 @@ bool CameraManager::SetupAndStartPipeline(int target_width, int target_height, i
 
     std::cout << "🎬 Starting PipeWire camera capture..." << std::endl;
 
-    // Set the PipeWire remote fd on the source element
-    if (pipewire_src_ && portal_fd_ >= 0) {
+    // Only set PipeWire-specific properties if we have a pipewire source AND not using V4L2
+    if (pipewire_src_ && portal_fd_ >= 0 && !using_v4l2_source_) {
         g_object_set(pipewire_src_, "fd", portal_fd_, NULL);
+        std::cout << "🔧 Set PipeWire source fd: " << portal_fd_ << std::endl;
+
+        // In Flatpak with portal, don't try to enumerate nodes - the portal should make camera available automatically
+        if (!IsRunningInFlatpak()) {
+            // Try to find and set a camera path (only for non-Flatpak)
+            std::vector<int> camera_nodes = EnumeratePipeWireCameraNodes();
+            if (!camera_nodes.empty()) {
+                int camera_node = camera_nodes[0];  // Use first available camera
+                std::string camera_path = std::to_string(camera_node);
+                g_object_set(pipewire_src_, "path", camera_path.c_str(), NULL);
+                std::cout << "🔧 Set PipeWire source path: " << camera_path << std::endl;
+            } else {
+                std::cout << "⚠️  No PipeWire camera nodes found, trying default camera..." << std::endl;
+                // Try setting path to "0" as a fallback (some systems use this for default camera)
+                g_object_set(pipewire_src_, "path", "0", NULL);
+                std::cout << "🔧 Set PipeWire source path to default: 0" << std::endl;
+            }
+        } else {
+            std::cout << "ℹ️  Using PipeWire portal - camera should be available automatically" << std::endl;
+            // Don't set any path - let the portal handle camera routing
+        }
+    } else {
+        if (using_v4l2_source_) {
+            std::cout << "ℹ️  Using V4L2 source (no PipeWire-specific setup needed)" << std::endl;
+        } else {
+            std::cout << "ℹ️  Using PipeWire source but no portal fd available" << std::endl;
+        }
     }
 
     int ret = gst_element_set_state(pipeline_, GST_STATE_PLAYING);
@@ -177,7 +252,6 @@ bool CameraManager::SetupAndStartPipeline(int target_width, int target_height, i
             gst_object_unref(pipewire_src_);
             pipewire_src_ = nullptr;
         }
-        return false;
     }
     return true;
 }
@@ -215,16 +289,45 @@ bool CameraManager::StartPipeWireCapture(int width, int height, int fps) {
 }
 
 void CameraManager::StopPipeWireCapture() {
+    std::cout << "🛑 Stopping PipeWire camera capture..." << std::endl;
     if (pipeline_) {
-        gst_element_set_state(pipeline_, GST_STATE_NULL);
-        gst_object_unref(pipeline_);
-        pipeline_ = nullptr;
-    }
-    appsink_ = nullptr;
-    gst_appsink_ = nullptr;
-    if (pipewire_src_) {
-        gst_object_unref(pipewire_src_);
-        pipewire_src_ = nullptr;
+        std::cout << "🛑 Setting PipeWire pipeline to NULL state..." << std::endl;
+        
+        // First disconnect signal handlers to prevent callbacks during cleanup
+        if (appsink_) {
+            // Note: g_signal_handlers_disconnect_by_data not available, 
+            // but setting pipeline to NULL should prevent callbacks
+            std::cout << "✅ Signal handlers will be disconnected by pipeline cleanup" << std::endl;
+        }
+        
+        // First set to READY state, then to NULL
+        gst_element_set_state(pipeline_, GST_STATE_READY);
+        g_usleep(10000); // Small delay
+        
+        // Now set to NULL state
+        int ret = gst_element_set_state(pipeline_, GST_STATE_NULL);
+        if (ret == GST_STATE_CHANGE_FAILURE) {
+            std::cerr << "❌ Failed to set pipeline to NULL state" << std::endl;
+        } else if (ret == GST_STATE_CHANGE_ASYNC) {
+            std::cout << "⏳ Pipeline state change is asynchronous, waiting..." << std::endl;
+            // Wait for async state change to complete
+            gst_element_get_state(pipeline_, nullptr, nullptr, GST_CLOCK_TIME_NONE);
+            std::cout << "✅ Async state change completed" << std::endl;
+        } else {
+            std::cout << "✅ Pipeline state set to NULL successfully" << std::endl;
+        }
+        
+        // Clean up element references before pipeline disposal
+        appsink_ = nullptr;
+        gst_appsink_ = nullptr;
+        if (pipewire_src_) {
+            gst_object_unref(pipewire_src_);
+            pipewire_src_ = nullptr;
+        }
+        
+        // NOTE: Do NOT unref the pipeline here - let CleanupGStreamer() handle final cleanup
+        // to avoid double-unref issues
+        std::cout << "✅ PipeWire pipeline state set to NULL (cleanup deferred)" << std::endl;
     }
     {
         std::lock_guard<std::mutex> lock(frame_mutex_);
@@ -244,6 +347,7 @@ void CameraManager::StopPipeWireCapture() {
 // Enumerate PipeWire camera nodes using pw-cli
 std::vector<int> CameraManager::EnumeratePipeWireCameraNodes() {
     std::vector<int> camera_nodes;
+    std::cout << "🔍 Enumerating PipeWire camera nodes..." << std::endl;
 
     // SECURITY NOTE: This popen call is considered safe because:
     // 1. The command is hardcoded and cannot be influenced by user input
@@ -275,6 +379,8 @@ std::vector<int> CameraManager::EnumeratePipeWireCameraNodes() {
 
     // Sort by node ID
     std::sort(camera_nodes.begin(), camera_nodes.end());
+    
+    std::cout << "📊 PipeWire enumeration complete: found " << camera_nodes.size() << " camera nodes" << std::endl;
 
     return camera_nodes;
 }

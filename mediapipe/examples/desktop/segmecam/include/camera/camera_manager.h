@@ -197,6 +197,7 @@ public:
     bool CaptureFrame(cv::Mat& frame);
     bool CaptureFrameFlatpak(cv::Mat& frame);
     bool CaptureFrameNative(cv::Mat& frame);
+    bool CaptureV4L2Frame(cv::Mat& frame);
     
     // Camera enumeration and selection
     const std::vector<CameraDesc>& GetCameraList() const { return cam_list_; }
@@ -310,6 +311,7 @@ private:
     GMainLoop* main_loop_ = nullptr;
     bool gst_initialized_ = false;
     bool camera_permission_granted_ = false;
+    bool using_v4l2_source_ = false;  // Track if we're using V4L2 instead of PipeWire
     XdpPortal* portal_instance_ = nullptr;
     void* portal_library_handle_ = nullptr;
     int portal_fd_ = -1;

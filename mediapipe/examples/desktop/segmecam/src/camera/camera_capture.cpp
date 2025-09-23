@@ -25,6 +25,11 @@ bool CameraManager::CaptureFrame(cv::Mat& frame) {
 }
 
 bool CameraManager::CaptureFrameFlatpak(cv::Mat& frame) {
+    // If using V4L2 source, pull frames directly from appsink
+    if (using_v4l2_source_ && gst_appsink_ && gst_app_sink_pull_sample) {
+        return CaptureV4L2Frame(frame);
+    }
+
     // Check if using direct GStreamer capture
     if (gst_camera_active_) {
         return CaptureGStreamerFrame(frame);
@@ -130,6 +135,82 @@ bool CameraManager::ValidateFrameChannels(const cv::Mat& frame) {
 
     state_.frames_captured++;
     return true;
+}
+
+bool CameraManager::CaptureV4L2Frame(cv::Mat& frame) {
+    if (!gst_appsink_ || !gst_app_sink_pull_sample) {
+        std::cerr << "❌ V4L2 capture not properly initialized" << std::endl;
+        return false;
+    }
+
+    // Check pipeline state
+    if (pipeline_ && gst_element_get_state) {
+        int current_state, pending_state;
+        gst_element_get_state(pipeline_, &current_state, &pending_state, GST_CLOCK_TIME_NONE);
+        std::cout << "🔍 V4L2 pipeline state: current=" << current_state << ", pending=" << pending_state << std::endl;
+        if (current_state != GST_STATE_PLAYING) {
+            std::cout << "⚠️  V4L2 pipeline not in PLAYING state" << std::endl;
+            return false;
+        }
+    } else {
+        std::cout << "⚠️  Cannot check pipeline state (no pipeline or function not loaded)" << std::endl;
+    }
+
+    // Pull sample from appsink
+    GstSample* sample = reinterpret_cast<GstSample*>(gst_app_sink_pull_sample(gst_appsink_));
+    if (!sample) {
+        static int pull_fail_count = 0;
+        if (pull_fail_count < 10) {
+            std::cout << "⚠️  Failed to pull V4L2 sample from appsink" << std::endl;
+            pull_fail_count++;
+        }
+        return false;
+    }
+
+    // Extract buffer from sample
+    GstBuffer* buffer = reinterpret_cast<GstBuffer*>(gst_sample_get_buffer(sample));
+    if (!buffer) {
+        std::cerr << "❌ Failed to get buffer from V4L2 sample" << std::endl;
+        gst_sample_unref(sample);
+        return false;
+    }
+
+    // Map buffer for reading
+    GstMapInfo map_info;
+    if (!gst_buffer_map(buffer, &map_info, GST_MAP_READ)) {
+        std::cerr << "❌ Failed to map V4L2 buffer" << std::endl;
+        gst_sample_unref(sample);
+        return false;
+    }
+
+    // Get frame dimensions from caps
+    GstCaps* caps = reinterpret_cast<GstCaps*>(gst_sample_get_caps(sample));
+    if (caps) {
+        GstStructure* structure = gst_caps_get_structure(caps, 0);
+        if (structure) {
+            int width, height;
+            if (gst_structure_get_int(structure, "width", &width) &&
+                gst_structure_get_int(structure, "height", &height)) {
+
+                // Create OpenCV Mat from buffer data
+                // Assuming BGR format as specified in pipeline
+                frame = cv::Mat(height, width, CV_8UC3, map_info.data, map_info.size / height);
+
+                if (!frame.empty()) {
+                    // Clone the frame to ensure we have our own copy before unmapping
+                    frame = frame.clone();
+                    gst_buffer_unmap(buffer, &map_info);
+                    gst_sample_unref(sample);
+                    state_.frames_captured++;
+                    return PerformFrameValidation(frame);
+                }
+            }
+        }
+    }
+
+    gst_buffer_unmap(buffer, &map_info);
+    gst_sample_unref(sample);
+    return false;
 }
 
 } // namespace segmecam

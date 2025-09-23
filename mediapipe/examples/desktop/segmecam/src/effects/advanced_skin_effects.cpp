@@ -1,34 +1,110 @@
 #include "include/effects/advanced_skin_effects.h"
 #include <cmath>
 
-// Configuration structs to reduce parameter count
-struct WrinkleMaskConfig {
-  float min_scale_px = 1.5f;
-  float max_scale_px = 3.0f;
-  bool suppress_lower_face = false;
-  float lower_face_ratio = 0.5f;
-  bool ignore_glasses = false;
-  float glasses_margin_px = 10.0f;
-  float keep_ratio = 0.1f;
-  bool use_skin_gate = true;
-  float mask_gain = 1.0f;
-};
+// Helper functions - defined first to avoid forward declaration issues
+cv::Mat ApplyLowerFaceSuppression(cv::Size sz, const FaceRegions& fr, float lower_face_ratio) {
+  if (fr.face_oval.empty() || fr.lips_outer.empty()) {
+    return cv::Mat::ones(sz, CV_32F);
+  }
 
-struct SkinSmoothingConfig {
-  float amount = 0.5f;
-  float radius_px = 5.0f;
-  float texture_thresh = 0.3f;
-  float edge_feather_px = 8.0f;
-  float smile_boost = 0.2f;
-  float squint_boost = 0.15f;
-  float forehead_boost = 0.1f;
-  float boost_gain = 1.0f;
-  WrinkleMaskConfig wrinkle;
-  float forehead_margin_px = 15.0f;
-  bool wrinkle_preview = false;
-  float baseline_boost = 0.0f;
-  float neg_atten_cap = 0.8f;
-};
+  int mouth_y = 0;
+  for (const auto& p : fr.lips_outer) mouth_y += p.y;
+  mouth_y = (int)std::round((double)mouth_y / std::max(1,(int)fr.lips_outer.size()));
+
+  int chin_y = 0;
+  for (const auto& p : fr.face_oval) chin_y = std::max(chin_y, p.y);
+
+  int cut_y = mouth_y + (int)std::round(std::clamp(lower_face_ratio, 0.2f, 0.8f) * (chin_y - mouth_y));
+
+  cv::Mat gate = cv::Mat::zeros(sz, CV_32F);
+  cv::rectangle(gate, cv::Rect(0, 0, sz.width, std::max(0, cut_y)), cv::Scalar(1.0f), cv::FILLED);
+  return gate;
+}
+
+void ApplyGlassesSuppression(cv::Mat& extra_gate, const FaceRegions& fr, float glasses_margin_px) {
+  if (fr.left_eye.empty() && fr.right_eye.empty()) return;
+
+  cv::Rect er = GetEyesBoundingRect(fr);
+  int m = (int)std::round(std::max(0.0f, glasses_margin_px));
+
+  er.x = std::max(0, er.x - m);
+  er.y = std::max(0, er.y - m);
+  er.width = std::min(extra_gate.cols - er.x, er.width + 2*m);
+  er.height = std::min(extra_gate.rows - er.y, er.height + 2*m);
+
+  // Zero inside the band
+  cv::rectangle(extra_gate, er, cv::Scalar(0.0f), cv::FILLED);
+  // Feather edges slightly for smooth transition
+  cv::GaussianBlur(extra_gate, extra_gate, cv::Size(0,0), 2.0);
+}
+
+cv::Rect GetEyesBoundingRect(const FaceRegions& fr) {
+  auto rect_of = [](const std::vector<cv::Point>& poly){ return cv::boundingRect(poly); };
+
+  cv::Rect er;
+  if (!fr.left_eye.empty()) er = rect_of(fr.left_eye);
+  if (!fr.right_eye.empty()) {
+    cv::Rect right_rect = rect_of(fr.right_eye);
+    er = er.area() ? (er | right_rect) : right_rect;
+  }
+  return er;
+}
+
+void AddNasolabialBoost(cv::Mat& boost, const FacialExpressionMetrics& metrics, float smile_boost) {
+  if (smile_boost <= 0.0f) return;
+
+  cv::Mat mask = cv::Mat::zeros(boost.size(), CV_32F);
+  // Use mouth corners as nasolabial fold approximation
+  cv::circle(mask, metrics.mouth_left, 12, cv::Scalar(smile_boost), cv::FILLED);
+  cv::circle(mask, metrics.mouth_right, 12, cv::Scalar(smile_boost), cv::FILLED);
+  cv::GaussianBlur(mask, mask, cv::Size(0,0), 8.0);
+  boost = cv::max(boost, mask);
+}
+
+void AddSquintBoost(cv::Mat& boost, const FacialExpressionMetrics& metrics, float squint_boost, float eff_squint) {
+  if (squint_boost <= 0.0f || eff_squint <= 0.0f) return;
+
+  cv::Mat mask = cv::Mat::zeros(boost.size(), CV_32F);
+  // Boost outer eye corners when squinting
+  cv::circle(mask, metrics.eye_left_outer, 8, cv::Scalar(squint_boost * eff_squint), cv::FILLED);
+  cv::circle(mask, metrics.eye_right_outer, 8, cv::Scalar(squint_boost * eff_squint), cv::FILLED);
+  cv::GaussianBlur(mask, mask, cv::Size(0,0), 6.0);
+  boost = cv::max(boost, mask);
+}
+
+void AddForeheadBoost(cv::Mat& boost, const cv::Mat& frame_bgr, const FaceRegions& fr,
+                     const FacialExpressionMetrics& metrics, float forehead_boost, float forehead_margin_px) {
+  if (forehead_boost <= 0.0f || fr.face_oval.empty()) return;
+
+  // Calculate forehead region from face oval and eye positions
+  cv::Point forehead_top = cv::Point(
+    (metrics.eye_left_outer.x + metrics.eye_right_outer.x) / 2,
+    fr.face_oval[0].y - 30  // Top of face oval minus offset
+  );
+
+  cv::Rect forehead_rect;
+  forehead_rect.x = std::max(0, (int)(forehead_top.x - 40));
+  forehead_rect.y = std::max(0, (int)(forehead_top.y - 20));
+  forehead_rect.width = std::min(frame_bgr.cols - forehead_rect.x, 80);
+  forehead_rect.height = std::min(frame_bgr.rows - forehead_rect.y, 40);
+
+  if (forehead_rect.width <= 0 || forehead_rect.height <= 0) return;
+
+  // Analyze vertical gradients in forehead region
+  cv::Mat forehead_roi = frame_bgr(forehead_rect);
+  cv::Mat gray; cv::cvtColor(forehead_roi, gray, cv::COLOR_BGR2GRAY);
+  cv::Mat gx, gy; cv::Sobel(gray, gx, CV_32F, 1, 0, 3); cv::Sobel(gray, gy, CV_32F, 0, 1, 3);
+  cv::Mat grad_y = cv::abs(gy); // Vertical gradients indicate horizontal lines
+
+  // Normalize and threshold
+  double max_grad; cv::minMaxLoc(grad_y, nullptr, &max_grad);
+  if (max_grad > 1e-6) grad_y.convertTo(grad_y, CV_32F, 1.0/max_grad);
+  cv::threshold(grad_y, grad_y, 0.3, 1.0, cv::THRESH_BINARY);
+
+  // Scale by boost factor and place in boost map
+  cv::Mat scaled_grad; grad_y.convertTo(scaled_grad, CV_32F, forehead_boost);
+  scaled_grad.copyTo(boost(forehead_rect));
+}
 
 // Helper functions for BuildWrinkleLineMask
 cv::Mat PrepareWrinkleDetectionData(const cv::Mat& frame_bgr, cv::Size sz) {
@@ -164,37 +240,17 @@ cv::Mat ComputeOrientationCoherence(const cv::Mat& frame_bgr, cv::Size sz) {
   return coh;
 }
 
-cv::Mat ApplyRegionGates(cv::Size sz, const FaceRegions& fr, bool suppress_lower_face,
-                        float lower_face_ratio, bool ignore_glasses, float glasses_margin_px) {
+cv::Mat ApplyRegionGates(cv::Size sz, const FaceRegions& fr, const RegionGatesConfig& config) {
   cv::Mat extra_gate = cv::Mat::ones(sz, CV_32F);
 
   // Optional suppress lower-face stubble region using a horizontal cut
-  if (suppress_lower_face && !fr.face_oval.empty() && !fr.lips_outer.empty()) {
-    int mouth_y = 0;
-    for (const auto& p : fr.lips_outer) mouth_y += p.y;
-    mouth_y = (int)std::round((double)mouth_y / std::max(1,(int)fr.lips_outer.size()));
-    int chin_y = 0;
-    for (const auto& p : fr.face_oval) chin_y = std::max(chin_y, p.y);
-    int cut_y = mouth_y + (int)std::round(std::clamp(lower_face_ratio, 0.2f, 0.8f) * (chin_y - mouth_y));
-    extra_gate = cv::Mat::zeros(sz, CV_32F);
-    cv::rectangle(extra_gate, cv::Rect(0,0,sz.width, std::max(0, cut_y)), cv::Scalar(1.0f), cv::FILLED);
+  if (config.suppress_lower_face) {
+    extra_gate = ApplyLowerFaceSuppression(sz, fr, config.lower_face_ratio);
   }
 
   // Optional ignore glasses: suppress a band covering both eyes with margin
-  if (ignore_glasses && (!fr.left_eye.empty() || !fr.right_eye.empty())) {
-    cv::Rect er;
-    auto rect_of = [](const std::vector<cv::Point>& poly){ return cv::boundingRect(poly); };
-    if (!fr.left_eye.empty()) er = rect_of(fr.left_eye);
-    if (!fr.right_eye.empty()) er = er.area() ? (er | rect_of(fr.right_eye)) : rect_of(fr.right_eye);
-    int m = (int)std::round(std::max(0.0f, glasses_margin_px));
-    er.x = std::max(0, er.x - m);
-    er.y = std::max(0, er.y - m);
-    er.width = std::min(sz.width - er.x, er.width + 2*m);
-    er.height = std::min(sz.height - er.y, er.height + 2*m);
-    // Zero inside the band
-    cv::rectangle(extra_gate, er, cv::Scalar(0.0f), cv::FILLED);
-    // Feather edges slightly for smooth transition
-    cv::GaussianBlur(extra_gate, extra_gate, cv::Size(0,0), 2.0);
+  if (config.ignore_glasses) {
+    ApplyGlassesSuppression(extra_gate, fr, config.glasses_margin_px);
   }
 
   return extra_gate;
@@ -242,16 +298,6 @@ cv::Mat ApplyPercentileThreshold(cv::Mat wr, const cv::Mat& base_f, const cv::Ma
 }
 
 // Helper struct for facial expression analysis
-struct FacialExpressionMetrics {
-  float smile_factor;
-  float squint_factor;
-  cv::Point mouth_left, mouth_right;
-  cv::Point eye_left_outer, eye_left_inner;
-  cv::Point eye_right_outer, eye_right_inner;
-  cv::Point eye_left_top, eye_left_bottom;
-  cv::Point eye_right_top, eye_right_bottom;
-};
-
 // Helper functions for ApplySkinSmoothingAdvBGR
 FacialExpressionMetrics ExtractFacialExpressions(const mediapipe::NormalizedLandmarkList* lms, int width, int height) {
   FacialExpressionMetrics metrics = {0.0f, 0.0f};
@@ -300,59 +346,24 @@ FacialExpressionMetrics ExtractFacialExpressions(const mediapipe::NormalizedLand
 }
 
 cv::Mat BuildExpressionBoostMap(const FacialExpressionMetrics& metrics, cv::Size frame_size,
-                               float smile_boost, float squint_boost, float forehead_boost,
-                               float forehead_margin_px, const FaceRegions& fr,
+                               const ExpressionBoostConfig& config, const FaceRegions& fr,
                                const cv::Mat& frame_bgr) {
   cv::Mat boost(frame_size, CV_32F, cv::Scalar(0));
 
   // Nasolabial boost for smile
-  if (smile_boost > 0.0f && metrics.smile_factor > 0.0f) {
-    cv::Mat m(frame_size, CV_8U, cv::Scalar(0));
-    int r_naso = std::max(3, (int)std::round(0.08 * cv::norm(metrics.eye_left_outer - metrics.eye_right_outer)));
-    cv::circle(m, metrics.mouth_left, r_naso, cv::Scalar(255), cv::FILLED, cv::LINE_AA);
-    cv::circle(m, metrics.mouth_right, r_naso, cv::Scalar(255), cv::FILLED, cv::LINE_AA);
-    cv::GaussianBlur(m, m, cv::Size(0,0), r_naso*0.5);
-    cv::Mat mf; m.convertTo(mf, CV_32F, 1.0/255.0);
-    boost += mf * (smile_boost * metrics.smile_factor);
+  if (config.smile_boost > 0.0f && metrics.smile_factor > 0.0f) {
+    AddNasolabialBoost(boost, metrics, config.smile_boost);
   }
 
   // Eye corner boost from squint
   float eff_squint = std::max(metrics.squint_factor, 0.5f * metrics.smile_factor);
-  if (squint_boost > 0.0f && eff_squint > 0.0f) {
-    cv::Mat m(frame_size, CV_8U, cv::Scalar(0));
-    int r_crow = std::max(3, (int)std::round(0.08 * cv::norm(metrics.eye_left_outer - metrics.eye_right_outer)));
-    cv::circle(m, metrics.eye_left_outer, r_crow, cv::Scalar(255), cv::FILLED, cv::LINE_AA);
-    cv::circle(m, metrics.eye_right_outer, r_crow, cv::Scalar(255), cv::FILLED, cv::LINE_AA);
-    cv::GaussianBlur(m, m, cv::Size(0,0), r_crow*0.5);
-    cv::Mat mf; m.convertTo(mf, CV_32F, 1.0/255.0);
-    boost += mf * (squint_boost * eff_squint);
+  if (config.squint_boost > 0.0f && eff_squint > 0.0f) {
+    AddSquintBoost(boost, metrics, config.squint_boost, eff_squint);
   }
 
-  // Forehead boost focusing on horizontal wrinkles
-  if (forehead_boost > 0.0f && !fr.face_oval.empty()) {
-    int topY = frame_size.height, minEyeY = frame_size.height;
-    for (const auto& p : fr.face_oval) topY = std::min(topY, p.y);
-    if (!fr.left_eye.empty()) for (const auto& p : fr.left_eye) minEyeY = std::min(minEyeY, p.y);
-    if (!fr.right_eye.empty()) for (const auto& p : fr.right_eye) minEyeY = std::min(minEyeY, p.y);
-    int cut = std::max(0, std::min(frame_size.height-1, minEyeY - (int)std::round(std::max(0.0f, forehead_margin_px))));
-
-    cv::Mat band(frame_size, CV_8U, cv::Scalar(0));
-    std::vector<std::vector<cv::Point>> polys = {fr.face_oval};
-    cv::fillPoly(band, polys, cv::Scalar(255));
-    cv::rectangle(band, cv::Rect(0, cut, frame_size.width, frame_size.height-cut), cv::Scalar(0), cv::FILLED);
-
-    // Prefer horizontal lines: use vertical gradient magnitude on grayscale
-    cv::Mat gray_fh; cv::cvtColor(frame_bgr, gray_fh, cv::COLOR_BGR2GRAY);
-    cv::Mat gy; cv::Sobel(gray_fh, gy, CV_32F, 0, 1, 3);
-    cv::GaussianBlur(gy, gy, cv::Size(0,0), 1.0);
-    cv::Mat gy_abs = cv::abs(gy);
-    double meanGy = cv::mean(gy_abs, band)[0];
-    float gy_scale = (float)std::max(8.0, meanGy * 3.0 + 1e-3);
-    cv::Mat gy_n; gy_abs.convertTo(gy_n, CV_32F, 1.0f/gy_scale); gy_n = cv::min(gy_n, 1.0f);
-    cv::Mat band_f; band.convertTo(band_f, CV_32F, 1.0/255.0);
-    // Local dark gate from negative detail
-    cv::Mat f_boost = cv::min(1.0f, gy_n.mul(band_f) * forehead_boost);
-    boost = cv::min(1.0f, boost + f_boost);
+  // Forehead boost from negative detail
+  if (config.forehead_boost > 0.0f) {
+    AddForeheadBoost(boost, frame_bgr, fr, metrics, config.forehead_boost, config.forehead_margin_px);
   }
 
   boost = cv::min(boost, 1.0f);
@@ -360,10 +371,7 @@ cv::Mat BuildExpressionBoostMap(const FacialExpressionMetrics& metrics, cv::Size
 }
 
 cv::Mat BuildWrinkleBoostMap(const cv::Mat& frame_bgr, const FaceRegions& fr,
-                            const FacialExpressionMetrics& metrics, float line_min_px, float line_max_px,
-                            float keep_ratio, bool use_skin_gate, float mask_gain,
-                            bool suppress_lower_face, float lower_face_ratio,
-                            bool ignore_glasses, float glasses_margin_px,
+                            const FacialExpressionMetrics& metrics, const WrinkleBoostConfig& config,
                             const cv::Mat& Lf, const cv::Mat& base) {
   // Build wrinkle-aware attenuation: emphasize dark, narrow, linear structures.
   // 1) Negative detail + gradient gate (local, fast)
@@ -381,16 +389,13 @@ cv::Mat BuildWrinkleBoostMap(const cv::Mat& frame_bgr, const FaceRegions& fr,
   cv::Mat wrinkle_local = cv::min(dark_n, grad_n);
 
   // 2) Line-sensitive mask (multi-scale black-hat + coherence)
-  float s_min = (line_min_px > 0.0f) ? line_min_px : 1.5f;
-  float s_max = (line_max_px > 0.0f) ? line_max_px : 3.0f;
-  if (s_max < s_min) std::swap(s_min, s_max);
-  cv::Mat wrinkle_line = BuildWrinkleLineMask(frame_bgr, fr, s_min, s_max,
-                                            suppress_lower_face, lower_face_ratio,
-                                            ignore_glasses, glasses_margin_px,
-                                            keep_ratio, use_skin_gate, mask_gain);
+  WrinkleMaskConfig wrinkle_config{config.line_min_px, config.line_max_px, config.region_gates.suppress_lower_face,
+                                  config.region_gates.lower_face_ratio, config.region_gates.ignore_glasses,
+                                  config.region_gates.glasses_margin_px, config.keep_ratio, config.use_skin_gate, config.mask_gain};
+  cv::Mat wrinkle_line = BuildWrinkleLineMask(frame_bgr, fr, wrinkle_config);
 
   // Combine local and line masks with sensitivity: higher keep_ratio favors line mask
-  float s = std::clamp(keep_ratio, 0.02f, 0.80f);
+  float s = std::clamp(config.keep_ratio, 0.02f, 0.80f);
   float s_norm = (s - 0.02f) / (0.78f); // 0..1
   float w_line = 0.4f + 0.9f * s_norm;   // 0.4 .. 1.3
   float w_local = 0.6f * (1.0f - s_norm); // 0.6 .. 0
@@ -485,23 +490,10 @@ cv::Mat BuildSkinWeightMap(const FaceRegions& fr,
   return weight; // CV_32F in [0,1]
 }
 
-cv::Mat BuildWrinkleLineMask(const cv::Mat& frame_bgr,
-                             const FaceRegions& fr,
-                             float min_scale_px,
-                             float max_scale_px,
-                             bool suppress_lower_face,
-                             float lower_face_ratio,
-                             bool ignore_glasses,
-                             float glasses_margin_px,
-                             float keep_ratio,
-                             bool use_skin_gate,
-                             float mask_gain) {
-  WrinkleMaskConfig config{min_scale_px, max_scale_px, suppress_lower_face, lower_face_ratio,
-                          ignore_glasses, glasses_margin_px, keep_ratio, use_skin_gate, mask_gain};
-
+cv::Mat BuildWrinkleLineMask(const cv::Mat& frame_bgr, const FaceRegions& fr, const WrinkleMaskConfig& config) {
   cv::Size sz = frame_bgr.size();
-  config.min_scale_px = std::max(1.0f, config.min_scale_px);
-  config.max_scale_px = std::max(config.min_scale_px, config.max_scale_px);
+  float min_scale_px = std::max(1.0f, config.min_scale_px);
+  float max_scale_px = std::max(min_scale_px, config.max_scale_px);
 
   // Create base components
   cv::Mat base = CreateBaseFaceMask(fr, sz);
@@ -509,10 +501,11 @@ cv::Mat BuildWrinkleLineMask(const cv::Mat& frame_bgr,
   cv::Mat L8 = PrepareWrinkleDetectionData(frame_bgr, sz);
 
   // Multi-scale black-hat and coherence
-  cv::Mat acc = ComputeMultiScaleBlackHat(L8, sz, config.min_scale_px, config.max_scale_px);
+  cv::Mat acc = ComputeMultiScaleBlackHat(L8, sz, min_scale_px, max_scale_px);
   cv::Mat coh = ComputeOrientationCoherence(frame_bgr, sz);
-  cv::Mat extra_gate = ApplyRegionGates(sz, fr, config.suppress_lower_face, config.lower_face_ratio,
-                                       config.ignore_glasses, config.glasses_margin_px);
+  RegionGatesConfig region_config{config.suppress_lower_face, config.lower_face_ratio,
+                                 config.ignore_glasses, config.glasses_margin_px};
+  cv::Mat extra_gate = ApplyRegionGates(sz, fr, region_config);
 
   // Combine components
   cv::Mat base_f, skin_f;
@@ -529,38 +522,10 @@ cv::Mat BuildWrinkleLineMask(const cv::Mat& frame_bgr,
   return ApplyPercentileThreshold(wr, base_f, skin_f, extra_gate, config.keep_ratio, config.mask_gain);
 }
 
-void ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr,
-                              const FaceRegions& fr,
-                              float amount,
-                              float radius_px,
-                              float texture_thresh,
-                              float edge_feather_px,
-                              const mediapipe::NormalizedLandmarkList* lms,
-                              float smile_boost,
-                              float squint_boost,
-                              float forehead_boost,
-                              float boost_gain,
-                              bool suppress_lower_face,
-                              float lower_face_ratio,
-                              bool ignore_glasses,
-                              float glasses_margin_px,
-                              float keep_ratio,
-                              float line_min_px,
-                              float line_max_px,
-                              float forehead_margin_px,
-                              bool wrinkle_preview,
-                              float baseline_boost,
-                              bool use_skin_gate,
-                              float mask_gain,
-                              float neg_atten_cap) {
-  SkinSmoothingConfig config{amount, radius_px, texture_thresh, edge_feather_px,
-                           smile_boost, squint_boost, forehead_boost, boost_gain,
-                           {line_min_px, line_max_px, suppress_lower_face, lower_face_ratio,
-                            ignore_glasses, glasses_margin_px, keep_ratio, use_skin_gate, mask_gain},
-                           forehead_margin_px, wrinkle_preview, baseline_boost, neg_atten_cap};
-
-  config.amount = std::clamp(config.amount, 0.0f, 1.0f);
-  if (config.amount <= 0.0f || fr.face_oval.empty()) return;
+void ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceRegions& fr,
+                              const SkinSmoothingConfig& config, const mediapipe::NormalizedLandmarkList* lms) {
+  float amount = std::clamp(config.amount, 0.0f, 1.0f);
+  if (amount <= 0.0f || fr.face_oval.empty()) return;
 
   // Phase 1: Prepare data
   cv::Mat weight = BuildSkinWeightMap(fr, frame_bgr.size(), config.edge_feather_px,
@@ -570,15 +535,8 @@ void ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr,
 
   // Phase 2: Extract expressions and build boosts
   FacialExpressionMetrics metrics = ExtractFacialExpressions(lms, frame_bgr.cols, frame_bgr.rows);
-  cv::Mat expression_boost = BuildExpressionBoostMap(metrics, frame_bgr.size(), config.smile_boost,
-                                                   config.squint_boost, config.forehead_boost,
-                                                   config.forehead_margin_px, fr, frame_bgr);
-  cv::Mat wrinkle_boost = BuildWrinkleBoostMap(frame_bgr, fr, metrics, config.wrinkle.min_scale_px,
-                                             config.wrinkle.max_scale_px, config.wrinkle.keep_ratio,
-                                             config.wrinkle.use_skin_gate, config.wrinkle.mask_gain,
-                                             config.wrinkle.suppress_lower_face, config.wrinkle.lower_face_ratio,
-                                             config.wrinkle.ignore_glasses, config.wrinkle.glasses_margin_px,
-                                             Lf, base);
+  cv::Mat expression_boost = BuildExpressionBoostMap(metrics, frame_bgr.size(), config.expression, fr, frame_bgr);
+  cv::Mat wrinkle_boost = BuildWrinkleBoostMap(frame_bgr, fr, metrics, config.wrinkle, Lf, base);
 
   // Phase 3: Combine and apply boosts
   cv::Mat face_gate_u8;
@@ -588,7 +546,7 @@ void ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr,
   cv::Mat boost_final = CombineBoostMaps(expression_boost, wrinkle_boost, config.baseline_boost, face_gate);
 
   // Phase 4: Apply frequency separation
-  ApplyFrequencySeparation(Lf, weight, config.amount, config.boost_gain, boost_final,
+  ApplyFrequencySeparation(Lf, weight, amount, config.boost_gain, boost_final,
                           config.wrinkle_preview, config.neg_atten_cap);
 
   // Phase 5: Convert back to BGR
