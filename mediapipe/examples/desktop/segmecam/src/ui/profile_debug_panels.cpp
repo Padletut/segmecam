@@ -8,6 +8,17 @@
 
 namespace segmecam {
 
+namespace {
+// Safe string copy helper that ensures null termination
+void SafeStringCopy(char* dest, size_t dest_size, const std::string& src) {
+    if (dest_size == 0) return;
+    
+    size_t copy_len = std::min(src.length(), dest_size - 1);
+    std::memcpy(dest, src.c_str(), copy_len);
+    dest[copy_len] = '\0';
+}
+}
+
 // Profile Panel Implementation
 ProfilePanel::ProfilePanel(AppState& state, CameraManager& camera_mgr)
     : UIPanel("Profiles"), state_(state), camera_mgr_(camera_mgr) {
@@ -18,33 +29,49 @@ void ProfilePanel::Render() {
     
     ImGui::Text("Profile");
     
+    RenderProfileSelection();
+    RenderProfileActions();
+    
+    ImGui::Separator();
+}
+
+void ProfilePanel::RenderProfileSelection() {
     // Use common profile selection UI
     if (ui_utils::RenderProfileSelection(config_mgr_, ui_profile_idx_, profile_name_buf_,
                                        sizeof(profile_name_buf_), "Name", true)) {
-        // Profile load was requested
-        auto profile_names = config_mgr_->ListProfiles();
-        if (ui_profile_idx_ >= 0 && ui_profile_idx_ < (int)profile_names.size()) {
-            LoadProfileIntoState(profile_names[ui_profile_idx_]);
-            // Update name buffer to match loaded profile
-            strncpy(profile_name_buf_, profile_names[ui_profile_idx_].c_str(), sizeof(profile_name_buf_) - 1);
-            profile_name_buf_[sizeof(profile_name_buf_) - 1] = '\0';
-        }
+        HandleProfileLoad();
     }
     
+    HandleProfileSave();
+}
+
+void ProfilePanel::HandleProfileLoad() {
+    // Profile load was requested
+    auto profile_names = config_mgr_->ListProfiles();
+    if (ui_profile_idx_ >= 0 && ui_profile_idx_ < (int)profile_names.size()) {
+        LoadProfileIntoState(profile_names[ui_profile_idx_]);
+        // Update name buffer to match loaded profile
+        SafeStringCopy(profile_name_buf_, sizeof(profile_name_buf_), profile_names[ui_profile_idx_]);
+    }
+}
+
+void ProfilePanel::HandleProfileSave() {
     // Handle save button (this needs to be done after the common function call)
     if (config_mgr_ && ImGui::Button("Save##prof")) {
-        if (strlen(profile_name_buf_) > 0) {
+        if (profile_name_buf_[0] != '\0') {
             if (SaveStateToProfile(profile_name_buf_)) {
                 std::cout << "Profile saved: " << profile_name_buf_ << std::endl;
-                // Update profile index after successful save
-                auto profile_names = config_mgr_->ListProfiles();
-                auto it = std::find(profile_names.begin(), profile_names.end(), profile_name_buf_);
-                ui_profile_idx_ = (it == profile_names.end()) ? -1 : (int)std::distance(profile_names.begin(), it);
+                UpdateProfileIndexAfterSave();
             }
         }
     }
-    
-    ImGui::Separator();
+}
+
+void ProfilePanel::UpdateProfileIndexAfterSave() {
+    // Update profile index after successful save
+    auto profile_names = config_mgr_->ListProfiles();
+    auto it = std::find(profile_names.begin(), profile_names.end(), profile_name_buf_);
+    ui_profile_idx_ = (it == profile_names.end()) ? -1 : (int)std::distance(profile_names.begin(), it);
 }
 
 void ProfilePanel::RenderProfileList() {
@@ -68,7 +95,7 @@ void ProfilePanel::RenderProfileCreation() {
     ImGui::InputText("Profile Name", profile_name_buf_, sizeof(profile_name_buf_));
     
     if (ImGui::Button("Save Current Settings")) {
-        if (strlen(profile_name_buf_) > 0) {
+        if (profile_name_buf_[0] != '\0') {
             if (SaveStateToProfile(profile_name_buf_)) {
                 std::cout << "Profile saved: " << profile_name_buf_ << std::endl;
                 profile_name_buf_[0] = '\0';
@@ -77,7 +104,7 @@ void ProfilePanel::RenderProfileCreation() {
     }
 }
 
-void ProfilePanel::RenderProfileActions() {
+void ProfilePanel::RenderProfileActionButtons() {
     ImGui::Text("Profile Actions");
     ImGui::Separator();
     
@@ -165,6 +192,11 @@ void DebugPanel::RenderDebugVisualization() {
 }
 
 void DebugPanel::RenderPerformanceStats() {
+    RenderBasicStats();
+    RenderPerformanceOptimization();
+}
+
+void DebugPanel::RenderBasicStats() {
     ImGui::Text("Performance Statistics");
     ImGui::Separator();
     
@@ -176,11 +208,18 @@ void DebugPanel::RenderPerformanceStats() {
         ImGui::Text("Avg Smooth Time: %.2f ms", state_.perf_sum_smooth_ms / state_.perf_sum_frames);
         ImGui::Text("Avg Background Time: %.2f ms", state_.perf_sum_bg_ms / state_.perf_sum_frames);
     }
-    
+}
+
+void DebugPanel::RenderPerformanceOptimization() {
     ImGui::Spacing();
     ImGui::Text("Performance Optimization");
     ImGui::Separator();
     
+    RenderManualProcessingScale();
+    RenderAutoProcessingScale();
+}
+
+void DebugPanel::RenderManualProcessingScale() {
     // Manual processing scale
     ImGui::SliderFloat("Processing scale", &state_.fx_adv_scale, 0.4f, 1.0f);
     ImGui::TextDisabled("Reduces image size for faster processing");
@@ -190,7 +229,9 @@ void DebugPanel::RenderPerformanceStats() {
         ImGui::SliderFloat("Detail preserve", &state_.fx_adv_detail_preserve, 0.0f, 0.5f);
         ImGui::TextDisabled("Preserves fine details when processing at reduced scale");
     }
-    
+}
+
+void DebugPanel::RenderAutoProcessingScale() {
     // Auto processing scale
     ImGui::Checkbox("Auto processing scale", &state_.auto_processing_scale);
     if (state_.auto_processing_scale) {
@@ -200,30 +241,38 @@ void DebugPanel::RenderPerformanceStats() {
     ImGui::TextDisabled("Automatically adjusts scale to maintain target FPS");
     
     if (state_.auto_processing_scale) {
-        ImGui::Indent();
-        
-        // Target FPS (read-only, auto-calculated)
-        ImGui::Text("Target: %.1f fps", state_.target_fps);
+        RenderAutoProcessingScaleDetails();
+    }
+}
+
+void DebugPanel::RenderAutoProcessingScaleDetails() {
+    ImGui::Indent();
+    
+    // Target FPS (read-only, auto-calculated)
+    ImGui::Text("Target: %.1f fps", state_.target_fps);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(auto-detected from camera)");
+    
+    // Show current status with better formatting
+    ImGui::Text("Current: %.1f fps, Scale: %.2f", state_.current_fps, state_.fx_adv_scale);
+    if (state_.current_fps > 0.0f) {
+        RenderPerformanceStatus();
+    }
+    ImGui::Unindent();
+}
+
+void DebugPanel::RenderPerformanceStatus() {
+    float fps_diff = state_.target_fps - state_.current_fps;
+    if (std::abs(fps_diff) > 0.5f) {
         ImGui::SameLine();
-        ImGui::TextDisabled("(auto-detected from camera)");
-        
-        // Show current status with better formatting
-        ImGui::Text("Current: %.1f fps, Scale: %.2f", state_.current_fps, state_.fx_adv_scale);
-        if (state_.current_fps > 0.0f) {
-            float fps_diff = state_.target_fps - state_.current_fps;
-            if (std::abs(fps_diff) > 0.5f) {
-                ImGui::SameLine();
-                if (fps_diff > 0) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "(slow)");
-                } else {
-                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "(fast)");
-                }
-            } else {
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "(optimal)");
-            }
+        if (fps_diff > 0) {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "(slow)");
+        } else {
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "(fast)");
         }
-        ImGui::Unindent();
+    } else {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "(optimal)");
     }
 }
 

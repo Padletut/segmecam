@@ -140,9 +140,15 @@ public:
     void SetConfigManager(ConfigManager* config_mgr) { config_mgr_ = config_mgr; }
 
 private:
+    void RenderProfileSelection();
+    void RenderProfileActions();
+    void HandleProfileLoad();
+    void HandleProfileSave();
+    void UpdateProfileIndexAfterSave();
+    
     void RenderProfileList();
     void RenderProfileCreation();
-    void RenderProfileActions();
+    void RenderProfileActionButtons();
     void LoadProfileIntoState(const std::string& profile_name);
     bool SaveStateToProfile(const std::string& profile_name);
     
@@ -172,6 +178,12 @@ private:
     void RenderOverlayControls();
     void RenderDebugVisualization();
     void RenderPerformanceStats();
+    void RenderBasicStats();
+    void RenderPerformanceOptimization();
+    void RenderManualProcessingScale();
+    void RenderAutoProcessingScale();
+    void RenderAutoProcessingScaleDetails();
+    void RenderPerformanceStatus();
     void RenderAdvancedSettings();
     
     AppState& state_;
