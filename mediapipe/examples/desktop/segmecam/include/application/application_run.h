@@ -9,6 +9,7 @@
 #include "app_state.h"
 
 // Include module headers for struct definitions
+#include "include/ui/ui_manager_enhanced.h"
 #include "application/frame_processor.h"
 #include "application/mediapipe_processor.h"
 
@@ -93,6 +94,49 @@ public:
     static void SyncSettingsToEffectsManager(EffectsManager& effects_manager, const AppState& app_state);
 
 private:
+    /**
+     * Verify that all required managers are available
+     * @param managers Manager coordination structure to verify
+     * @return true if all managers are available, false otherwise
+     */
+    static bool VerifyRequiredManagers(const ManagerCoordination::Managers& managers);
+
+    /**
+     * Initialize frame processing state and create parameters structure
+     * @param managers Manager coordination structure
+     * @param mediapipe_graph MediaPipe graph reference
+     * @param mask_poller Mask output stream poller
+     * @param multi_face_landmarks_poller Face landmarks poller (optional)
+     * @param face_rects_poller Face rects poller (optional)
+     * @param window SDL window
+     * @param app_state Application state
+     * @param ui_manager UI manager reference
+     * @param frame_id Frame ID counter
+     * @param fps FPS counter
+     * @param fps_frames FPS frame counter
+     * @param fps_last_ms Last FPS measurement timestamp
+     * @param frame_count Total frame count
+     * @param running Running flag
+     * @param has_landmarks Whether landmarks are available
+     * @return Initialized FrameProcessingParams structure
+     */
+    static FrameProcessingParams InitializeFrameProcessingState(
+        ManagerCoordination::Managers& managers,
+        std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph,
+        std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
+        std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
+        std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+        SDL_Window* window,
+        AppState& app_state,
+        UIManager& ui_manager,
+        int64_t& frame_id,
+        double& fps,
+        uint64_t& fps_frames,
+        uint32_t& fps_last_ms,
+        int& frame_count,
+        bool& running,
+        bool& has_landmarks);
+
     /**
      * Helper function to convert MediaPipe ImageFrame to OpenCV Mat
      */

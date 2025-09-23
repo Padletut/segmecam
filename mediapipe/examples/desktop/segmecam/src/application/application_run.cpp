@@ -9,6 +9,65 @@
 
 namespace segmecam {
 
+bool ApplicationRun::VerifyRequiredManagers(const ManagerCoordination::Managers& managers) {
+    if (!managers.camera) {
+        std::cerr << "❌ Camera manager not available!" << std::endl;
+        return false;
+    }
+    if (!managers.effects) {
+        std::cerr << "❌ Effects manager not available!" << std::endl;
+        return false;
+    }
+    if (!managers.config) {
+        std::cerr << "❌ Config manager not available!" << std::endl;
+        return false;
+    }
+    if (!managers.ui) {
+        std::cerr << "❌ UI manager not available!" << std::endl;
+        return false;
+    }
+    return true;
+}
+
+FrameProcessingParams ApplicationRun::InitializeFrameProcessingState(
+    ManagerCoordination::Managers& managers,
+    std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+    SDL_Window* window,
+    AppState& app_state,
+    UIManager& ui_manager,
+    int64_t& frame_id,
+    double& fps,
+    uint64_t& fps_frames,
+    uint32_t& fps_last_ms,
+    int& frame_count,
+    bool& running,
+    bool& has_landmarks) {
+
+    // Set up frame processing parameters
+    FrameProcessingParams params = {
+        managers,
+        mediapipe_graph,
+        mask_poller,
+        multi_face_landmarks_poller,
+        face_rects_poller,
+        window,
+        app_state,
+        ui_manager,
+        frame_id,
+        fps,
+        fps_frames,
+        fps_last_ms,
+        frame_count,
+        running,
+        has_landmarks
+    };
+
+    return params;
+}
+
 int ApplicationRun::ExecuteMainLoop(
     ManagerCoordination::Managers& managers,
     std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph,
@@ -21,24 +80,11 @@ int ApplicationRun::ExecuteMainLoop(
     std::cout << "🚀 ApplicationRun::ExecuteMainLoop - Starting main application loop!" << std::endl;
 
     // Verify all required managers are available
-    if (!managers.camera) {
-        std::cerr << "❌ Camera manager not available!" << std::endl;
-        return 1;
-    }
-    if (!managers.effects) {
-        std::cerr << "❌ Effects manager not available!" << std::endl;
-        return 1;
-    }
-    if (!managers.config) {
-        std::cerr << "❌ Config manager not available!" << std::endl;
-        return 1;
-    }
-    if (!managers.ui) {
-        std::cerr << "❌ UI manager not available!" << std::endl;
+    if (!VerifyRequiredManagers(managers)) {
         return 1;
     }
 
-    // Initialize frame processing state
+    // Initialize frame processing state variables
     int64_t frame_id = 0;
     double fps = 0.0;
     uint64_t fps_frames = 0;
@@ -47,31 +93,18 @@ int ApplicationRun::ExecuteMainLoop(
     bool running = true;
     bool has_landmarks = (multi_face_landmarks_poller != nullptr);
 
-    // Set up frame processing parameters
-    FrameProcessingParams params = {
-        managers,
-        mediapipe_graph,
-        mask_poller,
-        multi_face_landmarks_poller,
-        face_rects_poller,
-        window,
-        app_state,
-        *managers.ui,
-        frame_id,
-        fps,
-        fps_frames,
-        fps_last_ms,
-        frame_count,
-        running,
-        has_landmarks
-    };
+    // Initialize frame processing state and parameters
+    FrameProcessingParams params = InitializeFrameProcessingState(
+        managers, mediapipe_graph, mask_poller, multi_face_landmarks_poller,
+        face_rects_poller, window, app_state, *managers.ui,
+        frame_id, fps, fps_frames, fps_last_ms, frame_count, running, has_landmarks);
 
     std::cout << "🎬 Starting main event loop..." << std::endl;
 
     // Main application loop
-    while (running) {
+    while (params.running) {
         // Process SDL events and UI
-        if (!managers.ui->ProcessEvents(running)) {
+        if (!managers.ui->ProcessEvents(params.running)) {
             std::cout << "🛑 UI requested exit" << std::endl;
             break;
         }
@@ -81,10 +114,10 @@ int ApplicationRun::ExecuteMainLoop(
             std::cout << "⚠️  Frame processing failed, continuing..." << std::endl;
         }
 
-        frame_count++;
+        params.frame_count++;
     }
 
-    std::cout << "👋 Application loop ended gracefully. Processed " << frame_count << " frames." << std::endl;
+    std::cout << "👋 Application loop ended gracefully. Processed " << params.frame_count << " frames." << std::endl;
     return 0;
 }
 
