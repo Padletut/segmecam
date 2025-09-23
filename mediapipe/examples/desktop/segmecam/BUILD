@@ -296,8 +296,9 @@ cc_library( # type: ignore
         "src/camera/camera_gstreamer_open.cpp",
         "src/camera/camera_gstreamer_close.cpp",
         "src/camera/camera_gstreamer_capture.cpp",
+        "src/camera/gstreamer_utils.cpp",
     ],
-    hdrs = ["include/camera/camera_manager.h"],
+    hdrs = ["include/camera/camera_manager.h", "include/camera/gstreamer_utils.h"],
     includes = [".", "include"],
     deps = [
         ":gstreamer_buffer_utils",  # for buffer conversion utilities
