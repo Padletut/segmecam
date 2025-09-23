@@ -466,7 +466,6 @@ void CameraPanel::EnableAutoExposure(int current_mode) {
 void CameraPanel::RenderProfileSection() {
     RenderProfileHeader();
     HandleProfileSelection();
-    HandleProfileSaveButton();
     ImGui::Separator();
 }
 
@@ -479,7 +478,7 @@ void CameraPanel::RenderProfileHeader() {
 void CameraPanel::HandleProfileSelection() {
     // Use common profile selection UI
     if (ui_utils::RenderProfileSelection(config_mgr_, ui_profile_idx_, profile_name_buf_,
-                                       sizeof(profile_name_buf_), "Profile Name##camera_panel", false)) {
+                                       sizeof(profile_name_buf_), "Profile Name##camera_panel", true)) {
         ProcessProfileLoadRequest();
     }
 }
@@ -493,13 +492,6 @@ void CameraPanel::ProcessProfileLoadRequest() {
         std::string profile_name = profile_names[ui_profile_idx_];
         segmecam::ui_utils::SafeStringCopy(profile_name_buf_, sizeof(profile_name_buf_), profile_name);
     }
-}
-
-void CameraPanel::HandleProfileSaveButton() {
-    // Handle save button using common UI utility
-    ui_utils::HandleProfileSaveButton(config_mgr_, ui_profile_idx_, profile_name_buf_,
-                                     sizeof(profile_name_buf_),
-                                     [this](const std::string& name) { return SaveStateToProfile(name); });
 }
 
 void CameraPanel::LoadProfileIntoState(const std::string& profile_name) {

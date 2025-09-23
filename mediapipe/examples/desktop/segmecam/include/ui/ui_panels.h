@@ -50,7 +50,6 @@ private:
     void RenderProfileHeader();
     void HandleProfileSelection();
     void ProcessProfileLoadRequest();
-    void HandleProfileSaveButton();
     void RenderCameraControls();
     
     // Helper methods for resolution settings

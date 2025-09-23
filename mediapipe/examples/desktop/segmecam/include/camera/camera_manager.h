@@ -296,6 +296,14 @@ private:
     bool CreateFrameFromV4L2Buffer(GstSample* sample, const GstMapInfo& map_info, cv::Mat& frame);
     bool InitializeV4L2Fallback();
 
+    // V4L2 fallback helpers
+    bool StopExistingPipeline();
+    bool CheckV4L2DeviceAccess();
+    std::string CreateV4L2PipelineDescription() const;
+    bool CreateV4L2Pipeline();
+    bool SetupV4L2AppSink();
+    bool StartV4L2Pipeline();
+
     // Configuration and state
     CameraConfig config_;
     CameraState state_;

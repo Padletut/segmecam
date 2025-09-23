@@ -269,38 +269,70 @@ bool CameraManager::CaptureV4L2FrameInternal(cv::Mat& frame) {
 bool CameraManager::InitializeV4L2Fallback() {
     std::cout << "🔄 Initializing V4L2 fallback pipeline..." << std::endl;
 
-    // Stop any existing PipeWire pipeline
-    if (pipeline_) {
-        if (gst_element_set_state) {
-            gst_element_set_state(pipeline_, GST_STATE_NULL);
-        }
-        if (gst_object_unref) {
-            gst_object_unref(pipeline_);
-        }
-        pipeline_ = nullptr;
+    if (!StopExistingPipeline()) {
+        return false;
     }
 
-    // Check if /dev/video0 exists
+    if (!CheckV4L2DeviceAccess()) {
+        return false;
+    }
+
+    if (!CreateV4L2Pipeline()) {
+        return false;
+    }
+
+    if (!SetupV4L2AppSink()) {
+        return false;
+    }
+
+    if (!StartV4L2Pipeline()) {
+        return false;
+    }
+
+    std::cout << "✅ V4L2 fallback pipeline initialized successfully" << std::endl;
+    return true;
+}
+
+bool CameraManager::StopExistingPipeline() {
+    if (!pipeline_) {
+        return true; // No existing pipeline to stop
+    }
+
+    if (gst_element_set_state) {
+        gst_element_set_state(pipeline_, GST_STATE_NULL);
+    }
+    if (gst_object_unref) {
+        gst_object_unref(pipeline_);
+    }
+    pipeline_ = nullptr;
+    return true;
+}
+
+bool CameraManager::CheckV4L2DeviceAccess() {
     if (access("/dev/video0", F_OK) != 0) {
         std::cerr << "❌ V4L2 device /dev/video0 not accessible in Flatpak" << std::endl;
         return false;
     }
+    return true;
+}
 
-    // Create V4L2 pipeline: v4l2src ! videoconvert ! videoscale ! appsink
-    std::string pipeline_desc = "v4l2src device=/dev/video0 ! "
-                               "videoconvert ! "
-                               "videoscale ! "
-                               "video/x-raw,format=BGR,width=" + std::to_string(state_.current_width) +
-                               ",height=" + std::to_string(state_.current_height) +
-                               ",framerate=" + std::to_string(state_.current_fps) + "/1 ! "
-                               "appsink name=appsink";
+std::string CameraManager::CreateV4L2PipelineDescription() const {
+    return "v4l2src device=/dev/video0 ! "
+           "videoconvert ! "
+           "videoscale ! "
+           "video/x-raw,format=BGR,width=" + std::to_string(state_.current_width) +
+           ",height=" + std::to_string(state_.current_height) +
+           ",framerate=" + std::to_string(state_.current_fps) + "/1 ! "
+           "appsink name=appsink";
+}
 
+bool CameraManager::CreateV4L2Pipeline() {
     if (!gst_parse_launch) {
         std::cerr << "❌ gst_parse_launch not available" << std::endl;
         return false;
     }
 
-    // Create pipeline without error handling since GError is forward declared
+    std::string pipeline_desc = CreateV4L2PipelineDescription();
     pipeline_ = reinterpret_cast<GstElement*>(gst_parse_launch(pipeline_desc.c_str(), nullptr));
 
     if (!pipeline_) {
@@ -308,7 +340,10 @@ bool CameraManager::InitializeV4L2Fallback() {
         return false;
     }
 
-    // Get appsink element
+    return true;
+}
+
+bool CameraManager::SetupV4L2AppSink() {
     if (!gst_bin_get_by_name) {
         std::cerr << "❌ gst_bin_get_by_name not available" << std::endl;
         return false;
@@ -325,13 +360,20 @@ bool CameraManager::InitializeV4L2Fallback() {
         g_object_set(gst_appsink_, "emit-signals", FALSE, "sync", FALSE, nullptr);
     }
 
-    // Start the pipeline
-    if (gst_element_set_state && gst_element_set_state(pipeline_, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) {
+    return true;
+}
+
+bool CameraManager::StartV4L2Pipeline() {
+    if (!gst_element_set_state) {
+        std::cerr << "❌ gst_element_set_state not available" << std::endl;
+        return false;
+    }
+
+    if (gst_element_set_state(pipeline_, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) {
         std::cerr << "❌ Failed to start V4L2 pipeline" << std::endl;
         return false;
     }
 
-    std::cout << "✅ V4L2 fallback pipeline initialized successfully" << std::endl;
     return true;
 }
 
