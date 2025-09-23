@@ -417,18 +417,10 @@ void CameraPanel::RenderProfileSection() {
         }
     }
     
-    // Handle save button (this needs to be done after the common function call)
-    if (config_mgr_ && ImGui::Button("Save##prof")) {
-        if (strnlen(profile_name_buf_, sizeof(profile_name_buf_)) > 0) {
-            if (SaveStateToProfile(profile_name_buf_)) {
-                std::cout << "Profile saved: " << profile_name_buf_ << std::endl;
-                // Update profile index after successful save
-                auto profile_names = config_mgr_->ListProfiles();
-                auto it = std::find(profile_names.begin(), profile_names.end(), profile_name_buf_);
-                ui_profile_idx_ = (it == profile_names.end()) ? -1 : (int)std::distance(profile_names.begin(), it);
-            }
-        }
-    }
+    // Handle save button using common UI utility
+    ui_utils::HandleProfileSaveButton(config_mgr_, ui_profile_idx_, profile_name_buf_,
+                                     sizeof(profile_name_buf_),
+                                     [this](const std::string& name) { return SaveStateToProfile(name); });
     
     ImGui::Separator();
 }

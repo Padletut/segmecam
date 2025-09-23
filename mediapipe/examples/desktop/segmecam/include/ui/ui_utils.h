@@ -29,5 +29,11 @@ void RenderSetDefaultButton(class ConfigManager* config_mgr, char* profile_name_
 bool RenderProfileSelectionDisabled(const std::string& input_label, char* profile_name_buf, 
                                    size_t buf_size, bool show_set_default);
 
+// Common profile save button handler
+// Returns true if a profile was saved
+bool HandleProfileSaveButton(class ConfigManager* config_mgr, int& ui_profile_idx,
+                            char* profile_name_buf, size_t buf_size,
+                            std::function<bool(const std::string&)> save_callback);
+
 } // namespace ui_utils
 } // namespace segmecam

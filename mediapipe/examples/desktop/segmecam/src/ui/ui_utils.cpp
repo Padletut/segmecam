@@ -4,6 +4,7 @@
 #include <cstring>
 #include <algorithm>
 #include <iostream>
+#include <functional>
 
 namespace segmecam {
 namespace ui_utils {
@@ -95,6 +96,31 @@ bool RenderProfileSelectionDisabled(const std::string& input_label, char* profil
     }
     
     return false;
+}
+
+bool HandleProfileSaveButton(class ConfigManager* config_mgr, int& ui_profile_idx,
+                            char* profile_name_buf, size_t buf_size,
+                            std::function<bool(const std::string&)> save_callback) {
+    if (!config_mgr || !ImGui::Button("Save##prof")) {
+        return false;
+    }
+    
+    if (strnlen(profile_name_buf, buf_size) == 0) {
+        return false;
+    }
+    
+    if (!save_callback(profile_name_buf)) {
+        return false;
+    }
+    
+    std::cout << "Profile saved: " << profile_name_buf << std::endl;
+    
+    // Update profile index after successful save
+    auto profile_names = config_mgr->ListProfiles();
+    auto it = std::find(profile_names.begin(), profile_names.end(), profile_name_buf);
+    ui_profile_idx = (it == profile_names.end()) ? -1 : (int)std::distance(profile_names.begin(), it);
+    
+    return true;
 }
 
 } // namespace ui_utils
