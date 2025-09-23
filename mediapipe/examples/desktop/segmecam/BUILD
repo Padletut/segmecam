@@ -2,8 +2,8 @@ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library") # type: ignore
 
 cc_library( # type: ignore
     name = "segmecam_composite",
-    srcs = ["segmecam_composite.cc"],
-    hdrs = ["segmecam_composite.h"],
+    srcs = ["src/render/segmecam_composite.cc"],
+    hdrs = ["include/render/segmecam_composite.h"],
     includes = ["."],
     deps = [
         "//mediapipe/framework/formats:image_frame",
@@ -14,8 +14,8 @@ cc_library( # type: ignore
 
 cc_library( # type: ignore
     name = "segmecam_face_effects",
-    srcs = ["segmecam_face_effects.cc", "cam_enum.cc"],
-    hdrs = ["segmecam_face_effects.h", "cam_enum.h"],
+    srcs = ["src/effects/segmecam_face_effects.cc", "src/camera/cam_enum.cc"],
+    hdrs = ["include/effects/segmecam_face_effects.h", "include/camera/cam_enum.h"],
     includes = ["."],
     deps = [
         "//mediapipe/framework/formats:landmark_cc_proto",
@@ -29,8 +29,8 @@ cc_library( # type: ignore
 
 cc_library( # type: ignore
     name = "presets",
-    srcs = ["presets.cc"],
-    hdrs = ["presets.h"],
+    srcs = ["src/effects/presets.cc"],
+    hdrs = ["include/effects/presets.h"],
     includes = ["."],
     deps = [],
     visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
@@ -65,8 +65,8 @@ cc_library( # type: ignore
 
 cc_library( # type: ignore
     name = "gpu_detector",
-    srcs = ["gpu_detector.cpp"],
-    hdrs = ["gpu_detector.h"],
+    srcs = ["src/mediapipe_manager/gpu_detector.cpp"],
+    hdrs = ["include/mediapipe_manager/gpu_detector.h"],
     includes = ["."],
     deps = [],
     linkopts = [
@@ -302,7 +302,7 @@ cc_library( # type: ignore
         "src/camera/camera_controls.cpp",
         "src/camera/camera_enumeration.cpp",
         "src/camera/camera_setup.cpp",
-        "cam_enum.cc",  # V4L2 control functions
+        "src/camera/cam_enum.cc",  # V4L2 control functions
     ],
     hdrs = [
         "include/camera/camera_manager.h", 

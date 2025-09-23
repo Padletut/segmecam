@@ -1,4 +1,4 @@
-#include "segmecam_face_effects.h"
+#include "include/effects/segmecam_face_effects.h"
 #include <cmath>
 
 namespace {

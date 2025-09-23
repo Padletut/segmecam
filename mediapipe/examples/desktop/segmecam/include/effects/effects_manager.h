@@ -4,9 +4,9 @@
 #include <memory>
 #include <opencv2/opencv.hpp>
 #include "mediapipe/framework/formats/landmark.pb.h"
-#include "segmecam_face_effects.h"
-#include "segmecam_composite.h"
-#include "presets.h"
+#include "include/effects/segmecam_face_effects.h"
+#include "include/render/segmecam_composite.h"
+#include "include/effects/presets.h"
 
 namespace segmecam {
 

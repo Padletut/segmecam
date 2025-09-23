@@ -2,7 +2,7 @@
 
 #include <vector>
 #include <string>
-#include "cam_enum.h"
+#include "include/camera/cam_enum.h"
 
 namespace segmecam {
 

@@ -1,5 +1,5 @@
 #include "include/effects/effects_manager.h"
-#include "segmecam_composite.h"
+#include "include/render/segmecam_composite.h"
 #include "mediapipe/tasks/cc/vision/face_landmarker/face_landmarks_connections.h"
 
 #include <iostream>

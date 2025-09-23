@@ -5,7 +5,7 @@
 #include <vector>
 #include "include/application/app_state.h"
 #include "include/camera/camera_manager.h"
-#include "cam_enum.h"
+#include "include/camera/cam_enum.h"
 #include "src/config/config_manager.h"
 
 namespace segmecam {

@@ -1,4 +1,4 @@
-#include "cam_enum.h"
+#include "include/camera/cam_enum.h"
 
 #include <algorithm>
 #include <set>

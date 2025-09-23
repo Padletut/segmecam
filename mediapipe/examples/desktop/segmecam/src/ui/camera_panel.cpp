@@ -3,7 +3,7 @@
 #include "include/camera/camera_manager.h"
 #include "include/effects/effects_manager.h"
 #include "src/config/config_manager.h"
-#include "cam_enum.h"
+#include "include/camera/cam_enum.h"
 #include "include/camera/vcam.h"
 #include <iostream>
 #include <algorithm>

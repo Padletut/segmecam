@@ -4,7 +4,7 @@
 #include <string>
 #include <memory>
 #include "application/application_config.h"
-#include "gpu_detector.h"
+#include "include/mediapipe_manager/gpu_detector.h"
 #include "mediapipe/framework/calculator_graph.h"
 
 namespace segmecam {

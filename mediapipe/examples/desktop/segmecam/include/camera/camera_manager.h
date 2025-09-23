@@ -7,7 +7,7 @@
 #include <condition_variable>
 #include <opencv2/opencv.hpp>
 #include <linux/videodev2.h>
-#include "cam_enum.h"
+#include "include/camera/cam_enum.h"
 #include "gstreamer_buffer_utils.h"
 #include "camera_controls.h"
 #include "gstreamer_utils.h"

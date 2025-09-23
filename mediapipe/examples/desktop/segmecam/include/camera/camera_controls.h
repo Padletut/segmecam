@@ -2,7 +2,7 @@
 
 #include <string>
 #include <cstdint>
-#include "cam_enum.h"
+#include "include/camera/cam_enum.h"
 
 namespace segmecam {
 

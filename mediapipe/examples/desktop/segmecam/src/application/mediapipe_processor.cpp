@@ -1,5 +1,5 @@
 #include "include/application/mediapipe_processor.h"
-#include "segmecam_composite.h"
+#include "include/render/segmecam_composite.h"
 #include "include/application/app_state.h"
 
 // Include MediaPipe for output stream polling

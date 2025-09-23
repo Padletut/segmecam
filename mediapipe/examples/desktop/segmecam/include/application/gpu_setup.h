@@ -2,7 +2,7 @@
 #define SEGMECAM_GPU_SETUP_H
 
 #include <cstdlib>
-#include "gpu_detector.h"
+#include "include/mediapipe_manager/gpu_detector.h"
 
 namespace segmecam {
 

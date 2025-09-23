@@ -1,4 +1,4 @@
-#include "gpu_detector.h"
+#include "include/mediapipe_manager/gpu_detector.h"
 #include <iostream>
 #include <filesystem>
 #include <cstdlib>

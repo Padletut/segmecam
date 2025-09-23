@@ -1,4 +1,4 @@
-#include "segmecam_composite.h"
+#include "include/render/segmecam_composite.h"
 
 // Persistently remembered preferred channel when mask comes as 4xU8 (SRGBA).
 // This avoids per-frame channel switches that can look like flicker.
