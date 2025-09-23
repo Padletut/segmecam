@@ -317,14 +317,17 @@ void EffectsManager::ApplyLipEffects(cv::Mat& frame_bgr, const FaceRegions& regi
         beauty_state_.fx_lip_color[0] * 255  // R
     );
     
-    ApplyLipRefinerBGR(
-        frame_bgr, regions, lip_color_bgr,
+    LipRefinerParams params = {
+        lip_color_bgr,
         beauty_state_.fx_lip_alpha,
         beauty_state_.fx_lip_feather,
         beauty_state_.fx_lip_light,
         beauty_state_.fx_lip_band,
-        landmarks, frame_size
-    );
+        landmarks,
+        frame_size
+    };
+    
+    ApplyLipRefinerBGR(frame_bgr, regions, params);
 }
 
 void EffectsManager::ApplyTeethWhitening(cv::Mat& frame_bgr, const FaceRegions& regions) {

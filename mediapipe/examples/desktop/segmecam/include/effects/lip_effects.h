@@ -10,17 +10,18 @@
 // class NormalizedLandmarkList;
 // }
 
+// Parameters for lip refinement effects
+struct LipRefinerParams {
+    cv::Scalar color_bgr;      // target tint (0..255 per channel)
+    float strength;            // 0..1 amount of color shift (LAB a/b blend)
+    float feather_px;          // soft edge in pixels
+    float lightness;           // additive L* adjustment (-1..1 typical)
+    float band_grow_px;        // band growth in pixels
+    const mediapipe::NormalizedLandmarkList& lms;  // landmark list reference
+    const cv::Size& frame_size; // frame size reference
+};
+
 // Apply lipstick/lip-refiner using landmark lips (outer minus inner).
-// color_bgr: target tint (0..255 per channel)
-// strength:  0..1 amount of color shift (LAB a/b blend)
-// feather_px: soft edge in pixels
-// lightness: additive L* adjustment (-1..1 typical)
 void ApplyLipRefinerBGR(cv::Mat& frame_bgr,
                         const FaceRegions& fr,
-                        const cv::Scalar& color_bgr,
-                        float strength,
-                        float feather_px,
-                        float lightness,
-                        float band_grow_px,
-                        const mediapipe::NormalizedLandmarkList& lms,
-                        const cv::Size& frame_size);
+                        const LipRefinerParams& params);

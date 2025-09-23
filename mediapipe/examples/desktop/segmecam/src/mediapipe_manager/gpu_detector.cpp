@@ -35,18 +35,27 @@ GPUBackend GPUDetector::DetectBestGPUBackend(bool force_no_nvidia, bool force_no
 }
 
 GPUBackend GPUDetector::TestGPUBackendsInPriority(bool force_no_nvidia, bool force_no_mesa) {
-    if (!force_no_nvidia && TestNvidiaEGL()) {
-        return GPUBackend::NVIDIA_EGL;
+    // Helper struct for backend testing
+    struct BackendTest {
+        bool condition;
+        bool (*test_func)();
+        GPUBackend backend;
+    };
+
+    // Define backend tests in priority order
+    std::vector<BackendTest> tests;
+    tests.push_back({!force_no_nvidia, &TestNvidiaEGL, GPUBackend::NVIDIA_EGL});
+    tests.push_back({!force_no_mesa, &TestAMDRadeon, GPUBackend::AMD_RADEON});
+    tests.push_back({!force_no_mesa, &TestIntelGPU, GPUBackend::INTEL_GPU});
+    tests.push_back({!force_no_mesa, &TestMesaEGL, GPUBackend::MESA_EGL});
+
+    // Test each backend in priority order
+    for (const auto& test : tests) {
+        if (test.condition && test.test_func()) {
+            return test.backend;
+        }
     }
-    if (!force_no_mesa && TestAMDRadeon()) {
-        return GPUBackend::AMD_RADEON;
-    }
-    if (!force_no_mesa && TestIntelGPU()) {
-        return GPUBackend::INTEL_GPU;
-    }
-    if (!force_no_mesa && TestMesaEGL()) {
-        return GPUBackend::MESA_EGL;
-    }
+
     return GPUBackend::NONE;
 }
 
