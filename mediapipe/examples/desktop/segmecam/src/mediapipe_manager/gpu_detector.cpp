@@ -22,32 +22,57 @@ GPUCapabilities GPUDetector::DetectGPUCapabilitiesForTesting(bool force_no_nvidi
     caps.egl_library_paths = FindEGLLibraries();
     
     // Test different GPU backends in priority order
-    if (!force_no_nvidia && TestNvidiaEGL()) {
-        caps.backend = GPUBackend::NVIDIA_EGL;
-        caps.egl_available = true;
-        caps.opengl_available = true;
-        caps.vendor = "NVIDIA";
-    } else if (!force_no_mesa && TestAMDRadeon()) {
-        caps.backend = GPUBackend::AMD_RADEON;
-        caps.egl_available = true;
-        caps.opengl_available = true;
-        caps.vendor = "AMD Radeon";
-    } else if (!force_no_mesa && TestIntelGPU()) {
-        caps.backend = GPUBackend::INTEL_GPU;
-        caps.egl_available = true;
-        caps.opengl_available = true;
-        caps.vendor = "Intel GPU";
-    } else if (!force_no_mesa && TestMesaEGL()) {
-        caps.backend = GPUBackend::MESA_EGL;
-        caps.egl_available = true;
-        caps.opengl_available = true;
-        caps.vendor = "Mesa";
-    } else {
-        caps.backend = GPUBackend::CPU_ONLY;
-        caps.vendor = "CPU";
-    }
+    GPUBackend detected_backend = DetectBestGPUBackend(force_no_nvidia, force_no_mesa);
+    SetCapabilitiesFromBackend(caps, detected_backend);
     
     return caps;
+}
+
+GPUBackend GPUDetector::DetectBestGPUBackend(bool force_no_nvidia, bool force_no_mesa) {
+    if (!force_no_nvidia && TestNvidiaEGL()) {
+        return GPUBackend::NVIDIA_EGL;
+    } else if (!force_no_mesa && TestAMDRadeon()) {
+        return GPUBackend::AMD_RADEON;
+    } else if (!force_no_mesa && TestIntelGPU()) {
+        return GPUBackend::INTEL_GPU;
+    } else if (!force_no_mesa && TestMesaEGL()) {
+        return GPUBackend::MESA_EGL;
+    } else {
+        return GPUBackend::CPU_ONLY;
+    }
+}
+
+void GPUDetector::SetCapabilitiesFromBackend(GPUCapabilities& caps, GPUBackend backend) {
+    switch (backend) {
+        case GPUBackend::NVIDIA_EGL:
+            caps.backend = GPUBackend::NVIDIA_EGL;
+            caps.egl_available = true;
+            caps.opengl_available = true;
+            caps.vendor = "NVIDIA";
+            break;
+        case GPUBackend::AMD_RADEON:
+            caps.backend = GPUBackend::AMD_RADEON;
+            caps.egl_available = true;
+            caps.opengl_available = true;
+            caps.vendor = "AMD Radeon";
+            break;
+        case GPUBackend::INTEL_GPU:
+            caps.backend = GPUBackend::INTEL_GPU;
+            caps.egl_available = true;
+            caps.opengl_available = true;
+            caps.vendor = "Intel GPU";
+            break;
+        case GPUBackend::MESA_EGL:
+            caps.backend = GPUBackend::MESA_EGL;
+            caps.egl_available = true;
+            caps.opengl_available = true;
+            caps.vendor = "Mesa";
+            break;
+        default:
+            caps.backend = GPUBackend::CPU_ONLY;
+            caps.vendor = "CPU";
+            break;
+    }
 }
 
 RuntimeEnvironment GPUDetector::DetectEnvironment() {
@@ -57,32 +82,43 @@ RuntimeEnvironment GPUDetector::DetectEnvironment() {
 }
 
 bool GPUDetector::SetupOptimalEGLPath(const GPUCapabilities& caps) {
-    std::vector<std::string> search_paths;
-    
-    // Priority order based on environment and detected backend
+    std::vector<std::string> search_paths = GetSearchPathsForEnvironment(caps);
+    std::string new_path = BuildLDLibraryPath(search_paths);
+    return SetLDLibraryPath(new_path);
+}
+
+std::vector<std::string> GPUDetector::GetSearchPathsForEnvironment(const GPUCapabilities& caps) {
     if (caps.environment == RuntimeEnvironment::FLATPAK) {
-        if (caps.backend == GPUBackend::NVIDIA_EGL) {
-            search_paths = {
-                "/usr/lib/x86_64-linux-gnu/GL/nvidia-580-82-07/lib",
-                "/usr/lib/x86_64-linux-gnu/GL/nvidia-*/lib",
-                "/usr/lib/x86_64-linux-gnu"
-            };
-        } else {
-            search_paths = {
-                "/usr/lib/x86_64-linux-gnu",
-                "/app/lib"
-            };
-        }
+        return GetFlatpakSearchPaths(caps.backend);
     } else {
-        // Native environment
-        search_paths = {
+        return GetNativeSearchPaths();
+    }
+}
+
+std::vector<std::string> GPUDetector::GetFlatpakSearchPaths(GPUBackend backend) {
+    if (backend == GPUBackend::NVIDIA_EGL) {
+        return {
+            "/usr/lib/x86_64-linux-gnu/GL/nvidia-580-82-07/lib",
+            "/usr/lib/x86_64-linux-gnu/GL/nvidia-*/lib",
+            "/usr/lib/x86_64-linux-gnu"
+        };
+    } else {
+        return {
             "/usr/lib/x86_64-linux-gnu",
-            "/usr/local/lib",
-            "/lib/x86_64-linux-gnu"
+            "/app/lib"
         };
     }
-    
-    // Build LD_LIBRARY_PATH
+}
+
+std::vector<std::string> GPUDetector::GetNativeSearchPaths() {
+    return {
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/local/lib",
+        "/lib/x86_64-linux-gnu"
+    };
+}
+
+std::string GPUDetector::BuildLDLibraryPath(const std::vector<std::string>& search_paths) {
     std::string current_path = std::getenv("LD_LIBRARY_PATH") ?: "";
     std::string new_path;
     
@@ -97,11 +133,14 @@ bool GPUDetector::SetupOptimalEGLPath(const GPUCapabilities& caps) {
         new_path += ":" + current_path;
     }
     
+    return new_path;
+}
+
+bool GPUDetector::SetLDLibraryPath(const std::string& new_path) {
     if (setenv("LD_LIBRARY_PATH", new_path.c_str(), 1) == 0) {
         std::cout << "🔧 Set optimal EGL path: " << new_path << std::endl;
         return true;
     }
-    
     return false;
 }
 

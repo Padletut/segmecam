@@ -78,32 +78,42 @@ int EffectsManager::Initialize(const EffectsConfig& config) {
     return 0;
 }
 
+void EffectsManager::LogDebugInputFrame(int frame_count, const cv::Mat& frame_bgr) {
+    if (frame_count <= 3 && !frame_bgr.empty()) {
+        cv::Vec3b input_pixel = frame_bgr.at<cv::Vec3b>(frame_bgr.rows/2, frame_bgr.cols/2);
+        std::cout << "🔍 EFFECTS INPUT Frame " << frame_count << " - BGR format: " << frame_bgr.type() 
+                  << " center pixel: [" << (int)input_pixel[0] << "," << (int)input_pixel[1] << "," << (int)input_pixel[2] << "]" << std::endl;
+    }
+}
+
 cv::Mat EffectsManager::ProcessFrame(const cv::Mat& frame_bgr,
                                     const cv::Mat& segmentation_mask,
                                     const mediapipe::NormalizedLandmarkList* face_landmarks) {
     if (!state_.is_initialized) {
-        // Return BGR frame as-is when not initialized (ApplicationRun will convert to RGB for display)
         return frame_bgr.clone();
     }
     
     static int debug_frame_count = 0;
     debug_frame_count++;
     
-    // Debug input frame on first few frames
-    if (debug_frame_count <= 3 && !frame_bgr.empty()) {
-        cv::Vec3b input_pixel = frame_bgr.at<cv::Vec3b>(frame_bgr.rows/2, frame_bgr.cols/2);
-        std::cout << "🔍 EFFECTS INPUT Frame " << debug_frame_count << " - BGR format: " << frame_bgr.type() 
-                  << " center pixel: [" << (int)input_pixel[0] << "," << (int)input_pixel[1] << "," << (int)input_pixel[2] << "]" << std::endl;
-    }
+    LogDebugInputFrame(debug_frame_count, frame_bgr);
     
-    auto start_time = std::chrono::steady_clock::now();    // Track frame info
+    auto start_time = std::chrono::steady_clock::now();
     state_.last_frame_width = frame_bgr.cols;
     state_.last_frame_height = frame_bgr.rows;
     
-    // Work on a copy to avoid modifying the original
     cv::Mat processed_frame = frame_bgr.clone();
     
-    // Apply face effects if landmarks are available
+    ProcessFaceEffects(processed_frame, face_landmarks);
+    cv::Mat result = ProcessBackgroundEffects(processed_frame, segmentation_mask);
+    
+    UpdatePerformanceTracking(start_time);
+    LogDebugOutputFrame(debug_frame_count, result);
+    
+    return result;
+}
+
+void EffectsManager::ProcessFaceEffects(cv::Mat& processed_frame, const mediapipe::NormalizedLandmarkList* face_landmarks) {
     if (config_.enable_face_effects && face_landmarks && face_landmarks->landmark_size() > 0) {
         auto smooth_start = std::chrono::steady_clock::now();
         ApplyFaceEffects(processed_frame, *face_landmarks);
@@ -113,22 +123,24 @@ cv::Mat EffectsManager::ProcessFrame(const cv::Mat& frame_bgr,
     } else {
         state_.last_smoothing_time_ms = 0.0;
     }
-    
-    // Apply background effects
-    cv::Mat result;
+}
+
+cv::Mat EffectsManager::ProcessBackgroundEffects(const cv::Mat& processed_frame, const cv::Mat& segmentation_mask) {
     if (config_.enable_background_effects && !segmentation_mask.empty()) {
         auto bg_start = std::chrono::steady_clock::now();
-        result = ApplyBackgroundEffect(processed_frame, segmentation_mask);
+        cv::Mat result = ApplyBackgroundEffect(processed_frame, segmentation_mask);
         auto bg_end = std::chrono::steady_clock::now();
         state_.last_background_time_ms = std::chrono::duration<double, std::milli>(bg_end - bg_start).count();
         perf_sum_bg_ms_ += state_.last_background_time_ms;
+        return result;
     } else {
         // No background effects, return BGR frame as-is (ApplicationRun will convert to RGB for display)
-        result = processed_frame.clone();
         state_.last_background_time_ms = 0.0;
+        return processed_frame.clone();
     }
-    
-    // Update performance tracking
+}
+
+void EffectsManager::UpdatePerformanceTracking(const std::chrono::steady_clock::time_point& start_time) {
     auto end_time = std::chrono::steady_clock::now();
     state_.total_processing_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
     perf_sum_frame_ms_ += state_.total_processing_time_ms;
@@ -139,16 +151,15 @@ cv::Mat EffectsManager::ProcessFrame(const cv::Mat& frame_bgr,
     if (config_.enable_performance_logging && ShouldLogPerformance()) {
         LogPerformanceStats();
     }
-    
-    // Debug output frame on first few frames
-    if (debug_frame_count <= 3 && !result.empty()) {
+}
+
+void EffectsManager::LogDebugOutputFrame(int frame_count, const cv::Mat& result) {
+    if (frame_count <= 3 && !result.empty()) {
         cv::Vec3b output_pixel = result.at<cv::Vec3b>(result.rows/2, result.cols/2);
-        std::cout << "🔍 EFFECTS OUTPUT Frame " << debug_frame_count << " - format: " << result.type() 
+        std::cout << "🔍 EFFECTS OUTPUT Frame " << frame_count << " - format: " << result.type() 
                   << " center pixel: [" << (int)output_pixel[0] << "," << (int)output_pixel[1] << "," << (int)output_pixel[2] << "]" 
                   << " (should be RGB)" << std::endl;
     }
-    
-    return result;
 }
 
 cv::Mat EffectsManager::ApplyBackgroundEffect(const cv::Mat& frame_bgr, const cv::Mat& mask) {
@@ -621,47 +632,32 @@ void EffectsManager::DrawLandmarks(cv::Mat& frame_bgr, const mediapipe::Normaliz
         cv::circle(frame_bgr, cv::Point(x, y), 1, cv::Scalar(0, 255, 0), cv::FILLED, cv::LINE_AA);
     }
     
-    // Helper function to draw connections
-    auto draw_conn = [&](int a, int b, const cv::Scalar& col) {
-        if (a >= n || b >= n) return; // Safety check
-        const auto& pa = landmarks.landmark(a);
-        const auto& pb = landmarks.landmark(b);
+    // Draw connections for different face parts
+    using Conn = mediapipe::tasks::vision::face_landmarker::FaceLandmarksConnections;
+    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksLips, cv::Scalar(0, 128, 255));
+    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksFaceOval, cv::Scalar(0, 200, 255));
+    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksLeftEye, cv::Scalar(255, 200, 80));
+    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksRightEye, cv::Scalar(255, 200, 80));
+    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksLeftEyeBrow, cv::Scalar(180, 180, 255));
+    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksRightEyeBrow, cv::Scalar(180, 180, 255));
+}
+
+template<size_t N>
+void EffectsManager::DrawConnections(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks, 
+                                    const std::array<std::array<int, 2>, N>& connections, const cv::Scalar& color) {
+    int W = frame_bgr.cols;
+    int H = frame_bgr.rows;
+    const int n = landmarks.landmark_size();
+    
+    for (const auto& e : connections) {
+        if (e[0] >= n || e[1] >= n) continue; // Safety check
+        const auto& pa = landmarks.landmark(e[0]);
+        const auto& pb = landmarks.landmark(e[1]);
         
         cv::Point pt_a((int)std::round(pa.x() * W), (int)std::round(pa.y() * H));
         cv::Point pt_b((int)std::round(pb.x() * W), (int)std::round(pb.y() * H));
         
-        cv::line(frame_bgr, pt_a, pt_b, col, 1, cv::LINE_AA);
-    };
-    
-    // Draw lip connections (matches original implementation)
-    using Conn = mediapipe::tasks::vision::face_landmarker::FaceLandmarksConnections;
-    for (const auto& e : Conn::kFaceLandmarksLips) {
-        draw_conn(e[0], e[1], cv::Scalar(0, 128, 255)); // Orange color for lips
-    }
-    
-    // Draw face oval connections 
-    for (const auto& e : Conn::kFaceLandmarksFaceOval) {
-        draw_conn(e[0], e[1], cv::Scalar(0, 200, 255)); // Yellow-orange for face outline
-    }
-    
-    // Draw left eye connections
-    for (const auto& e : Conn::kFaceLandmarksLeftEye) {
-        draw_conn(e[0], e[1], cv::Scalar(255, 200, 80)); // Light blue for eyes
-    }
-    
-    // Draw right eye connections  
-    for (const auto& e : Conn::kFaceLandmarksRightEye) {
-        draw_conn(e[0], e[1], cv::Scalar(255, 200, 80)); // Light blue for eyes
-    }
-    
-    // Draw left eyebrow connections
-    for (const auto& e : Conn::kFaceLandmarksLeftEyeBrow) {
-        draw_conn(e[0], e[1], cv::Scalar(180, 180, 255)); // Light purple for eyebrows
-    }
-    
-    // Draw right eyebrow connections
-    for (const auto& e : Conn::kFaceLandmarksRightEyeBrow) {
-        draw_conn(e[0], e[1], cv::Scalar(180, 180, 255)); // Light purple for eyebrows
+        cv::line(frame_bgr, pt_a, pt_b, color, 1, cv::LINE_AA);
     }
 }
 
@@ -692,91 +688,134 @@ bool EffectsManager::ShouldLogPerformance() {
 
 void EffectsManager::ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, const FaceRegions& regions, 
                                                           const mediapipe::NormalizedLandmarkList& landmarks) {
-    // Process a padded face ROI at reduced scale, then upsample and paste back
-    cv::Rect face_bb = cv::boundingRect(regions.face_oval);
-    int pad = std::max(8, (int)std::round(beauty_state_.fx_skin_edge + beauty_state_.fx_skin_radius * 2.0f));
-    cv::Rect roi(face_bb.x - pad, face_bb.y - pad, face_bb.width + 2*pad, face_bb.height + 2*pad);
-    roi &= cv::Rect(0, 0, frame_bgr.cols, frame_bgr.rows);
-    
+    cv::Rect roi = CalculateProcessingROI(regions, frame_bgr.size());
     if (roi.width < 8 || roi.height < 8) {
-        // Fallback to full-res processing if ROI too small
-        ApplySkinSmoothingAdvBGR(
-            frame_bgr, regions,
-            beauty_state_.fx_skin_amount, beauty_state_.fx_skin_radius, beauty_state_.fx_skin_tex, beauty_state_.fx_skin_edge,
-            &landmarks, beauty_state_.fx_skin_smile_boost, beauty_state_.fx_skin_squint_boost, beauty_state_.fx_skin_forehead_boost,
-            beauty_state_.fx_skin_wrinkle_gain, beauty_state_.fx_wrinkle_suppress_lower, beauty_state_.fx_wrinkle_lower_ratio,
-            beauty_state_.fx_wrinkle_ignore_glasses, beauty_state_.fx_wrinkle_glasses_margin, beauty_state_.fx_wrinkle_keep_ratio,
-            beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_min_px : -1.0f,
-            beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_max_px : -1.0f,
-            8.0f, beauty_state_.fx_wrinkle_preview, beauty_state_.fx_wrinkle_baseline,
-            beauty_state_.fx_wrinkle_use_skin_gate, beauty_state_.fx_wrinkle_mask_gain, beauty_state_.fx_wrinkle_neg_cap
-        );
+        ApplyFullResolutionSkinSmoothing(frame_bgr, regions, landmarks);
         return;
     }
     
-    // Helper lambdas for coordinate transformations
-    auto shift_poly = [&](const std::vector<cv::Point>& poly) {
-        std::vector<cv::Point> out; 
-        out.reserve(poly.size()); 
-        for (auto p: poly) { 
-            out.emplace_back(p.x - roi.x, p.y - roi.y);
-        } 
-        return out; 
-    };
+    FaceRegions fr_small = TransformFaceRegionsToScaledROI(regions, roi);
+    mediapipe::NormalizedLandmarkList lms_roi = TransformLandmarksToROI(landmarks, roi, frame_bgr.size());
     
-    auto scale_poly = [&](const std::vector<cv::Point>& poly, float sc) {
-        std::vector<cv::Point> out; 
-        out.reserve(poly.size()); 
-        for (auto p: poly) { 
-            out.emplace_back((int)std::round(p.x*sc), (int)std::round(p.y*sc)); 
-        } 
-        return out; 
-    };
-    
-    // Build FaceRegions in ROI coordinates, then scale
-    FaceRegions fr_roi;
-    fr_roi.face_oval = shift_poly(regions.face_oval);
-    fr_roi.lips_outer = shift_poly(regions.lips_outer);
-    fr_roi.lips_inner = shift_poly(regions.lips_inner);
-    fr_roi.left_eye = shift_poly(regions.left_eye);
-    fr_roi.right_eye = shift_poly(regions.right_eye);
-    
+    ProcessAndUpsampleROI(frame_bgr, roi, fr_small, lms_roi);
+}
+
+cv::Rect EffectsManager::CalculateProcessingROI(const FaceRegions& regions, const cv::Size& frame_size) {
+    cv::Rect face_bb = cv::boundingRect(regions.face_oval);
+    int pad = std::max(8, (int)std::round(beauty_state_.fx_skin_edge + beauty_state_.fx_skin_radius * 2.0f));
+    cv::Rect roi(face_bb.x - pad, face_bb.y - pad, face_bb.width + 2*pad, face_bb.height + 2*pad);
+    roi &= cv::Rect(0, 0, frame_size.width, frame_size.height);
+    return roi;
+}
+
+void EffectsManager::ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions, 
+                                                     const mediapipe::NormalizedLandmarkList& landmarks) {
+    ApplySkinSmoothingAdvBGR(
+        frame_bgr, regions,
+        beauty_state_.fx_skin_amount, beauty_state_.fx_skin_radius, beauty_state_.fx_skin_tex, beauty_state_.fx_skin_edge,
+        &landmarks, beauty_state_.fx_skin_smile_boost, beauty_state_.fx_skin_squint_boost, beauty_state_.fx_skin_forehead_boost,
+        beauty_state_.fx_skin_wrinkle_gain, beauty_state_.fx_wrinkle_suppress_lower, beauty_state_.fx_wrinkle_lower_ratio,
+        beauty_state_.fx_wrinkle_ignore_glasses, beauty_state_.fx_wrinkle_glasses_margin, beauty_state_.fx_wrinkle_keep_ratio,
+        beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_min_px : -1.0f,
+        beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_max_px : -1.0f,
+        8.0f, beauty_state_.fx_wrinkle_preview, beauty_state_.fx_wrinkle_baseline,
+        beauty_state_.fx_wrinkle_use_skin_gate, beauty_state_.fx_wrinkle_mask_gain, beauty_state_.fx_wrinkle_neg_cap
+    );
+}
+
+FaceRegions EffectsManager::TransformFaceRegionsToScaledROI(const FaceRegions& regions, const cv::Rect& roi) {
     float sc = std::clamp(beauty_state_.fx_adv_scale, 0.5f, 1.0f);
-    FaceRegions fr_small;
-    fr_small.face_oval = scale_poly(fr_roi.face_oval, sc);
-    fr_small.lips_outer = scale_poly(fr_roi.lips_outer, sc);
-    fr_small.lips_inner = scale_poly(fr_roi.lips_inner, sc);
-    fr_small.left_eye = scale_poly(fr_roi.left_eye, sc);
-    fr_small.right_eye = scale_poly(fr_roi.right_eye, sc);
     
-    // Transform landmarks to ROI coordinates
+    // Transform to ROI coordinates, then scale
+    FaceRegions fr_roi = ShiftFaceRegionsToROI(regions, roi);
+    FaceRegions fr_small = ScaleFaceRegions(fr_roi, sc);
+    return fr_small;
+}
+
+FaceRegions EffectsManager::ShiftFaceRegionsToROI(const FaceRegions& regions, const cv::Rect& roi) {
+    FaceRegions fr_roi;
+    fr_roi.face_oval = ShiftPolygon(regions.face_oval, -roi.x, -roi.y);
+    fr_roi.lips_outer = ShiftPolygon(regions.lips_outer, -roi.x, -roi.y);
+    fr_roi.lips_inner = ShiftPolygon(regions.lips_inner, -roi.x, -roi.y);
+    fr_roi.left_eye = ShiftPolygon(regions.left_eye, -roi.x, -roi.y);
+    fr_roi.right_eye = ShiftPolygon(regions.right_eye, -roi.x, -roi.y);
+    return fr_roi;
+}
+
+FaceRegions EffectsManager::ScaleFaceRegions(const FaceRegions& regions, float scale) {
+    FaceRegions fr_scaled;
+    fr_scaled.face_oval = ScalePolygon(regions.face_oval, scale);
+    fr_scaled.lips_outer = ScalePolygon(regions.lips_outer, scale);
+    fr_scaled.lips_inner = ScalePolygon(regions.lips_inner, scale);
+    fr_scaled.left_eye = ScalePolygon(regions.left_eye, scale);
+    fr_scaled.right_eye = ScalePolygon(regions.right_eye, scale);
+    return fr_scaled;
+}
+
+std::vector<cv::Point> EffectsManager::ShiftPolygon(const std::vector<cv::Point>& poly, int dx, int dy) {
+    std::vector<cv::Point> out;
+    out.reserve(poly.size());
+    for (auto p : poly) {
+        out.emplace_back(p.x + dx, p.y + dy);
+    }
+    return out;
+}
+
+std::vector<cv::Point> EffectsManager::ScalePolygon(const std::vector<cv::Point>& poly, float scale) {
+    std::vector<cv::Point> out;
+    out.reserve(poly.size());
+    for (auto p : poly) {
+        out.emplace_back((int)std::round(p.x * scale), (int)std::round(p.y * scale));
+    }
+    return out;
+}
+
+mediapipe::NormalizedLandmarkList EffectsManager::TransformLandmarksToROI(const mediapipe::NormalizedLandmarkList& landmarks, 
+                                                                         const cv::Rect& roi, const cv::Size& frame_size) {
     mediapipe::NormalizedLandmarkList lms_roi = landmarks;
     for (int i = 0; i < lms_roi.landmark_size(); ++i) {
         auto* p = lms_roi.mutable_landmark(i);
-        float px = p->x() * frame_bgr.cols;
-        float py = p->y() * frame_bgr.rows;
+        float px = p->x() * frame_size.width;
+        float py = p->y() * frame_size.height;
         float xr = (px - roi.x) / (float)roi.width;
         float yr = (py - roi.y) / (float)roi.height;
-        p->set_x(xr); 
+        p->set_x(xr);
         p->set_y(yr);
     }
-    
-    // Extract ROI, resize to small scale, process, then upsample back
+    return lms_roi;
+}
+
+void EffectsManager::ProcessAndUpsampleROI(cv::Mat& frame_bgr, const cv::Rect& roi, const FaceRegions& fr_small, 
+                                          const mediapipe::NormalizedLandmarkList& lms_roi) {
     cv::Mat roi_bgr = frame_bgr(roi);
-    cv::Mat small; 
+    cv::Mat small = DownscaleROI(roi_bgr);
     
-    // Calculate exact target size to avoid rounding errors
-    cv::Size target_size(std::max(1, (int)std::round(roi.width * sc)), 
-                        std::max(1, (int)std::round(roi.height * sc)));
-    cv::resize(roi_bgr, small, target_size, 0, 0, cv::INTER_AREA); // Always use INTER_AREA for stable downsampling
+    ApplySkinSmoothingToScaledImage(small, fr_small, lms_roi);
     
-    // Apply skin smoothing on the downscaled image with scaled parameters
+    cv::Mat up = UpsampleProcessedImage(small, roi.size());
+    ApplyDetailPreservationIfNeeded(up, roi_bgr, fr_small);
+    
+    up.copyTo(roi_bgr);
+}
+
+cv::Mat EffectsManager::DownscaleROI(const cv::Mat& roi_bgr) {
+    float sc = std::clamp(beauty_state_.fx_adv_scale, 0.5f, 1.0f);
+    cv::Size target_size(std::max(1, (int)std::round(roi_bgr.cols * sc)), 
+                        std::max(1, (int)std::round(roi_bgr.rows * sc)));
+    cv::Mat small;
+    cv::resize(roi_bgr, small, target_size, 0, 0, cv::INTER_AREA);
+    return small;
+}
+
+void EffectsManager::ApplySkinSmoothingToScaledImage(cv::Mat& small, const FaceRegions& fr_small, 
+                                                    const mediapipe::NormalizedLandmarkList& lms_roi) {
+    float sc = std::clamp(beauty_state_.fx_adv_scale, 0.5f, 1.0f);
     ApplySkinSmoothingAdvBGR(
         small, fr_small,
         beauty_state_.fx_skin_amount,
-        beauty_state_.fx_skin_radius * sc,  // Scale radius
+        beauty_state_.fx_skin_radius * sc,
         beauty_state_.fx_skin_tex,
-        beauty_state_.fx_skin_edge * sc,    // Scale edge feather
+        beauty_state_.fx_skin_edge * sc,
         &lms_roi,
         beauty_state_.fx_skin_smile_boost,
         beauty_state_.fx_skin_squint_boost,
@@ -785,61 +824,69 @@ void EffectsManager::ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, c
         beauty_state_.fx_wrinkle_suppress_lower,
         beauty_state_.fx_wrinkle_lower_ratio,
         beauty_state_.fx_wrinkle_ignore_glasses,
-        beauty_state_.fx_wrinkle_glasses_margin * sc,  // Scale glasses margin
+        beauty_state_.fx_wrinkle_glasses_margin * sc,
         beauty_state_.fx_wrinkle_keep_ratio,
-        beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_min_px * sc : -1.0f,  // Scale min width
-        beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_max_px * sc : -1.0f,  // Scale max width
-        8.0f * sc,  // Scale forehead margin
+        beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_min_px * sc : -1.0f,
+        beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_max_px * sc : -1.0f,
+        8.0f * sc,
         beauty_state_.fx_wrinkle_preview,
         beauty_state_.fx_wrinkle_baseline,
         beauty_state_.fx_wrinkle_use_skin_gate,
         beauty_state_.fx_wrinkle_mask_gain,
         beauty_state_.fx_wrinkle_neg_cap
     );
-    
-    // Upsample back to original ROI size using LANCZOS4 for better texture preservation
-    cv::Mat up; 
-    cv::resize(small, up, roi.size(), 0, 0, cv::INTER_LANCZOS4);
-    
-    // Optional detail re-injection to counter down/up sampling softness
+}
+
+cv::Mat EffectsManager::UpsampleProcessedImage(const cv::Mat& small, const cv::Size& target_size) {
+    cv::Mat up;
+    cv::resize(small, up, target_size, 0, 0, cv::INTER_LANCZOS4);
+    return up;
+}
+
+void EffectsManager::ApplyDetailPreservationIfNeeded(cv::Mat& up, const cv::Mat& roi_bgr, const FaceRegions& fr_roi) {
     float dp = std::clamp(beauty_state_.fx_adv_detail_preserve, 0.0f, 0.5f);
     if (dp > 1e-3f) {
-        // Build feathered face mask in ROI coordinates
-        cv::Mat mask_roi_u8(roi.size(), CV_8U, cv::Scalar(0));
-        if (!fr_roi.face_oval.empty()) cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{fr_roi.face_oval}, cv::Scalar(255));
-        if (!fr_roi.lips_outer.empty()) cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{fr_roi.lips_outer}, cv::Scalar(0));
-        if (!fr_roi.left_eye.empty()) cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{fr_roi.left_eye}, cv::Scalar(0));
-        if (!fr_roi.right_eye.empty()) cv::fillPoly(mask_roi_u8, std::vector<std::vector<cv::Point>>{fr_roi.right_eye}, cv::Scalar(0));
-        
-        int fk = std::max(3, (int)std::round(beauty_state_.fx_skin_edge) | 1);
-        cv::GaussianBlur(mask_roi_u8, mask_roi_u8, cv::Size(fk, fk), 0);
-        cv::Mat mask_f; 
-        mask_roi_u8.convertTo(mask_f, CV_32F, 1.0/255.0);
-        
-        // Unsharp masking: add fraction of high-frequency detail from original ROI
-        cv::Mat base; 
-        cv::GaussianBlur(roi_bgr, base, cv::Size(0,0), 0.8);
-        cv::Mat roi32, base32; 
-        roi_bgr.convertTo(roi32, CV_32F, 1.0/255.0); 
-        base.convertTo(base32, CV_32F, 1.0/255.0);
-        cv::Mat hi = roi32 - base32; // High frequency component
-        
-        std::vector<cv::Mat> uch(3), hi_ch(3); 
-        cv::split(up, uch);
-        cv::split(hi, hi_ch);
-        
-        for (int i = 0; i < 3; ++i) {
-            cv::Mat u32; 
-            uch[i].convertTo(u32, CV_32F, 1.0/255.0);
-            cv::Mat out32 = u32 + hi_ch[i].mul(mask_f * dp);
-            out32 = cv::min(cv::max(out32, 0.0f), 1.0f);
-            out32.convertTo(uch[i], CV_8U, 255.0);
-        }
-        cv::merge(uch, up);
+        ApplyDetailPreservation(up, roi_bgr, fr_roi, dp);
     }
+}
+
+void EffectsManager::ApplyDetailPreservation(cv::Mat& up, const cv::Mat& roi_bgr, const FaceRegions& fr_roi, float dp) {
+    cv::Mat mask_roi_u8 = CreateFaceMask(fr_roi, up.size());
     
-    // Copy processed ROI back to original frame
-    up.copyTo(roi_bgr);
+    int fk = std::max(3, (int)std::round(beauty_state_.fx_skin_edge) | 1);
+    cv::GaussianBlur(mask_roi_u8, mask_roi_u8, cv::Size(fk, fk), 0);
+    cv::Mat mask_f;
+    mask_roi_u8.convertTo(mask_f, CV_32F, 1.0/255.0);
+    
+    // Unsharp masking: add fraction of high-frequency detail from original ROI
+    cv::Mat base;
+    cv::GaussianBlur(roi_bgr, base, cv::Size(0,0), 0.8);
+    cv::Mat roi32, base32;
+    roi_bgr.convertTo(roi32, CV_32F, 1.0/255.0);
+    base.convertTo(base32, CV_32F, 1.0/255.0);
+    cv::Mat hi = roi32 - base32; // High frequency component
+    
+    std::vector<cv::Mat> uch(3), hi_ch(3);
+    cv::split(up, uch);
+    cv::split(hi, hi_ch);
+    
+    for (int i = 0; i < 3; ++i) {
+        cv::Mat u32;
+        uch[i].convertTo(u32, CV_32F, 1.0/255.0);
+        cv::Mat out32 = u32 + hi_ch[i].mul(mask_f * dp);
+        out32 = cv::min(cv::max(out32, 0.0f), 1.0f);
+        out32.convertTo(uch[i], CV_8U, 255.0);
+    }
+    cv::merge(uch, up);
+}
+
+cv::Mat EffectsManager::CreateFaceMask(const FaceRegions& fr_roi, const cv::Size& size) {
+    cv::Mat mask(size, CV_8U, cv::Scalar(0));
+    if (!fr_roi.face_oval.empty()) cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{fr_roi.face_oval}, cv::Scalar(255));
+    if (!fr_roi.lips_outer.empty()) cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{fr_roi.lips_outer}, cv::Scalar(0));
+    if (!fr_roi.left_eye.empty()) cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{fr_roi.left_eye}, cv::Scalar(0));
+    if (!fr_roi.right_eye.empty()) cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{fr_roi.right_eye}, cv::Scalar(0));
+    return mask;
 }
 
 // Auto processing scale methods
@@ -887,64 +934,76 @@ void EffectsManager::UpdateAutoProcessingScale(float current_fps) {
     current_fps_ = current_fps;
     auto now = std::chrono::steady_clock::now();
     
-    // Add to FPS history
+    UpdateFPSHistory(current_fps);
+    
+    if (!HasEnoughFPSSamples() || !ShouldAdjustScale(now)) {
+        return;
+    }
+    
+    float avg_fps = CalculateAverageFPS();
+    float scale_adjustment = CalculateScaleAdjustment(avg_fps);
+    
+    if (scale_adjustment != 0.0f) {
+        ApplyScaleAdjustment(scale_adjustment, now);
+    }
+}
+
+void EffectsManager::UpdateFPSHistory(float current_fps) {
     fps_history_.push_back(current_fps);
     if (fps_history_.size() > FPS_HISTORY_SIZE) {
         fps_history_.erase(fps_history_.begin());
     }
-    
-    // Need at least 10 samples before adjusting (more stable baseline)
-    if (fps_history_.size() < 10) {
-        return;
-    }
-    
-    // Only adjust every 5 seconds to avoid oscillation (increased from 2s)
+}
+
+bool EffectsManager::HasEnoughFPSSamples() const {
+    return fps_history_.size() >= 10;
+}
+
+bool EffectsManager::ShouldAdjustScale(const std::chrono::steady_clock::time_point& now) const {
     auto time_since_adjustment = std::chrono::duration_cast<std::chrono::milliseconds>(
         now - last_scale_adjustment_).count();
-    
-    if (time_since_adjustment < 5000) {
-        return;
-    }
-    
-    // Calculate average FPS over history
+    return time_since_adjustment >= 5000;
+}
+
+float EffectsManager::CalculateAverageFPS() const {
     float avg_fps = 0.0f;
     for (float fps : fps_history_) {
         avg_fps += fps;
     }
-    avg_fps /= fps_history_.size();
-    
-    // Calculate adjustment needed
+    return avg_fps / fps_history_.size();
+}
+
+float EffectsManager::CalculateScaleAdjustment(float avg_fps) const {
     float fps_diff = target_fps_ - avg_fps;
-    float current_scale = beauty_state_.fx_adv_scale;
     
-    // Adjustment logic with ultra-conservative thresholds
-    if (std::abs(fps_diff) > 2.0f) { // Require larger difference (was 0.5f, now 2.0f)
-        float scale_adjustment = 0.0f;
+    if (std::abs(fps_diff) <= 2.0f) {
+        return 0.0f;
+    }
+    
+    if (fps_diff > 3.0f) {
+        return fps_diff > 6.0f ? -0.002f : -0.001f;
+    } else if (fps_diff < -3.0f) {
+        return fps_diff < -6.0f ? 0.002f : 0.001f;
+    }
+    
+    return 0.0f;
+}
+
+void EffectsManager::ApplyScaleAdjustment(float scale_adjustment, const std::chrono::steady_clock::time_point& now) {
+    float current_scale = beauty_state_.fx_adv_scale;
+    float new_scale = std::clamp(current_scale + scale_adjustment, 0.4f, 1.0f);
+    
+    if (std::abs(new_scale - current_scale) > 0.0005f) {
+        beauty_state_.fx_adv_scale = new_scale;
+        last_scale_adjustment_ = now;
         
-        if (fps_diff > 3.0f) { // Too slow (actual FPS < target), reduce scale for performance
-            scale_adjustment = -0.001f; // Reduce by 0.1% (ultra-fine adjustment)
-            if (fps_diff > 6.0f) scale_adjustment = -0.002f; // Larger reduction for bigger difference (0.2%)
-        } else if (fps_diff < -3.0f) { // Too fast (actual FPS > target), can increase quality
-            scale_adjustment = 0.001f; // Increase by 0.1% (ultra-fine adjustment)
-            if (fps_diff < -6.0f) scale_adjustment = 0.002f; // Larger increase (0.2%)
-        }
-        
-        if (scale_adjustment != 0.0f) {
-            float new_scale = std::clamp(current_scale + scale_adjustment, 0.4f, 1.0f);
-            
-            // Only apply if change is meaningful (ultra-fine threshold)
-            if (std::abs(new_scale - current_scale) > 0.0005f) { // Even smaller threshold for ultra-fine adjustments
-                beauty_state_.fx_adv_scale = new_scale;
-                last_scale_adjustment_ = now;
-                
-                // Keep half the history for stability (don't clear completely)
-                if (fps_history_.size() > 10) {
-                    fps_history_.erase(fps_history_.begin(), fps_history_.begin() + fps_history_.size()/2);
-                }
-                
-                // Scale change applied silently for cleaner output
-            }
-        }
+        TrimFPSHistoryForStability();
+    }
+}
+
+void EffectsManager::TrimFPSHistoryForStability() {
+    if (fps_history_.size() > 10) {
+        fps_history_.erase(fps_history_.begin(), fps_history_.begin() + fps_history_.size()/2);
     }
 }
 

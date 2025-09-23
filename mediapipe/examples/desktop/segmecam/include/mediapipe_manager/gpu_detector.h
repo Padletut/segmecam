@@ -50,5 +50,14 @@ private:
     static bool IsInFlatpak();
     static bool IsInDocker();
     
+    // Helper methods for complexity reduction
+    static GPUBackend DetectBestGPUBackend(bool force_no_nvidia, bool force_no_mesa);
+    static void SetCapabilitiesFromBackend(GPUCapabilities& caps, GPUBackend backend);
+    static std::vector<std::string> GetSearchPathsForEnvironment(const GPUCapabilities& caps);
+    static std::vector<std::string> GetFlatpakSearchPaths(GPUBackend backend);
+    static std::vector<std::string> GetNativeSearchPaths();
+    static std::string BuildLDLibraryPath(const std::vector<std::string>& search_paths);
+    static bool SetLDLibraryPath(const std::string& new_path);
+    
     static bool testing_mode;
 };

@@ -200,9 +200,49 @@ private:
     void LogPerformanceStats();
     bool ShouldLogPerformance();
     
+    // ProcessFrame helper methods
+    void LogDebugInputFrame(int frame_count, const cv::Mat& frame_bgr);
+    void ProcessFaceEffects(cv::Mat& processed_frame, const mediapipe::NormalizedLandmarkList* face_landmarks);
+    cv::Mat ProcessBackgroundEffects(const cv::Mat& processed_frame, const cv::Mat& segmentation_mask);
+    void UpdatePerformanceTracking(const std::chrono::steady_clock::time_point& start_time);
+    void LogDebugOutputFrame(int frame_count, const cv::Mat& result);
+    
+    // Landmark drawing helpers
+    template<size_t N>
+    void DrawConnections(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks, 
+                        const std::array<std::array<int, 2>, N>& connections, const cv::Scalar& color);
+    
     // Processing scale optimization for skin smoothing
     void ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, const FaceRegions& regions, 
                                               const mediapipe::NormalizedLandmarkList& landmarks);
+    cv::Rect CalculateProcessingROI(const FaceRegions& regions, const cv::Size& frame_size);
+    void ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions, 
+                                         const mediapipe::NormalizedLandmarkList& landmarks);
+    FaceRegions TransformFaceRegionsToScaledROI(const FaceRegions& regions, const cv::Rect& roi);
+    FaceRegions ShiftFaceRegionsToROI(const FaceRegions& regions, const cv::Rect& roi);
+    FaceRegions ScaleFaceRegions(const FaceRegions& regions, float scale);
+    std::vector<cv::Point> ShiftPolygon(const std::vector<cv::Point>& poly, int dx, int dy);
+    std::vector<cv::Point> ScalePolygon(const std::vector<cv::Point>& poly, float scale);
+    mediapipe::NormalizedLandmarkList TransformLandmarksToROI(const mediapipe::NormalizedLandmarkList& landmarks, 
+                                                             const cv::Rect& roi, const cv::Size& frame_size);
+    void ProcessAndUpsampleROI(cv::Mat& frame_bgr, const cv::Rect& roi, const FaceRegions& fr_small, 
+                              const mediapipe::NormalizedLandmarkList& lms_roi);
+    cv::Mat DownscaleROI(const cv::Mat& roi_bgr);
+    void ApplySkinSmoothingToScaledImage(cv::Mat& small, const FaceRegions& fr_small, 
+                                        const mediapipe::NormalizedLandmarkList& lms_roi);
+    cv::Mat UpsampleProcessedImage(const cv::Mat& small, const cv::Size& target_size);
+    void ApplyDetailPreservationIfNeeded(cv::Mat& up, const cv::Mat& roi_bgr, const FaceRegions& fr_roi);
+    void ApplyDetailPreservation(cv::Mat& up, const cv::Mat& roi_bgr, const FaceRegions& fr_roi, float dp);
+    cv::Mat CreateFaceMask(const FaceRegions& fr_roi, const cv::Size& size);
+    
+    // Auto processing scale helpers
+    void UpdateFPSHistory(float current_fps);
+    bool HasEnoughFPSSamples() const;
+    bool ShouldAdjustScale(const std::chrono::steady_clock::time_point& now) const;
+    float CalculateAverageFPS() const;
+    float CalculateScaleAdjustment(float avg_fps) const;
+    void ApplyScaleAdjustment(float scale_adjustment, const std::chrono::steady_clock::time_point& now);
+    void TrimFPSHistoryForStability();
 };
 
 } // namespace segmecam

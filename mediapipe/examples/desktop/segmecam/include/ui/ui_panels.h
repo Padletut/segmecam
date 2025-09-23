@@ -210,6 +210,32 @@ private:
     void RenderTeethWhitening();
     void RenderPerformanceControls();
     
+    // Helper methods for preset management
+    void ApplyBeautyPreset(int preset_index, const char* preset_name);
+    BeautyState CreateBeautyStateFromAppState();
+    void CopyBeautyFieldsToBeautyState(BeautyState& bs);
+    void CopyWrinkleFieldsToBeautyState(BeautyState& bs);
+    void CopyLipFieldsToBeautyState(BeautyState& bs);
+    void CopyTeethFieldsToBeautyState(BeautyState& bs);
+    void CopyBeautyStateToAppState(const BeautyState& bs);
+    void CopyBeautyStateFieldsToAppState(const BeautyState& bs);
+    void CopyWrinkleStateToAppState(const BeautyState& bs);
+    void CopyLipStateToAppState(const BeautyState& bs);
+    void CopyTeethStateToAppState(const BeautyState& bs);
+    
+    // Helper methods for lip effects
+    void RenderLipControls();
+    void RenderLipSliders();
+    void RenderLipColorPresets();
+    void ApplyLipColorPreset(const char* name, float r, float g, float b);
+    
+    // Helper methods for teeth whitening
+    void RenderTeethControls();
+    void RenderTeethSliders();
+    void RenderTeethPresets();
+    void ApplyTeethPreset(const char* name, float strength, float margin);
+    void RenderTeethTips();
+    
     AppState& state_;
 };
 
