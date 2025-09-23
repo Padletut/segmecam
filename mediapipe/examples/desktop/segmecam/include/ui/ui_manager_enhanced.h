@@ -79,6 +79,14 @@ private:
   void RegisterPanel(std::unique_ptr<UIPanel> panel);
   UIPanel* FindPanel(const std::string& name);
   
+  // Dropped file handling
+  void HandleDroppedFile(char* dropped_path);
+  
+  // Event handling helpers
+  void HandleQuitEvent(bool& running);
+  bool HandleWindowEvent(const SDL_Event& event, bool& running);
+  bool HandleKeyEvent(const SDL_Event& event, bool& running);
+  
   // Window state
   SDL_Window* window_ = nullptr;
   SDL_GLContext gl_context_ = nullptr;

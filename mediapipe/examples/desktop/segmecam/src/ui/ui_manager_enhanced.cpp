@@ -159,45 +159,67 @@ bool UIManager::ProcessEvents(bool& running) {
     while (SDL_PollEvent(&event)) {
         ImGui_ImplSDL2_ProcessEvent(&event);
         
-        if (event.type == SDL_QUIT) {
-            std::cout << "🛑 SDL_QUIT event received" << std::endl;
-            running = false;
-            return false;
-        }
-        
-        // Handle window events
-        if (event.type == SDL_WINDOWEVENT) {
-            if (event.window.event == SDL_WINDOWEVENT_CLOSE && 
-                event.window.windowID == SDL_GetWindowID(window_)) {
-                std::cout << "🛑 SDL_WINDOWEVENT_CLOSE event received" << std::endl;
-                running = false;
+        switch (event.type) {
+            case SDL_QUIT:
+                HandleQuitEvent(running);
                 return false;
-            }
-        }
-        
-        // Handle keyboard shortcuts
-        if (event.type == SDL_KEYDOWN) {
-            if (event.key.keysym.sym == SDLK_ESCAPE) {
-                std::cout << "🛑 ESC key pressed" << std::endl;
-                running = false;
-                return false;
-            }
-        }
-        
-        // Handle drag-and-drop files
-        if (event.type == SDL_DROPFILE) {
-            char* dropped_path = event.drop.file;
-            std::cout << "📁 File dropped: " << dropped_path << std::endl;
-            dropped_files_.push_back(std::string(dropped_path));
-            SDL_free(dropped_path);
+                
+            case SDL_WINDOWEVENT:
+                if (HandleWindowEvent(event, running)) {
+                    return false;
+                }
+                break;
+                
+            case SDL_KEYDOWN:
+                if (HandleKeyEvent(event, running)) {
+                    return false;
+                }
+                break;
+                
+            case SDL_DROPFILE:
+                HandleDroppedFile(event.drop.file);
+                break;
+                
+            default:
+                break;
         }
     }
     
     return true;
 }
 
+void UIManager::HandleDroppedFile(char* dropped_path) {
+    std::cout << "📁 File dropped: " << dropped_path << std::endl;
+    dropped_files_.push_back(std::string(dropped_path));
+    SDL_free(dropped_path);
+}
+
+void UIManager::HandleQuitEvent(bool& running) {
+    std::cout << "🛑 SDL_QUIT event received" << std::endl;
+    running = false;
+}
+
+bool UIManager::HandleWindowEvent(const SDL_Event& event, bool& running) {
+    if (event.window.event == SDL_WINDOWEVENT_CLOSE && 
+        event.window.windowID == SDL_GetWindowID(window_)) {
+        std::cout << "🛑 SDL_WINDOWEVENT_CLOSE event received" << std::endl;
+        running = false;
+        return true;
+    }
+    return false;
+}
+
+bool UIManager::HandleKeyEvent(const SDL_Event& event, bool& running) {
+    if (event.key.keysym.sym == SDLK_ESCAPE) {
+        std::cout << "🛑 ESC key pressed" << std::endl;
+        running = false;
+        return true;
+    }
+    return false;
+}
+
 std::vector<std::string> UIManager::GetDroppedFiles() {
-    std::vector<std::string> files = std::move(dropped_files_);
+    std::vector<std::string> files = dropped_files_;
     dropped_files_.clear();
     return files;
 }
@@ -279,7 +301,7 @@ void UIManager::RenderVideoPreview() {
         ImVec2 center_offset((content_size.x - display_w) * 0.5f, (content_size.y - display_h) * 0.5f);
         ImGui::SetCursorPos(ImVec2(cursor_pos.x + center_offset.x, cursor_pos.y + center_offset.y));
         
-        ImGui::Image((void*)(intptr_t)tex_, ImVec2(display_w, display_h));
+        ImGui::Image(reinterpret_cast<void*>(tex_), ImVec2(display_w, display_h));
     }
     ImGui::End();
 }
