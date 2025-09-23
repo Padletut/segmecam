@@ -30,39 +30,25 @@ bool ApplicationRun::VerifyRequiredManagers(const ManagerCoordination::Managers&
 }
 
 FrameProcessingParams ApplicationRun::InitializeFrameProcessingState(
-    ManagerCoordination::Managers& managers,
-    std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph,
-    std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
-    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
-    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
-    SDL_Window* window,
-    AppState& app_state,
-    UIManager& ui_manager,
-    int64_t& frame_id,
-    double& fps,
-    uint64_t& fps_frames,
-    uint32_t& fps_last_ms,
-    int& frame_count,
-    bool& running,
-    bool& has_landmarks) {
+    const FrameProcessingInitParams& init_params) {
 
     // Set up frame processing parameters
     FrameProcessingParams params = {
-        managers,
-        mediapipe_graph,
-        mask_poller,
-        multi_face_landmarks_poller,
-        face_rects_poller,
-        window,
-        app_state,
-        ui_manager,
-        frame_id,
-        fps,
-        fps_frames,
-        fps_last_ms,
-        frame_count,
-        running,
-        has_landmarks
+        init_params.managers,
+        init_params.mediapipe_graph,
+        init_params.mask_poller,
+        init_params.multi_face_landmarks_poller,
+        init_params.face_rects_poller,
+        init_params.window,
+        init_params.app_state,
+        init_params.ui_manager,
+        init_params.frame_id,
+        init_params.fps,
+        init_params.fps_frames,
+        init_params.fps_last_ms,
+        init_params.frame_count,
+        init_params.running,
+        init_params.has_landmarks
     };
 
     return params;
@@ -94,10 +80,13 @@ int ApplicationRun::ExecuteMainLoop(
     bool has_landmarks = (multi_face_landmarks_poller != nullptr);
 
     // Initialize frame processing state and parameters
-    FrameProcessingParams params = InitializeFrameProcessingState(
+    FrameProcessingInitParams init_params = {
         managers, mediapipe_graph, mask_poller, multi_face_landmarks_poller,
         face_rects_poller, window, app_state, *managers.ui,
-        frame_id, fps, fps_frames, fps_last_ms, frame_count, running, has_landmarks);
+        frame_id, fps, fps_frames, fps_last_ms, frame_count, running, has_landmarks
+    };
+
+    FrameProcessingParams params = InitializeFrameProcessingState(init_params);
 
     std::cout << "🎬 Starting main event loop..." << std::endl;
 
