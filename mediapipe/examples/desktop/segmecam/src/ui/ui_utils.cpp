@@ -9,6 +9,15 @@
 namespace segmecam {
 namespace ui_utils {
 
+// Safe string copy helper that ensures null termination
+void SafeStringCopy(char* dest, size_t dest_size, const std::string& src) {
+    if (dest_size == 0) return;
+    
+    size_t copy_len = std::min(src.length(), dest_size - 1);
+    std::memcpy(dest, src.c_str(), copy_len);
+    dest[copy_len] = '\0';
+}
+
 // Common profile selection UI component
 // Returns true if a profile was loaded
 bool RenderProfileSelection(class ConfigManager* config_mgr, int& ui_profile_idx,

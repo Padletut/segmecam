@@ -4,6 +4,7 @@
 #include "include/camera/camera_manager.h"
 #include "include/effects/effects_manager.h"
 #include "include/ui/ui_manager_enhanced.h"
+#include "include/ui/ui_utils.h"
 #include "include/application/app_state.h"
 #include <iostream>
 #include <cstring>
@@ -262,7 +263,7 @@ void ManagerCoordination::ApplyBackgroundSettingsFromProfile(segmecam::AppState&
     app_state.bg_mode = config_data.background.bg_mode;
     app_state.blur_strength = config_data.background.blur_strength;
     // Apply background path from profile to preserve it for future saves
-    SafeStringCopy(app_state.bg_path_buf, config_data.background.bg_path, sizeof(app_state.bg_path_buf));
+    segmecam::ui_utils::SafeStringCopy(app_state.bg_path_buf, sizeof(app_state.bg_path_buf), config_data.background.bg_path);
 }
 
 void ManagerCoordination::ApplyBeautySettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data) {
@@ -327,19 +328,4 @@ void ManagerCoordination::ApplyCameraSettingsFromProfile(segmecam::AppState& app
     if (config_data.camera.fps_value > 0) {
         app_state.camera_fps = config_data.camera.fps_value;
     }
-}
-
-void ManagerCoordination::SafeStringCopy(char* dest, const std::string& src, size_t dest_size) {
-    if (!dest || dest_size == 0) {
-        return;
-    }
-    
-    // Ensure we don't copy more than dest_size - 1 characters to leave room for null terminator
-    size_t copy_len = std::min(src.length(), dest_size - 1);
-    
-    // Copy the string
-    std::memcpy(dest, src.c_str(), copy_len);
-    
-    // Always null-terminate
-    dest[copy_len] = '\0';
 }

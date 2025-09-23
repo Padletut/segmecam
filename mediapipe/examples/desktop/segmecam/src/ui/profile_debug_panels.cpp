@@ -9,15 +9,7 @@
 namespace segmecam {
 
 namespace {
-// Safe string copy helper that ensures null termination
-void SafeStringCopy(char* dest, size_t dest_size, const std::string& src) {
-    if (dest_size == 0) return;
-    
-    size_t copy_len = std::min(src.length(), dest_size - 1);
-    std::memcpy(dest, src.c_str(), copy_len);
-    dest[copy_len] = '\0';
-}
-}
+} // anonymous namespace
 
 // Profile Panel Implementation
 ProfilePanel::ProfilePanel(AppState& state, CameraManager& camera_mgr)
@@ -51,7 +43,7 @@ void ProfilePanel::HandleProfileLoad() {
     if (ui_profile_idx_ >= 0 && ui_profile_idx_ < (int)profile_names.size()) {
         LoadProfileIntoState(profile_names[ui_profile_idx_]);
         // Update name buffer to match loaded profile
-        SafeStringCopy(profile_name_buf_, sizeof(profile_name_buf_), profile_names[ui_profile_idx_]);
+        segmecam::ui_utils::SafeStringCopy(profile_name_buf_, sizeof(profile_name_buf_), profile_names[ui_profile_idx_]);
     }
 }
 

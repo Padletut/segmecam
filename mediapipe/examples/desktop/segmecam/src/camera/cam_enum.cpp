@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <set>
 #include <filesystem>
+#include <functional>
 #include <cmath>
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -10,6 +11,26 @@
 #include <linux/videodev2.h>
 
 namespace fs = std::filesystem;
+
+#include "include/camera/cam_enum.h"
+
+#include <algorithm>
+#include <set>
+#include <filesystem>
+#include <functional>
+#include <cmath>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#include <linux/videodev2.h>
+
+namespace fs = std::filesystem;
+
+// Forward declarations
+static int parse_index(const std::string& path);
+static void iterate_video_devices(const std::function<void(const std::string&)>& callback);
+static bool is_valid_camera_device(const std::string& path);
+static bool is_video_device(const std::string& path);
 
 static int parse_index(const std::string& path) {
   // naive: find trailing digits
@@ -146,59 +167,28 @@ static CameraDesc process_camera_device(const std::string& device_path) {
 
 static std::vector<std::string> find_camera_devices() {
   std::vector<std::string> devices;
-  std::error_code ec;
   
-  for (const auto& entry : fs::directory_iterator("/dev", ec)) {
-    if (ec) break;
-    const auto p = entry.path();
-    if (!fs::is_character_file(p, ec)) continue;
-    
-    const std::string sp = p.string();
-    if (is_valid_camera_device(sp)) {
-      devices.push_back(sp);
+  auto process_device = [&](const std::string& device_path) {
+    if (is_valid_camera_device(device_path)) {
+      devices.push_back(device_path);
     }
-  }
+  };
   
+  iterate_video_devices(process_device);
   return devices;
 }
 
 std::vector<CameraDesc> EnumerateCameras() {
   std::vector<CameraDesc> cams;
-  
+
   for (const auto& device_path : find_camera_devices()) {
-    CameraDesc cd; 
-    cd.path = device_path; 
-    cd.index = parse_index(device_path);
-    
-    int fd = ::open(device_path.c_str(), O_RDWR | O_NONBLOCK);
-    if (fd >= 0) {
-      v4l2_capability cap{};
-      if (ioctl(fd, VIDIOC_QUERYCAP, &cap) == 0) {
-        cd.name = reinterpret_cast<const char*>(cap.card);
-        cd.bus  = reinterpret_cast<const char*>(cap.bus_info);
-        uint32_t caps = (cap.device_caps != 0) ? cap.device_caps : cap.capabilities;
-        bool is_capture = (caps & V4L2_CAP_VIDEO_CAPTURE) || (caps & V4L2_CAP_VIDEO_CAPTURE_MPLANE);
-        bool is_output  = (caps & V4L2_CAP_VIDEO_OUTPUT) || (caps & V4L2_CAP_VIDEO_OUTPUT_MPLANE);
-        if (is_capture && !is_output) {
-          enumerate_device_formats_and_resolutions(fd, cd);
-        } else {
-          cd.name = "(invalid device)";
-        }
-      } else {
-        cd.name = "Video Device";
-      }
-      ::close(fd);
-    } else {
-      cd.name = "(unavailable)";
-    }
-    
-    cams.push_back(std::move(cd));
+    cams.push_back(process_camera_device(device_path));
   }
-  
+
   // Stable sort by index
-  std::sort(cams.begin(), cams.end(), 
+  std::sort(cams.begin(), cams.end(),
     [](const CameraDesc& a, const CameraDesc& b){ return a.index < b.index; });
-  
+
   return deduplicate_cameras_by_bus(cams);
 }
 
@@ -284,6 +274,21 @@ static bool is_video_device(const std::string& path) {
   return path.find("/dev/video") != std::string::npos;
 }
 
+static void iterate_video_devices(const std::function<void(const std::string&)>& callback) {
+  std::error_code ec;
+  
+  for (const auto& entry : fs::directory_iterator("/dev", ec)) {
+    if (ec) break;
+    const auto p = entry.path();
+    if (!fs::is_character_file(p, ec)) continue;
+    
+    const std::string sp = p.string();
+    if (!is_video_device(sp)) continue;
+    
+    callback(sp);
+  }
+}
+
 static bool is_output_device(int fd) {
   v4l2_capability cap{};
   if (ioctl(fd, VIDIOC_QUERYCAP, &cap) != 0) return false;
@@ -305,25 +310,18 @@ static LoopbackDesc create_loopback_desc(const std::string& path, int fd) {
 
 std::vector<LoopbackDesc> EnumerateLoopbackDevices() {
   std::vector<LoopbackDesc> out;
-  std::error_code ec;
   
-  for (const auto& entry : fs::directory_iterator("/dev", ec)) {
-    if (ec) break;
-    
-    const auto p = entry.path();
-    if (!fs::is_character_file(p, ec)) continue;
-    
-    const std::string sp = p.string();
-    if (!is_video_device(sp)) continue;
-    
-    int fd = ::open(sp.c_str(), O_RDWR | O_NONBLOCK);
+  auto process_device = [&](const std::string& device_path) {
+    int fd = ::open(device_path.c_str(), O_RDWR | O_NONBLOCK);
     if (fd >= 0) {
       if (is_output_device(fd)) {
-        out.push_back(create_loopback_desc(sp, fd));
+        out.push_back(create_loopback_desc(device_path, fd));
       }
       ::close(fd);
     }
-  }
+  };
+  
+  iterate_video_devices(process_device);
   
   std::sort(out.begin(), out.end(), [](const LoopbackDesc& a, const LoopbackDesc& b){ return a.index < b.index; });
   return out;

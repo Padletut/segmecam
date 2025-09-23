@@ -3,9 +3,13 @@
 #include "src/config/config_manager.h"
 #include <string>
 #include <vector>
+#include <cstring>
 
 namespace segmecam {
 namespace ui_utils {
+
+// Safe string copy helper that ensures null termination
+void SafeStringCopy(char* dest, size_t dest_size, const std::string& src);
 
 // Common profile selection UI component
 // Returns true if a profile was loaded

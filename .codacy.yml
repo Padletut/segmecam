@@ -1,0 +1,9 @@
+---
+engines:
+  # Disable tools that aren't configured
+  eslint: false
+  trivy: false
+  
+  # Enable only Lizard for complexity analysis
+  lizard:
+    enabled: true

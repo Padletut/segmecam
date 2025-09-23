@@ -5,6 +5,7 @@
 #include "include/application/application_run.h"
 #include "include/effects/effects_manager.h"
 #include "include/ui/ui_manager_enhanced.h"
+#include "include/ui/ui_utils.h"
 #include "include/application/app_state.h"
 
 // Include MediaPipe for graph operations
@@ -170,13 +171,7 @@ void FrameProcessor::HandleDroppedFiles(
             app_state.bg_mode = 2; // Image mode
             // Update the background path for profile persistence
             // Safe string copy with null-termination guarantee
-            if (!resolved_path.empty()) {
-                std::size_t copy_len = std::min(resolved_path.length(), sizeof(app_state.bg_path_buf) - 1);
-                std::memcpy(app_state.bg_path_buf, resolved_path.c_str(), copy_len);
-                app_state.bg_path_buf[copy_len] = '\0';
-            } else {
-                app_state.bg_path_buf[0] = '\0'; // Ensure null-termination even for empty string
-            }
+            segmecam::ui_utils::SafeStringCopy(app_state.bg_path_buf, sizeof(app_state.bg_path_buf), resolved_path);
             std::cout << "✅ Background image loaded: " << bg_image.cols << "x" << bg_image.rows
                       << " (auto-switched to Image mode)" << std::endl;
             std::cout << "🔖 Background path saved: " << app_state.bg_path_buf << std::endl;

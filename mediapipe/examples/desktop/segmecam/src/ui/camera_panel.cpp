@@ -25,15 +25,6 @@ bool IsFlatpakEnvironment() {
     return std::filesystem::exists("/.flatpak-info");
 }
 
-// Safe string copy helper that ensures null termination
-void SafeStringCopy(char* dest, size_t dest_size, const std::string& src) {
-    if (dest_size == 0) return;
-    
-    size_t copy_len = std::min(src.length(), dest_size - 1);
-    std::memcpy(dest, src.c_str(), copy_len);
-    dest[copy_len] = '\0';
-}
-
 } // namespace
 
 // Camera Panel Implementation
@@ -500,7 +491,7 @@ void CameraPanel::ProcessProfileLoadRequest() {
         LoadProfileIntoState(profile_names[ui_profile_idx_]);
         // Update name buffer to match loaded profile
         std::string profile_name = profile_names[ui_profile_idx_];
-        SafeStringCopy(profile_name_buf_, sizeof(profile_name_buf_), profile_name);
+        segmecam::ui_utils::SafeStringCopy(profile_name_buf_, sizeof(profile_name_buf_), profile_name);
     }
 }
 
@@ -616,7 +607,7 @@ void CameraPanel::LoadBackgroundSettings(const ConfigData& config) {
     state_.bg_mode = config.background.bg_mode;
     state_.blur_strength = config.background.blur_strength;
     state_.feather_px = config.background.feather_px;
-    SafeStringCopy(state_.bg_path_buf, sizeof(state_.bg_path_buf), config.background.bg_path);
+    segmecam::ui_utils::SafeStringCopy(state_.bg_path_buf, sizeof(state_.bg_path_buf), config.background.bg_path);
     state_.solid_color[0] = config.background.solid_color[0];
     state_.solid_color[1] = config.background.solid_color[1];
     state_.solid_color[2] = config.background.solid_color[2];
@@ -847,7 +838,7 @@ void CameraPanel::UpdateDefaultProfileDisplay() {
     std::string default_profile;
     if (config_mgr_->GetDefaultProfile(default_profile) && !default_profile.empty()) {
         // Update the profile name buffer to show the default profile
-        SafeStringCopy(profile_name_buf_, sizeof(profile_name_buf_), default_profile);
+        segmecam::ui_utils::SafeStringCopy(profile_name_buf_, sizeof(profile_name_buf_), default_profile);
         
         // Update the dropdown index to match the default profile
         auto profile_names = config_mgr_->ListProfiles();

@@ -71,9 +71,6 @@ private:
     static void ApplyBeautySettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
     static void ApplyPerformanceSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
     static void ApplyCameraSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
-    
-    // Safe string copy utility to avoid security issues with strncpy
-    static void SafeStringCopy(char* dest, const std::string& src, size_t dest_size);
 };
 
 #endif // MANAGER_COORDINATION_H
