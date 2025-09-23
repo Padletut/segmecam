@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include "mediapipe/framework/port/opencv_core_inc.h"
+#include "include/effects/presets.h"
 
 namespace segmecam {
 
@@ -59,7 +60,19 @@ private:
     cv::FileStorage OpenProfileForWrite(const std::string& path) const;
     bool WriteConfigToStorage(cv::FileStorage& fs, const ConfigData& config) const;
     bool ReadConfigFromStorage(cv::FileStorage& fs, ConfigData& config) const;
-    
+    void writeCameraSettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void writeDisplaySettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void writeBackgroundSettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void writeLandmarkSettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void writeBeautyEffectsSettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void writePerformanceSettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void readCameraSettings(const cv::FileNode& root, ConfigData& config) const;
+    void readDisplaySettings(const cv::FileNode& root, ConfigData& config) const;
+    void readBackgroundSettings(const cv::FileNode& root, ConfigData& config) const;
+    void readLandmarkSettings(const cv::FileNode& root, ConfigData& config) const;
+    void readBeautyEffectsSettings(const cv::FileNode& root, ConfigData& config) const;
+    void readPerformanceSettings(const cv::FileNode& root, ConfigData& config) const;
+        
     // Helper functions for type-safe reading
     int ReadInt(const cv::FileNode& node, int defaultValue) const;
     float ReadFloat(const cv::FileNode& node, float defaultValue) const;
@@ -81,6 +94,7 @@ private:
  * Organized by logical groups for maintainability.
  */
 struct ConfigData {
+
     // Camera settings
     struct CameraConfig {
         std::string cam_path;
@@ -121,6 +135,7 @@ struct ConfigData {
     
     // Beauty effects settings
     struct BeautyConfig {
+
         // Core skin smoothing
         bool fx_skin = false;
         bool fx_skin_adv = true;
@@ -172,7 +187,13 @@ struct ConfigData {
         bool fx_teeth = false;
         float fx_teeth_strength = 0.5f;
         float fx_teeth_margin = 3.0f;
+
     } beauty;
+
+    // Helper methods for copying beauty settings
+    void CopyBeautySettingsToState(BeautyState& state) const;
+    void CopyBeautySettingsFromState(const BeautyState& state);
+
     
     // Performance settings
     struct PerformanceConfig {
