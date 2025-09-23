@@ -296,6 +296,8 @@ cc_library( # type: ignore
         "src/camera/camera_gstreamer_open.cpp",
         "src/camera/camera_gstreamer_close.cpp",
         "src/camera/camera_gstreamer_capture.cpp",
+        "src/camera/camera_gstreamer_conversion.cpp",
+        "src/camera/camera_gstreamer_callbacks.cpp",
         "src/camera/gstreamer_utils.cpp",
         "src/camera/camera_controls.cpp",
         "src/camera/camera_enumeration.cpp",

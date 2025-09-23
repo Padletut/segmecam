@@ -166,4 +166,57 @@ bool CameraManager::HandlePermissionResult(const PortalRequestContext& ctx) {
     return true;
 }
 
+// Missing methods called from camera_gstreamer_callbacks.cpp
+bool CameraManager::ProcessPortalAccessResult(GAsyncResult* result, bool& granted) {
+    if (!xdp_portal_access_camera_finish) {
+        return false;
+    }
+
+    GError* error = nullptr;
+    gboolean allow = xdp_portal_access_camera_finish(portal_instance_, result, &error);
+    
+    if (allow) {
+        granted = true;
+    } else {
+        std::cerr << "❌ Camera access denied by portal" << std::endl;
+        state_.status_message = "Camera permission denied";
+    }
+
+    HandlePortalError(error);
+    return true;
+}
+
+bool CameraManager::OpenPipeWireRemote(bool& granted) {
+    if (!xdp_portal_open_pipewire_remote_for_camera) {
+        return false;
+    }
+
+    if (portal_fd_ >= 0) {
+        close(portal_fd_);
+        portal_fd_ = -1;
+    }
+
+    int fd = xdp_portal_open_pipewire_remote_for_camera(portal_instance_);
+    if (fd >= 0) {
+        portal_fd_ = fd;
+        granted = true;
+        return true;
+    } else {
+        std::cerr << "❌ Unable to open PipeWire remote via portal" << std::endl;
+        return false;
+    }
+}
+
+void CameraManager::CleanupPortalRequestContext(PortalRequestContext* ctx) {
+    if (ctx && ctx->loop && g_main_loop_quit) {
+        g_main_loop_quit(ctx->loop);
+    }
+}
+
+void CameraManager::HandlePortalError(GError* error) {
+    if (error && g_error_free) {
+        g_error_free(error);
+    }
+}
+
 } // namespace segmecam
