@@ -139,4 +139,4 @@ build_ios_examples.sh
 codacy-fixes.patch
 .codacy/results.sarif
 .continue/mcpServers/new-mcp-server.yaml
-.codacy/results.sarif
+
