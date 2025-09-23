@@ -438,14 +438,12 @@ private:
 
     // PipeWire/GStreamer specific methods
     bool InitializeGStreamer();
-    
-    // GStreamer library loading helpers
     bool LoadRequiredLibraries(void*& gst_lib, void*& gstapp_lib, void*& gstvideo_lib, void*& glib_lib, void*& gobject_lib);
     bool LoadGStreamerCoreFunctions(void* gst_lib);
     bool LoadGStreamerAppFunctions(void* gstapp_lib);
     bool LoadGLibFunctions(void* glib_lib, void* gobject_lib);
     bool ValidateFunctionLoading();
-
+    
     // ConvertSampleToBgr helper methods
     bool ParseCapsStructure(GstCaps* caps, int& width, int& height, int& stride_hint, std::string& format);
     bool MapAndValidateBuffer(GstBuffer* buffer, GstMapInfo& map_info);

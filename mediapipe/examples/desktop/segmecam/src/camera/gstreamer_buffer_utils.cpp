@@ -5,10 +5,8 @@
 #include <string>          // NOLINT - Standard library header resolved by build system
 #include <unordered_map>   // NOLINT - Standard library header resolved by build system
 #include <opencv2/opencv.hpp>  // NOLINT - OpenCV header resolved by Bazel/MediaPipe
-struct BufferInfo {
-    void* data;
-    size_t size;
-};
+
+#include "include/camera/gstreamer_buffer_utils.h"
 
 namespace segmecam {
 

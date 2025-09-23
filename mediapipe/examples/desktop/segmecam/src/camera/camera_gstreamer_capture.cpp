@@ -36,7 +36,7 @@ bool CameraManager::CaptureGStreamerFrame(cv::Mat& frame) {
     int height = state_.current_height > 0 ? state_.current_height : 480;
     cv::Mat captured_frame;
 
-    if (!ConvertSampleToBgr(sample, captured_frame, width, height)) {
+    if (!this->ConvertSampleToBgr(sample, captured_frame, width, height)) {
         return false;
     }
 

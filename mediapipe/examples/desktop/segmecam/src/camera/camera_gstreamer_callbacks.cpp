@@ -1,5 +1,6 @@
 #include "include/camera/camera_manager.h"
 #include "include/camera/gstreamer_utils.h"
+#include "include/camera/gstreamer_buffer_utils.h"
 
 #include <iostream>
 
@@ -26,7 +27,7 @@ void CameraManager::OnNewSample(GstAppSink* sink) {
     int height = state_.current_height > 0 ? state_.current_height : 480;
     cv::Mat frame;
 
-    if (!ConvertSampleToBgr(sample, frame, width, height)) {
+    if (!this->ConvertSampleToBgr(sample, frame, width, height)) {
         static int convert_fail_log = 0;
         if (convert_fail_log < 5) {
             std::cout << "❌ OnNewSample failed to convert sample" << std::endl;
