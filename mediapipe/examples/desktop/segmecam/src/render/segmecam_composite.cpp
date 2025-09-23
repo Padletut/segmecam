@@ -5,6 +5,43 @@
 // This avoids per-frame channel switches that can look like flicker.
 static int g_rgba_mask_channel = -1; // 0=B,1=G,2=R,3=A
 
+// Helper function to perform compositing with optional upscaling
+cv::Mat PerformCompositingWithUpscale(const cv::Mat& small_frame, const cv::Mat& small_mask, 
+                                     const cv::Mat& small_bg, const cv::Size& original_size) {
+  // Perform compositing at reduced scale
+  cv::Mat frame_f, bg_f;
+  small_frame.convertTo(frame_f, CV_32FC3, 1.0/255.0);
+  small_bg.convertTo(bg_f, CV_32FC3, 1.0/255.0);
+  cv::Mat mask_f;
+  small_mask.convertTo(mask_f, CV_32FC1, 1.0/255.0);
+  
+  std::vector<cv::Mat> fch, bch, cch;
+  cv::split(frame_f, fch);
+  cv::split(bg_f, bch);
+  cch.resize(3);
+  
+  for (int i = 0; i < 3; ++i) {
+    cch[i] = fch[i].mul(mask_f) + bch[i].mul(1.0 - mask_f);
+  }
+  
+  cv::Mat comp_f;
+  cv::merge(cch, comp_f);
+  cv::Mat comp_u8;
+  comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
+  
+  // Upscale result if needed
+  cv::Mat final_comp;
+  if (comp_u8.size() != original_size) {
+    cv::resize(comp_u8, final_comp, original_size, 0, 0, cv::INTER_LINEAR);
+  } else {
+    final_comp = comp_u8;
+  }
+  
+  cv::Mat rgb;
+  cv::cvtColor(final_comp, rgb, cv::COLOR_BGR2RGB);
+  return rgb;
+}
+
 cv::Mat DecodeMaskToU8(const mediapipe::ImageFrame& mask, bool* logged_once) {
   const int ch = mask.NumberOfChannels();
   const int bd = mask.ByteDepth();
@@ -243,38 +280,7 @@ cv::Mat CompositeImageBackgroundBGR_Accel(const cv::Mat& frame_bgr,
     cv::resize(cached_bg_resized, small_bg, small_frame.size(), 0, 0, cv::INTER_LINEAR);
   }
   
-  // Perform compositing at reduced scale
-  cv::Mat frame_f, bg_f;
-  small_frame.convertTo(frame_f, CV_32FC3, 1.0/255.0);
-  small_bg.convertTo(bg_f, CV_32FC3, 1.0/255.0);
-  cv::Mat mask_f;
-  small_mask.convertTo(mask_f, CV_32FC1, 1.0/255.0);
-  
-  std::vector<cv::Mat> fch, bch, cch;
-  cv::split(frame_f, fch);
-  cv::split(bg_f, bch);
-  cch.resize(3);
-  
-  for (int i = 0; i < 3; ++i) {
-    cch[i] = fch[i].mul(mask_f) + bch[i].mul(1.0 - mask_f);
-  }
-  
-  cv::Mat comp_f;
-  cv::merge(cch, comp_f);
-  cv::Mat comp_u8;
-  comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
-  
-  // Upscale result if needed
-  cv::Mat final_comp;
-  if (comp_u8.size() != frame_bgr.size()) {
-    cv::resize(comp_u8, final_comp, frame_bgr.size(), 0, 0, cv::INTER_LINEAR);
-  } else {
-    final_comp = comp_u8;
-  }
-  
-  cv::Mat rgb;
-  cv::cvtColor(final_comp, rgb, cv::COLOR_BGR2RGB);
-  return rgb;
+  return PerformCompositingWithUpscale(small_frame, small_mask, small_bg, frame_bgr.size());
 }
 
 // Optimized solid color background composite with scale optimization and caching
@@ -339,36 +345,5 @@ cv::Mat CompositeSolidBackgroundBGR_Accel(const cv::Mat& frame_bgr,
     small_bg = cv::Mat(small_frame.size(), CV_8UC3, bgr);
   }
   
-  // Perform compositing at reduced scale
-  cv::Mat frame_f, bg_f;
-  small_frame.convertTo(frame_f, CV_32FC3, 1.0/255.0);
-  small_bg.convertTo(bg_f, CV_32FC3, 1.0/255.0);
-  cv::Mat mask_f;
-  small_mask.convertTo(mask_f, CV_32FC1, 1.0/255.0);
-  
-  std::vector<cv::Mat> fch, bch, cch;
-  cv::split(frame_f, fch);
-  cv::split(bg_f, bch);
-  cch.resize(3);
-  
-  for (int i = 0; i < 3; ++i) {
-    cch[i] = fch[i].mul(mask_f) + bch[i].mul(1.0 - mask_f);
-  }
-  
-  cv::Mat comp_f;
-  cv::merge(cch, comp_f);
-  cv::Mat comp_u8;
-  comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
-  
-  // Upscale result if needed
-  cv::Mat final_comp;
-  if (comp_u8.size() != frame_bgr.size()) {
-    cv::resize(comp_u8, final_comp, frame_bgr.size(), 0, 0, cv::INTER_LINEAR);
-  } else {
-    final_comp = comp_u8;
-  }
-  
-  cv::Mat rgb;
-  cv::cvtColor(final_comp, rgb, cv::COLOR_BGR2RGB);
-  return rgb;
+  return PerformCompositingWithUpscale(small_frame, small_mask, small_bg, frame_bgr.size());
 }

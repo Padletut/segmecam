@@ -20,6 +20,33 @@ EffectsManager::~EffectsManager() {
     Cleanup();
 }
 
+// Helper method to create SkinSmoothingConfig from current beauty state
+SkinSmoothingConfig EffectsManager::CreateSkinSmoothingConfig(float scale) const {
+    SkinSmoothingConfig config;
+    config.amount = beauty_state_.fx_skin_amount;
+    config.radius_px = beauty_state_.fx_skin_radius * scale;
+    config.texture_thresh = beauty_state_.fx_skin_tex;
+    config.edge_feather_px = beauty_state_.fx_skin_edge * scale;
+    config.expression.smile_boost = beauty_state_.fx_skin_smile_boost;
+    config.expression.squint_boost = beauty_state_.fx_skin_squint_boost;
+    config.expression.forehead_boost = beauty_state_.fx_skin_forehead_boost;
+    config.expression.forehead_margin_px = 8.0f * scale;
+    config.wrinkle.mask_gain = beauty_state_.fx_skin_wrinkle_gain;
+    config.wrinkle.region_gates.suppress_lower_face = beauty_state_.fx_wrinkle_suppress_lower;
+    config.wrinkle.region_gates.lower_face_ratio = beauty_state_.fx_wrinkle_lower_ratio;
+    config.wrinkle.region_gates.ignore_glasses = beauty_state_.fx_wrinkle_ignore_glasses;
+    config.wrinkle.region_gates.glasses_margin_px = beauty_state_.fx_wrinkle_glasses_margin * scale;
+    config.wrinkle.keep_ratio = beauty_state_.fx_wrinkle_keep_ratio;
+    config.wrinkle.line_min_px = beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_min_px * scale : 1.5f;
+    config.wrinkle.line_max_px = beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_max_px * scale : 3.0f;
+    config.wrinkle_preview = beauty_state_.fx_wrinkle_preview;
+    config.baseline_boost = beauty_state_.fx_wrinkle_baseline;
+    config.wrinkle.use_skin_gate = beauty_state_.fx_wrinkle_use_skin_gate;
+    config.wrinkle.mask_gain = beauty_state_.fx_wrinkle_mask_gain;
+    config.neg_atten_cap = beauty_state_.fx_wrinkle_neg_cap;
+    return config;
+}
+
 int EffectsManager::Initialize(const EffectsConfig& config) {
     config_ = config;
     state_ = EffectsState{}; // Reset state
@@ -281,29 +308,7 @@ void EffectsManager::ApplySkinSmoothingAdvanced(cv::Mat& frame_bgr, const FaceRe
         ApplySkinSmoothingWithProcessingScale(frame_bgr, regions, landmarks);
     } else {
         // Full resolution processing
-        SkinSmoothingConfig config;
-        config.amount = beauty_state_.fx_skin_amount;
-        config.radius_px = beauty_state_.fx_skin_radius;
-        config.texture_thresh = beauty_state_.fx_skin_tex;
-        config.edge_feather_px = beauty_state_.fx_skin_edge;
-        config.expression.smile_boost = beauty_state_.fx_skin_smile_boost;
-        config.expression.squint_boost = beauty_state_.fx_skin_squint_boost;
-        config.expression.forehead_boost = beauty_state_.fx_skin_forehead_boost;
-        config.expression.forehead_margin_px = 8.0f;
-        config.wrinkle.mask_gain = beauty_state_.fx_skin_wrinkle_gain;
-        config.wrinkle.region_gates.suppress_lower_face = beauty_state_.fx_wrinkle_suppress_lower;
-        config.wrinkle.region_gates.lower_face_ratio = beauty_state_.fx_wrinkle_lower_ratio;
-        config.wrinkle.region_gates.ignore_glasses = beauty_state_.fx_wrinkle_ignore_glasses;
-        config.wrinkle.region_gates.glasses_margin_px = beauty_state_.fx_wrinkle_glasses_margin;
-        config.wrinkle.keep_ratio = beauty_state_.fx_wrinkle_keep_ratio;
-        config.wrinkle.line_min_px = beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_min_px : 1.5f;
-        config.wrinkle.line_max_px = beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_max_px : 3.0f;
-        config.wrinkle_preview = beauty_state_.fx_wrinkle_preview;
-        config.baseline_boost = beauty_state_.fx_wrinkle_baseline;
-        config.wrinkle.use_skin_gate = beauty_state_.fx_wrinkle_use_skin_gate;
-        config.wrinkle.mask_gain = beauty_state_.fx_wrinkle_mask_gain;
-        config.neg_atten_cap = beauty_state_.fx_wrinkle_neg_cap;
-
+        SkinSmoothingConfig config = CreateSkinSmoothingConfig();
         ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks);
     }
 }
@@ -725,29 +730,7 @@ cv::Rect EffectsManager::CalculateProcessingROI(const FaceRegions& regions, cons
 
 void EffectsManager::ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions, 
                                                      const mediapipe::NormalizedLandmarkList& landmarks) {
-    SkinSmoothingConfig config;
-    config.amount = beauty_state_.fx_skin_amount;
-    config.radius_px = beauty_state_.fx_skin_radius;
-    config.texture_thresh = beauty_state_.fx_skin_tex;
-    config.edge_feather_px = beauty_state_.fx_skin_edge;
-    config.expression.smile_boost = beauty_state_.fx_skin_smile_boost;
-    config.expression.squint_boost = beauty_state_.fx_skin_squint_boost;
-    config.expression.forehead_boost = beauty_state_.fx_skin_forehead_boost;
-    config.expression.forehead_margin_px = 8.0f;
-    config.wrinkle.mask_gain = beauty_state_.fx_skin_wrinkle_gain;
-    config.wrinkle.region_gates.suppress_lower_face = beauty_state_.fx_wrinkle_suppress_lower;
-    config.wrinkle.region_gates.lower_face_ratio = beauty_state_.fx_wrinkle_lower_ratio;
-    config.wrinkle.region_gates.ignore_glasses = beauty_state_.fx_wrinkle_ignore_glasses;
-    config.wrinkle.region_gates.glasses_margin_px = beauty_state_.fx_wrinkle_glasses_margin;
-    config.wrinkle.keep_ratio = beauty_state_.fx_wrinkle_keep_ratio;
-    config.wrinkle.line_min_px = beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_min_px : 1.5f;
-    config.wrinkle.line_max_px = beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_max_px : 3.0f;
-    config.wrinkle_preview = beauty_state_.fx_wrinkle_preview;
-    config.baseline_boost = beauty_state_.fx_wrinkle_baseline;
-    config.wrinkle.use_skin_gate = beauty_state_.fx_wrinkle_use_skin_gate;
-    config.wrinkle.mask_gain = beauty_state_.fx_wrinkle_mask_gain;
-    config.neg_atten_cap = beauty_state_.fx_wrinkle_neg_cap;
-
+    SkinSmoothingConfig config = CreateSkinSmoothingConfig();
     ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks);
 }
 
@@ -838,29 +821,7 @@ cv::Mat EffectsManager::DownscaleROI(const cv::Mat& roi_bgr) {
 void EffectsManager::ApplySkinSmoothingToScaledImage(cv::Mat& small, const FaceRegions& fr_small, 
                                                     const mediapipe::NormalizedLandmarkList& lms_roi) {
     float sc = std::clamp(beauty_state_.fx_adv_scale, 0.5f, 1.0f);
-    SkinSmoothingConfig config;
-    config.amount = beauty_state_.fx_skin_amount;
-    config.radius_px = beauty_state_.fx_skin_radius * sc;
-    config.texture_thresh = beauty_state_.fx_skin_tex;
-    config.edge_feather_px = beauty_state_.fx_skin_edge * sc;
-    config.expression.smile_boost = beauty_state_.fx_skin_smile_boost;
-    config.expression.squint_boost = beauty_state_.fx_skin_squint_boost;
-    config.expression.forehead_boost = beauty_state_.fx_skin_forehead_boost;
-    config.expression.forehead_margin_px = 8.0f * sc;
-    config.wrinkle.mask_gain = beauty_state_.fx_skin_wrinkle_gain;
-    config.wrinkle.region_gates.suppress_lower_face = beauty_state_.fx_wrinkle_suppress_lower;
-    config.wrinkle.region_gates.lower_face_ratio = beauty_state_.fx_wrinkle_lower_ratio;
-    config.wrinkle.region_gates.ignore_glasses = beauty_state_.fx_wrinkle_ignore_glasses;
-    config.wrinkle.region_gates.glasses_margin_px = beauty_state_.fx_wrinkle_glasses_margin * sc;
-    config.wrinkle.keep_ratio = beauty_state_.fx_wrinkle_keep_ratio;
-    config.wrinkle.line_min_px = beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_min_px * sc : 1.5f;
-    config.wrinkle.line_max_px = beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_max_px * sc : 3.0f;
-    config.wrinkle_preview = beauty_state_.fx_wrinkle_preview;
-    config.baseline_boost = beauty_state_.fx_wrinkle_baseline;
-    config.wrinkle.use_skin_gate = beauty_state_.fx_wrinkle_use_skin_gate;
-    config.wrinkle.mask_gain = beauty_state_.fx_wrinkle_mask_gain;
-    config.neg_atten_cap = beauty_state_.fx_wrinkle_neg_cap;
-
+    SkinSmoothingConfig config = CreateSkinSmoothingConfig(sc);
     ApplySkinSmoothingAdvBGR(small, fr_small, config, &lms_roi);
 }
 

@@ -218,6 +218,10 @@ private:
     cv::Rect CalculateProcessingROI(const FaceRegions& regions, const cv::Size& frame_size);
     void ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions, 
                                          const mediapipe::NormalizedLandmarkList& landmarks);
+    
+    // Helper method to create SkinSmoothingConfig from current beauty state
+    SkinSmoothingConfig CreateSkinSmoothingConfig(float scale = 1.0f) const;
+    
     FaceRegions TransformFaceRegionsToScaledROI(const FaceRegions& regions, const cv::Rect& roi);
     FaceRegions ShiftFaceRegionsToROI(const FaceRegions& regions, const cv::Rect& roi);
     FaceRegions ScaleFaceRegions(const FaceRegions& regions, float scale);
