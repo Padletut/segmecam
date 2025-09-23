@@ -57,6 +57,7 @@ public:
     const CtrlRange& GetAutoWhiteBalanceRange() const { return r_awb_; }
     const CtrlRange& GetWhiteBalanceTempRange() const { return r_wb_temp_; }
     const CtrlRange& GetBacklightRange() const { return r_backlight_; }
+    const CtrlRange& GetExposureDynamicFPSRange() const { return r_expo_dynfps_; }
 
 private:
     // Cached control ranges

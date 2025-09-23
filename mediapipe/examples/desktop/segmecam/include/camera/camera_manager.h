@@ -9,6 +9,7 @@
 #include <linux/videodev2.h>
 #include "cam_enum.h"
 #include "gstreamer_buffer_utils.h"
+#include "camera_controls.h"
 
 // Forward declarations for GStreamer types (to avoid header dependencies)
 #ifdef __cplusplus
@@ -127,7 +128,6 @@ typedef void (*g_object_unref_func)(void*);
 namespace segmecam {
 
 // Forward declarations for modular components
-class CameraControls;
 class CameraEnumeration;
 class CameraSetup;
 
@@ -269,21 +269,21 @@ public:
     bool SetControl(uint32_t control_id, int value);
     
     // Control ranges (for UI sliders)
-    const CtrlRange& GetBrightnessRange() const { return r_brightness_; }
-    const CtrlRange& GetContrastRange() const { return r_contrast_; }
-    const CtrlRange& GetSaturationRange() const { return r_saturation_; }
-    const CtrlRange& GetGainRange() const { return r_gain_; }
-    const CtrlRange& GetSharpnessRange() const { return r_sharpness_; }
-    const CtrlRange& GetZoomRange() const { return r_zoom_; }
-    const CtrlRange& GetFocusRange() const { return r_focus_; }
-    const CtrlRange& GetAutoGainRange() const { return r_autogain_; }
-    const CtrlRange& GetAutoFocusRange() const { return r_autofocus_; }
-    const CtrlRange& GetAutoExposureRange() const { return r_autoexposure_; }
-    const CtrlRange& GetExposureRange() const { return r_exposure_abs_; }
-    const CtrlRange& GetWhiteBalanceRange() const { return r_awb_; }
-    const CtrlRange& GetWhiteBalanceTemperatureRange() const { return r_wb_temp_; }
-    const CtrlRange& GetBacklightCompensationRange() const { return r_backlight_; }
-    const CtrlRange& GetExposureDynamicFPSRange() const { return r_expo_dynfps_; }
+    const CtrlRange& GetBrightnessRange() const { return camera_controls_->GetBrightnessRange(); }
+    const CtrlRange& GetContrastRange() const { return camera_controls_->GetContrastRange(); }
+    const CtrlRange& GetSaturationRange() const { return camera_controls_->GetSaturationRange(); }
+    const CtrlRange& GetGainRange() const { return camera_controls_->GetGainRange(); }
+    const CtrlRange& GetSharpnessRange() const { return camera_controls_->GetSharpnessRange(); }
+    const CtrlRange& GetZoomRange() const { return camera_controls_->GetZoomRange(); }
+    const CtrlRange& GetFocusRange() const { return camera_controls_->GetFocusRange(); }
+    const CtrlRange& GetAutoGainRange() const { return camera_controls_->GetAutoGainRange(); }
+    const CtrlRange& GetAutoFocusRange() const { return camera_controls_->GetAutoFocusRange(); }
+    const CtrlRange& GetAutoExposureRange() const { return camera_controls_->GetAutoExposureRange(); }
+    const CtrlRange& GetExposureRange() const { return camera_controls_->GetExposureAbsRange(); }
+    const CtrlRange& GetWhiteBalanceRange() const { return camera_controls_->GetAutoWhiteBalanceRange(); }
+    const CtrlRange& GetWhiteBalanceTemperatureRange() const { return camera_controls_->GetWhiteBalanceTempRange(); }
+    const CtrlRange& GetBacklightCompensationRange() const { return camera_controls_->GetBacklightRange(); }
+    const CtrlRange& GetExposureDynamicFPSRange() const { return camera_controls_->GetExposureDynamicFPSRange(); }
     
     // State access
     const CameraState& GetState() const { return state_; }
@@ -335,13 +335,6 @@ private:
     // OpenCV capture
     cv::VideoCapture cap_;
     
-    // V4L2 control ranges
-    CtrlRange r_brightness_, r_contrast_, r_saturation_, r_gain_;
-    CtrlRange r_sharpness_, r_zoom_, r_focus_;
-    CtrlRange r_autogain_, r_autofocus_;
-    CtrlRange r_autoexposure_, r_exposure_abs_;
-    CtrlRange r_awb_, r_wb_temp_, r_backlight_, r_expo_dynfps_;
-
     // PipeWire/GStreamer specific members
     GstElement* pipeline_ = nullptr;
     GstElement* appsink_ = nullptr;
