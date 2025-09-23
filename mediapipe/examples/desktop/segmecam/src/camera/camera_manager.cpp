@@ -64,41 +64,7 @@ CameraManager::~CameraManager() {
 }
 
 std::vector<CameraDesc> CameraManager::EnumerateCamerasPortal() {
-    std::vector<CameraDesc> cams;
-
-    CameraDesc cam;
-    cam.path = "PipeWire";
-    cam.name = "PipeWire Camera";
-    cam.index = 0;
-
-    cam.resolutions = {
-        {640, 480},
-        {800, 600},
-        {960, 720},
-        {1280, 720},
-        {1600, 900},
-        {1920, 1080}
-    };
-
-    if (config_.default_width > 0 && config_.default_height > 0) {
-        auto desired = std::make_pair(config_.default_width, config_.default_height);
-        if (std::find(cam.resolutions.begin(), cam.resolutions.end(), desired) == cam.resolutions.end()) {
-            cam.resolutions.push_back(desired);
-        }
-    }
-
-    std::sort(cam.resolutions.begin(), cam.resolutions.end(), [](const auto& a, const auto& b) {
-        long area_a = static_cast<long>(a.first) * a.second;
-        long area_b = static_cast<long>(b.first) * b.second;
-        if (area_a == area_b) {
-            return a.first < b.first;
-        }
-        return area_a < area_b;
-    });
-    cam.resolutions.erase(std::unique(cam.resolutions.begin(), cam.resolutions.end()), cam.resolutions.end());
-
-    cams.push_back(cam);
-    return cams;
+    return camera_enumeration_->EnumerateCamerasPortal(config_);
 }
 
 void CameraManager::LogV4L2InitializationSuccess() {

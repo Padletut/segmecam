@@ -137,3 +137,4 @@ build_ios_examples.sh
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
 codacy-fixes.patch
+.codacy/results.sarif
