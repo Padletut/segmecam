@@ -6,6 +6,7 @@
 #include "app_state.h"
 #include "include/camera/camera_manager.h"
 #include "cam_enum.h"
+#include "src/config/config_manager.h"
 
 namespace segmecam {
 
@@ -44,8 +45,40 @@ private:
     void RenderCameraSelection();
     void RenderResolutionSettings();
     void RenderVirtualCameraControls();
+    // Profile section rendering
     void RenderProfileSection();
+    void RenderProfileHeader();
+    void HandleProfileSelection();
+    void ProcessProfileLoadRequest();
+    void HandleProfileSaveButton();
     void RenderCameraControls();
+    
+    // Helper methods for resolution settings
+    void RenderResolutionControls();
+    void RenderFPSControls();
+    
+    // Helper methods for virtual camera controls
+    void RenderVirtualCameraActive();
+    void RenderVirtualCameraInactive();
+    void RenderVirtualCameraDeviceSelection();
+    void RenderVirtualCameraResolutionInfo();
+    void RenderVirtualCameraStartButton();
+    void RenderVirtualCameraHelp();
+    
+    // Helper methods for camera controls
+    void GetControlRanges();
+    void RenderBasicControls();
+    void RenderGainExposureControls();
+    void RenderGainControls();
+    void RenderExposureControls();
+    void RenderBacklightControl();
+    void RenderAdditionalControls();
+    void RenderWhiteBalanceControls();
+    void RenderResetButton();
+    
+    // Helper methods for exposure auto control
+    void DisableAutoExposure();
+    void EnableAutoExposure(int current_mode);
     
     // Helper methods for V4L2 controls
     void SliderCtrl(const char* label, CtrlRange& range, uint32_t control_id);
@@ -76,7 +109,28 @@ private:
     
     // Profile helper methods
     void LoadProfileIntoState(const std::string& profile_name);
+    bool ValidateProfileLoad(const std::string& profile_name);
+    void LoadCameraSettings(const ConfigData& config);
+    void LoadCameraSelection(const ConfigData& config, bool in_flatpak);
+    void LoadResolutionSettings(const ConfigData& config, bool in_flatpak);
+    void LoadDisplaySettings(const ConfigData& config);
+    void LoadBackgroundSettings(const ConfigData& config);
+    void LoadLandmarkSettings(const ConfigData& config);
+    void LoadBeautySettings(const ConfigData& config);
+    void LoadPerformanceSettings(const ConfigData& config);
     bool SaveStateToProfile(const std::string& profile_name);
+    bool ValidateProfileSave(const std::string& profile_name);
+    void SaveCameraSettings(ConfigData& config);
+    void SaveDisplaySettings(ConfigData& config);
+    void SaveBackgroundSettings(ConfigData& config);
+    void SaveLandmarkSettings(ConfigData& config);
+    void SaveBeautySettings(ConfigData& config);
+    void SaveBasicBeautySettings(ConfigData& config);
+    void SaveWrinkleSettings(ConfigData& config);
+    void SaveLipSettings(ConfigData& config);
+    void SaveTeethSettings(ConfigData& config);
+    void SavePerformanceSettings(ConfigData& config);
+    bool SaveProfileToManager(const std::string& profile_name, const ConfigData& config);
     
     // String storage for combo boxes (to prevent memory corruption)
     std::vector<std::string> res_strings_;
@@ -88,6 +142,23 @@ private:
     std::vector<LoopbackDesc> vcam_devices_;
     std::vector<std::string> vcam_labels_;
     std::vector<const char*> vcam_items_;
+    
+    // Cached control ranges for camera controls
+    CtrlRange r_brightness_;
+    CtrlRange r_contrast_;
+    CtrlRange r_saturation_;
+    CtrlRange r_gain_;
+    CtrlRange r_sharpness_;
+    CtrlRange r_zoom_;
+    CtrlRange r_focus_;
+    CtrlRange r_autogain_;
+    CtrlRange r_autofocus_;
+    CtrlRange r_autoexposure_;
+    CtrlRange r_exposure_abs_;
+    CtrlRange r_awb_;
+    CtrlRange r_wb_temp_;
+    CtrlRange r_backlight_;
+    CtrlRange r_expo_dynfps_;
 };
 
 // Background and compositing effects panel  
@@ -102,6 +173,19 @@ private:
     void RenderBackgroundMode();
     void RenderBlurControls();
     void RenderImageControls();
+    void RenderImageHeader();
+    void RenderImagePathControls();
+    void LoadImageFromPath(const char* path);
+    void LoadImageFromClipboard();
+    void LoadImageFromPortal();
+    void ClearBackgroundImage();
+    void RenderImageDisplay();
+    void RenderImageInfo();
+    void RenderImageScaling();
+    void RenderImageOpacity();
+    void RenderImagePosition();
+    void RenderResetPositionButton();
+    void RenderImageTips();
     void RenderSolidColorControls();
     void RenderMaskControls();
     

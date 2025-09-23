@@ -124,6 +124,11 @@ void CameraPanel::RenderResolutionSettings() {
     ImGui::Text("Resolution & FPS");
     ImGui::Separator();
     
+    RenderResolutionControls();
+    RenderFPSControls();
+}
+
+void CameraPanel::RenderResolutionControls() {
     // Get available resolutions from camera manager
     const auto& res_list = camera_mgr_.GetCurrentResolutions();
     
@@ -144,7 +149,9 @@ void CameraPanel::RenderResolutionSettings() {
             }
         }
     }
-    
+}
+
+void CameraPanel::RenderFPSControls() {
     // FPS options using member variables
     const auto& fps_list = camera_mgr_.GetCurrentFPSOptions();
     fps_strings_.clear();
@@ -172,56 +179,78 @@ void CameraPanel::RenderVirtualCameraControls() {
     bool vcam_active = state_.vcam.IsOpen();
     
     if (vcam_active) {
-        ImGui::TextColored(ImVec4(0, 1, 0, 1), "Status: Active (%dx%d)", state_.vcam.Width(), state_.vcam.Height());
-        
-        if (ImGui::Button("Stop Virtual Camera")) {
-            state_.vcam.Close();
-            std::cout << "Virtual camera stopped" << std::endl;
-        }
+        RenderVirtualCameraActive();
     } else {
-        ImGui::TextColored(ImVec4(1, 1, 0, 1), "Status: Inactive");
-        
-        // Virtual camera device selection dropdown
-        if (ImGui::Button("Refresh Devices")) {
-            RefreshVirtualCameraDevices();
-        }
-        ImGui::SameLine();
-        
-        if (vcam_devices_.empty()) {
-            ImGui::TextColored(ImVec4(1, 0.5f, 0, 1), "No v4l2loopback devices found");
-        } else {
-            if (ImGui::Combo("Device", &ui_vcam_idx_, vcam_items_.data(), static_cast<int>(vcam_items_.size()))) {
-                // Update the state with selected device path
-                if (ui_vcam_idx_ >= 0 && ui_vcam_idx_ < static_cast<int>(vcam_devices_.size())) {
-                    state_.virtual_camera_path = vcam_devices_[ui_vcam_idx_].path;
-                }
-            }
-        }
-        
-        // Resolution info (display only - matches input camera)
-        ImGui::Text("Resolution: %dx%d (matches input camera)", 
-                   state_.camera_width > 0 ? state_.camera_width : 640,
-                   state_.camera_height > 0 ? state_.camera_height : 480);
-        
-        if (ImGui::Button("Start Virtual Camera")) {
-            if (!vcam_devices_.empty() && ui_vcam_idx_ >= 0 && ui_vcam_idx_ < static_cast<int>(vcam_devices_.size())) {
-                const std::string& device_path = vcam_devices_[ui_vcam_idx_].path;
-                // Use input camera resolution, fallback to 640x480 if not available
-                int vcam_width = state_.camera_width > 0 ? state_.camera_width : 640;
-                int vcam_height = state_.camera_height > 0 ? state_.camera_height : 480;
-                
-                if (state_.vcam.Open(device_path.c_str(), vcam_width, vcam_height)) {
-                    std::cout << "Virtual camera started on " << device_path 
-                             << " at " << vcam_width << "x" << vcam_height << std::endl;
-                } else {
-                    std::cout << "Failed to start virtual camera on " << device_path << std::endl;
-                }
-            } else {
-                std::cout << "No virtual camera device selected" << std::endl;
-            }
-        }
+        RenderVirtualCameraInactive();
     }
     
+    RenderVirtualCameraHelp();
+}
+
+void CameraPanel::RenderVirtualCameraActive() {
+    ImGui::TextColored(ImVec4(0, 1, 0, 1), "Status: Active (%dx%d)", state_.vcam.Width(), state_.vcam.Height());
+    
+    if (ImGui::Button("Stop Virtual Camera")) {
+        state_.vcam.Close();
+        std::cout << "Virtual camera stopped" << std::endl;
+    }
+}
+
+void CameraPanel::RenderVirtualCameraInactive() {
+    ImGui::TextColored(ImVec4(1, 1, 0, 1), "Status: Inactive");
+    
+    // Virtual camera device selection dropdown
+    if (ImGui::Button("Refresh Devices")) {
+        RefreshVirtualCameraDevices();
+    }
+    ImGui::SameLine();
+    
+    if (vcam_devices_.empty()) {
+        ImGui::TextColored(ImVec4(1, 0.5f, 0, 1), "No v4l2loopback devices found");
+    } else {
+        RenderVirtualCameraDeviceSelection();
+        RenderVirtualCameraResolutionInfo();
+        RenderVirtualCameraStartButton();
+    }
+}
+
+void CameraPanel::RenderVirtualCameraDeviceSelection() {
+    if (ImGui::Combo("Device", &ui_vcam_idx_, vcam_items_.data(), static_cast<int>(vcam_items_.size()))) {
+        // Update the state with selected device path
+        if (ui_vcam_idx_ >= 0 && ui_vcam_idx_ < static_cast<int>(vcam_devices_.size())) {
+            state_.virtual_camera_path = vcam_devices_[ui_vcam_idx_].path;
+        }
+    }
+}
+
+void CameraPanel::RenderVirtualCameraResolutionInfo() {
+    // Resolution info (display only - matches input camera)
+    ImGui::Text("Resolution: %dx%d (matches input camera)", 
+               state_.camera_width > 0 ? state_.camera_width : 640,
+               state_.camera_height > 0 ? state_.camera_height : 480);
+}
+
+void CameraPanel::RenderVirtualCameraStartButton() {
+    if (ImGui::Button("Start Virtual Camera")) {
+        if (!vcam_devices_.empty() && ui_vcam_idx_ >= 0 && ui_vcam_idx_ < static_cast<int>(vcam_devices_.size())) {
+            const std::string& device_path = vcam_devices_[ui_vcam_idx_].path;
+            // Use input camera resolution, fallback to 640x480 if not available
+            int vcam_width = state_.camera_width > 0 ? state_.camera_width : 640;
+            int vcam_height = state_.camera_height > 0 ? state_.camera_height : 480;
+            
+            if (state_.vcam.Open(device_path.c_str(), vcam_width, vcam_height)) {
+                std::cout << "Virtual camera started on " << device_path 
+                         << " at " << vcam_width << "x" << vcam_height << std::endl;
+            } else {
+                std::cout << "Failed to start virtual camera on " << device_path << std::endl;
+            }
+        } else {
+            std::cout << "No virtual camera device selected" << std::endl;
+        }
+    }
+}
+
+void CameraPanel::RenderVirtualCameraHelp() {
     // Virtual camera help
     ImGui::Separator();
     ImGui::TextDisabled("Usage:");
@@ -243,85 +272,115 @@ void CameraPanel::RenderCameraControls() {
         return;
     }
     
+    GetControlRanges();
+    RenderBasicControls();
+    RenderGainExposureControls();
+    RenderAdditionalControls();
+    RenderWhiteBalanceControls();
+    RenderResetButton();
+}
+
+void CameraPanel::GetControlRanges() {
     // Get control ranges from camera manager
-    auto& r_brightness = const_cast<CtrlRange&>(camera_mgr_.GetBrightnessRange());
-    auto& r_contrast = const_cast<CtrlRange&>(camera_mgr_.GetContrastRange());
-    auto& r_saturation = const_cast<CtrlRange&>(camera_mgr_.GetSaturationRange());
-    auto& r_gain = const_cast<CtrlRange&>(camera_mgr_.GetGainRange());
-    auto& r_sharpness = const_cast<CtrlRange&>(camera_mgr_.GetSharpnessRange());
-    auto& r_zoom = const_cast<CtrlRange&>(camera_mgr_.GetZoomRange());
-    auto& r_focus = const_cast<CtrlRange&>(camera_mgr_.GetFocusRange());
-    auto& r_autogain = const_cast<CtrlRange&>(camera_mgr_.GetAutoGainRange());
-    auto& r_autofocus = const_cast<CtrlRange&>(camera_mgr_.GetAutoFocusRange());
-    auto& r_autoexposure = const_cast<CtrlRange&>(camera_mgr_.GetAutoExposureRange());
-    auto& r_exposure_abs = const_cast<CtrlRange&>(camera_mgr_.GetExposureRange());
-    auto& r_awb = const_cast<CtrlRange&>(camera_mgr_.GetWhiteBalanceRange());
-    auto& r_wb_temp = const_cast<CtrlRange&>(camera_mgr_.GetWhiteBalanceTemperatureRange());
-    auto& r_backlight = const_cast<CtrlRange&>(camera_mgr_.GetBacklightCompensationRange());
-    auto& r_expo_dynfps = const_cast<CtrlRange&>(camera_mgr_.GetExposureDynamicFPSRange());
-    
+    r_brightness_ = const_cast<CtrlRange&>(camera_mgr_.GetBrightnessRange());
+    r_contrast_ = const_cast<CtrlRange&>(camera_mgr_.GetContrastRange());
+    r_saturation_ = const_cast<CtrlRange&>(camera_mgr_.GetSaturationRange());
+    r_gain_ = const_cast<CtrlRange&>(camera_mgr_.GetGainRange());
+    r_sharpness_ = const_cast<CtrlRange&>(camera_mgr_.GetSharpnessRange());
+    r_zoom_ = const_cast<CtrlRange&>(camera_mgr_.GetZoomRange());
+    r_focus_ = const_cast<CtrlRange&>(camera_mgr_.GetFocusRange());
+    r_autogain_ = const_cast<CtrlRange&>(camera_mgr_.GetAutoGainRange());
+    r_autofocus_ = const_cast<CtrlRange&>(camera_mgr_.GetAutoFocusRange());
+    r_autoexposure_ = const_cast<CtrlRange&>(camera_mgr_.GetAutoExposureRange());
+    r_exposure_abs_ = const_cast<CtrlRange&>(camera_mgr_.GetExposureRange());
+    r_awb_ = const_cast<CtrlRange&>(camera_mgr_.GetWhiteBalanceRange());
+    r_wb_temp_ = const_cast<CtrlRange&>(camera_mgr_.GetWhiteBalanceTemperatureRange());
+    r_backlight_ = const_cast<CtrlRange&>(camera_mgr_.GetBacklightCompensationRange());
+    r_expo_dynfps_ = const_cast<CtrlRange&>(camera_mgr_.GetExposureDynamicFPSRange());
+}
+
+void CameraPanel::RenderBasicControls() {
     // Render basic controls
-    SliderCtrl("Brightness", r_brightness, V4L2_CID_BRIGHTNESS);
-    SliderCtrl("Contrast", r_contrast, V4L2_CID_CONTRAST);
-    SliderCtrl("Saturation", r_saturation, V4L2_CID_SATURATION);
-    
+    SliderCtrl("Brightness", r_brightness_, V4L2_CID_BRIGHTNESS);
+    SliderCtrl("Contrast", r_contrast_, V4L2_CID_CONTRAST);
+    SliderCtrl("Saturation", r_saturation_, V4L2_CID_SATURATION);
+}
+
+void CameraPanel::RenderGainExposureControls() {
     // Auto gain control
-    if (r_autogain.available) {
-        CheckboxCtrl("Auto gain", r_autogain, V4L2_CID_AUTOGAIN);
-    } else if (r_autoexposure.available) {
+    if (r_autogain_.available) {
+        CheckboxCtrl("Auto gain", r_autogain_, V4L2_CID_AUTOGAIN);
+    } else if (r_autoexposure_.available) {
         // Fallback label when AUTOGAIN not provided by driver
         CheckboxExposureAuto("Auto exposure");
     }
     
     // Hide Gain/Exposure sliders completely when Auto Exposure is ON
-    bool ae_on_global = (r_autoexposure.available && r_autoexposure.val != V4L2_EXPOSURE_MANUAL);
+    bool ae_on_global = (r_autoexposure_.available && r_autoexposure_.val != V4L2_EXPOSURE_MANUAL);
     if (!ae_on_global) {
-        // Gain: disable only if explicit AUTOGAIN is enabled
-        if (r_autogain.available && r_autogain.val) ImGui::BeginDisabled();
-        SliderCtrl("Gain", r_gain, V4L2_CID_GAIN);
-        if (r_autogain.available && r_autogain.val) ImGui::EndDisabled();
+        RenderGainControls();
     }
     
+    RenderExposureControls();
+    RenderBacklightControl();
+}
+
+void CameraPanel::RenderGainControls() {
+    // Gain: disable only if explicit AUTOGAIN is enabled
+    if (r_autogain_.available && r_autogain_.val) ImGui::BeginDisabled();
+    SliderCtrl("Gain", r_gain_, V4L2_CID_GAIN);
+    if (r_autogain_.available && r_autogain_.val) ImGui::EndDisabled();
+}
+
+void CameraPanel::RenderExposureControls() {
     // Exposure controls and helpers
-    if (r_autoexposure.available) {
-        bool ae_on = (r_autoexposure.val != V4L2_EXPOSURE_MANUAL);
-        if (r_exposure_abs.available && !ae_on) {
-            SliderCtrl("Exposure", r_exposure_abs, V4L2_CID_EXPOSURE_ABSOLUTE);
+    if (r_autoexposure_.available) {
+        bool ae_on = (r_autoexposure_.val != V4L2_EXPOSURE_MANUAL);
+        if (r_exposure_abs_.available && !ae_on) {
+            SliderCtrl("Exposure", r_exposure_abs_, V4L2_CID_EXPOSURE_ABSOLUTE);
         }
-        if (r_expo_dynfps.available) {
-            CheckboxCtrl("Exposure dynamic framerate", r_expo_dynfps, V4L2_CID_EXPOSURE_AUTO_PRIORITY);
+        if (r_expo_dynfps_.available) {
+            CheckboxCtrl("Exposure dynamic framerate", r_expo_dynfps_, V4L2_CID_EXPOSURE_AUTO_PRIORITY);
         }
     }
-    
+}
+
+void CameraPanel::RenderBacklightControl() {
     // Backlight compensation
-    if (r_backlight.available) {
-        if (r_backlight.min == 0 && r_backlight.max == 1 && r_backlight.step == 1) {
-            CheckboxCtrl("Backlight compensation", r_backlight, V4L2_CID_BACKLIGHT_COMPENSATION);
+    if (r_backlight_.available) {
+        if (r_backlight_.min == 0 && r_backlight_.max == 1 && r_backlight_.step == 1) {
+            CheckboxCtrl("Backlight compensation", r_backlight_, V4L2_CID_BACKLIGHT_COMPENSATION);
         } else {
-            SliderCtrl("Backlight compensation", r_backlight, V4L2_CID_BACKLIGHT_COMPENSATION);
+            SliderCtrl("Backlight compensation", r_backlight_, V4L2_CID_BACKLIGHT_COMPENSATION);
         }
     }
-    
+}
+
+void CameraPanel::RenderAdditionalControls() {
     // Additional controls
-    SliderCtrl("Sharpness", r_sharpness, V4L2_CID_SHARPNESS);
-    SliderCtrl("Zoom", r_zoom, V4L2_CID_ZOOM_ABSOLUTE);
+    SliderCtrl("Sharpness", r_sharpness_, V4L2_CID_SHARPNESS);
+    SliderCtrl("Zoom", r_zoom_, V4L2_CID_ZOOM_ABSOLUTE);
     
     // Focus controls (disable manual focus when auto focus is enabled)
-    CheckboxCtrl("Auto focus", r_autofocus, V4L2_CID_FOCUS_AUTO);
-    if (r_autofocus.val) ImGui::BeginDisabled();
-    SliderCtrl("Focus", r_focus, V4L2_CID_FOCUS_ABSOLUTE);
-    if (r_autofocus.val) ImGui::EndDisabled();
-    
+    CheckboxCtrl("Auto focus", r_autofocus_, V4L2_CID_FOCUS_AUTO);
+    if (r_autofocus_.val) ImGui::BeginDisabled();
+    SliderCtrl("Focus", r_focus_, V4L2_CID_FOCUS_ABSOLUTE);
+    if (r_autofocus_.val) ImGui::EndDisabled();
+}
+
+void CameraPanel::RenderWhiteBalanceControls() {
     // White balance (AWB + temperature)
-    if (r_awb.available) {
-        CheckboxCtrl("Auto white balance", r_awb, V4L2_CID_AUTO_WHITE_BALANCE);
-        if (r_wb_temp.available) {
-            if (r_awb.val) ImGui::BeginDisabled();
-            SliderCtrl("White balance (temp)", r_wb_temp, V4L2_CID_WHITE_BALANCE_TEMPERATURE);
-            if (r_awb.val) ImGui::EndDisabled();
+    if (r_awb_.available) {
+        CheckboxCtrl("Auto white balance", r_awb_, V4L2_CID_AUTO_WHITE_BALANCE);
+        if (r_wb_temp_.available) {
+            if (r_awb_.val) ImGui::BeginDisabled();
+            SliderCtrl("White balance (temp)", r_wb_temp_, V4L2_CID_WHITE_BALANCE_TEMPERATURE);
+            if (r_awb_.val) ImGui::EndDisabled();
         }
     }
-    
+}
+
+void CameraPanel::RenderResetButton() {
     if (ImGui::Button("Reset to Defaults")) {
         camera_mgr_.ApplyDefaultControls();
     }
@@ -362,126 +421,140 @@ void CameraPanel::CheckboxExposureAuto(const char* label) {
     bool enabled = (mode != V4L2_EXPOSURE_MANUAL);
     
     if (ImGui::Checkbox(label, &enabled)) {
-        auto& range = const_cast<CtrlRange&>(r_autoexposure);
-        
         if (!enabled) {
-            // Turn OFF -> MANUAL
-            if (camera_mgr_.SetControl(V4L2_CID_EXPOSURE_AUTO, V4L2_EXPOSURE_MANUAL)) {
-                range.val = V4L2_EXPOSURE_MANUAL;
-            } else {
-                std::cout << "Failed to set EXPOSURE_AUTO to MANUAL" << std::endl;
-            }
+            DisableAutoExposure();
         } else {
-            // Turn ON: try supported non-manual modes in order of likelihood of success for UVC cams
-            const int candidates[] = {
-                (int)V4L2_EXPOSURE_APERTURE_PRIORITY,
-                (int)V4L2_EXPOSURE_AUTO,
-                (int)V4L2_EXPOSURE_SHUTTER_PRIORITY
-            };
-            bool ok = false;
-            for (int c : candidates) {
-                if (c < r_autoexposure.min || c > r_autoexposure.max || c == (int)V4L2_EXPOSURE_MANUAL) continue;
-                if (camera_mgr_.SetControl(V4L2_CID_EXPOSURE_AUTO, c)) {
-                    range.val = c;
-                    ok = true;
-                    break;
-                }
-            }
-            if (!ok) {
-                // Last resort: try leaving as-is if it was already some auto mode
-                if (mode != V4L2_EXPOSURE_MANUAL) {
-                    range.val = mode;
-                } else {
-                    std::cout << "Failed to enable auto exposure: no supported mode accepted" << std::endl;
-                }
-            }
+            EnableAutoExposure(mode);
+        }
+    }
+}
+
+void CameraPanel::DisableAutoExposure() {
+    const auto& r_autoexposure = camera_mgr_.GetAutoExposureRange();
+    auto& range = const_cast<CtrlRange&>(r_autoexposure);
+    
+    // Turn OFF -> MANUAL
+    if (camera_mgr_.SetControl(V4L2_CID_EXPOSURE_AUTO, V4L2_EXPOSURE_MANUAL)) {
+        range.val = V4L2_EXPOSURE_MANUAL;
+    } else {
+        std::cout << "Failed to set EXPOSURE_AUTO to MANUAL" << std::endl;
+    }
+}
+
+void CameraPanel::EnableAutoExposure(int current_mode) {
+    const auto& r_autoexposure = camera_mgr_.GetAutoExposureRange();
+    auto& range = const_cast<CtrlRange&>(r_autoexposure);
+    
+    // Turn ON: try supported non-manual modes in order of likelihood of success for UVC cams
+    const int candidates[] = {
+        (int)V4L2_EXPOSURE_APERTURE_PRIORITY,
+        (int)V4L2_EXPOSURE_AUTO,
+        (int)V4L2_EXPOSURE_SHUTTER_PRIORITY
+    };
+    
+    bool ok = false;
+    for (int c : candidates) {
+        if (c < r_autoexposure.min || c > r_autoexposure.max || c == (int)V4L2_EXPOSURE_MANUAL) continue;
+        if (camera_mgr_.SetControl(V4L2_CID_EXPOSURE_AUTO, c)) {
+            range.val = c;
+            ok = true;
+            break;
+        }
+    }
+    
+    if (!ok) {
+        // Last resort: try leaving as-is if it was already some auto mode
+        if (current_mode != V4L2_EXPOSURE_MANUAL) {
+            range.val = current_mode;
+        } else {
+            std::cout << "Failed to enable auto exposure: no supported mode accepted" << std::endl;
         }
     }
 }
 
 void CameraPanel::RenderProfileSection() {
+    RenderProfileHeader();
+    HandleProfileSelection();
+    HandleProfileSaveButton();
+    ImGui::Separator();
+}
+
+void CameraPanel::RenderProfileHeader() {
     ImGui::Spacing();
     ImGui::Text("Profile Management");
     ImGui::Separator();
-    
+}
+
+void CameraPanel::HandleProfileSelection() {
     // Use common profile selection UI
     if (ui_utils::RenderProfileSelection(config_mgr_, ui_profile_idx_, profile_name_buf_,
                                        sizeof(profile_name_buf_), "Profile Name##camera_panel", false)) {
-        // Profile load was requested
-        auto profile_names = config_mgr_->ListProfiles();
-        if (ui_profile_idx_ >= 0 && ui_profile_idx_ < (int)profile_names.size()) {
-            LoadProfileIntoState(profile_names[ui_profile_idx_]);
-            // Update name buffer to match loaded profile
-            std::string profile_name = profile_names[ui_profile_idx_];
-            SafeStringCopy(profile_name_buf_, sizeof(profile_name_buf_), profile_name);
-        }
+        ProcessProfileLoadRequest();
     }
-    
+}
+
+void CameraPanel::ProcessProfileLoadRequest() {
+    // Profile load was requested
+    auto profile_names = config_mgr_->ListProfiles();
+    if (ui_profile_idx_ >= 0 && ui_profile_idx_ < (int)profile_names.size()) {
+        LoadProfileIntoState(profile_names[ui_profile_idx_]);
+        // Update name buffer to match loaded profile
+        std::string profile_name = profile_names[ui_profile_idx_];
+        SafeStringCopy(profile_name_buf_, sizeof(profile_name_buf_), profile_name);
+    }
+}
+
+void CameraPanel::HandleProfileSaveButton() {
     // Handle save button using common UI utility
     ui_utils::HandleProfileSaveButton(config_mgr_, ui_profile_idx_, profile_name_buf_,
                                      sizeof(profile_name_buf_),
                                      [this](const std::string& name) { return SaveStateToProfile(name); });
-    
-    ImGui::Separator();
 }
 
 void CameraPanel::LoadProfileIntoState(const std::string& profile_name) {
-    if (!config_mgr_) {
-        std::cout << "Config manager not available for loading profile" << std::endl;
+    if (!ValidateProfileLoad(profile_name)) {
         return;
     }
     
-    if (profile_name.empty()) {
-        std::cout << "Profile name cannot be empty" << std::endl;
-        return;
-    }
-    
-    // Load profile using ConfigManager
     ConfigData config;
-    bool success = config_mgr_->LoadProfile(profile_name, config);
-    if (!success) {
+    if (!config_mgr_->LoadProfile(profile_name, config)) {
         std::cout << "Failed to load profile: " << profile_name << std::endl;
         return;
     }
     
+    LoadCameraSettings(config);
+    LoadDisplaySettings(config);
+    LoadBackgroundSettings(config);
+    LoadLandmarkSettings(config);
+    LoadBeautySettings(config);
+    LoadPerformanceSettings(config);
+    
+    std::cout << "Profile loaded successfully: " << profile_name << std::endl;
+}
+
+bool CameraPanel::ValidateProfileLoad(const std::string& profile_name) {
+    if (!config_mgr_) {
+        std::cout << "Config manager not available for loading profile" << std::endl;
+        return false;
+    }
+    
+    if (profile_name.empty()) {
+        std::cout << "Profile name cannot be empty" << std::endl;
+        return false;
+    }
+    
+    return true;
+}
+
+void CameraPanel::LoadCameraSettings(const ConfigData& config) {
     // Apply loaded settings to state
     
     // Camera settings - apply both actual camera changes and UI state
     const bool in_flatpak = IsFlatpakEnvironment();
 
     if (config.camera.ui_cam_idx >= 0) {
-        // Set camera if different from current
-        if (in_flatpak) {
-            ui_cam_idx_ = config.camera.ui_cam_idx;
-            ui_res_idx_ = config.camera.ui_res_idx >= 0 ? config.camera.ui_res_idx : ui_res_idx_;
-            ui_fps_idx_ = config.camera.ui_fps_idx >= 0 ? config.camera.ui_fps_idx : ui_fps_idx_;
-            std::cout << "Profile loaded in Flatpak: camera settings retained (PipeWire session unchanged)." << std::endl;
-        } else if (config.camera.ui_cam_idx != ui_cam_idx_) {
-            ui_cam_idx_ = config.camera.ui_cam_idx;
-            ui_res_idx_ = config.camera.ui_res_idx >= 0 ? config.camera.ui_res_idx : 0;
-            ui_fps_idx_ = config.camera.ui_fps_idx >= 0 ? config.camera.ui_fps_idx : 0;
-            
-            // Apply camera change with UI indices
-            camera_mgr_.SetCurrentCamera(ui_cam_idx_, ui_res_idx_, ui_fps_idx_);
-            std::cout << "Profile loaded: Camera changed to index " << ui_cam_idx_ 
-                      << " with resolution index " << ui_res_idx_ 
-                      << " and FPS index " << ui_fps_idx_ << std::endl;
-        } else {
-            // Same camera, but possibly different resolution/FPS using actual values
-            if (config.camera.res_w > 0 && config.camera.res_h > 0) {
-                camera_mgr_.SetResolution(config.camera.res_w, config.camera.res_h);
-                std::cout << "Profile loaded: Resolution changed to " 
-                          << config.camera.res_w << "x" << config.camera.res_h << std::endl;
-            }
-            if (config.camera.fps_value > 0) {
-                camera_mgr_.SetFPS(config.camera.fps_value);
-                std::cout << "Profile loaded: FPS changed to " << config.camera.fps_value << std::endl;
-            }
-            
-            // Update UI indices to match
-            ui_res_idx_ = config.camera.ui_res_idx >= 0 ? config.camera.ui_res_idx : ui_res_idx_;
-            ui_fps_idx_ = config.camera.ui_fps_idx >= 0 ? config.camera.ui_fps_idx : ui_fps_idx_;
-        }
+        LoadCameraSelection(config, in_flatpak);
+        LoadResolutionSettings(config, in_flatpak);
         
         // Update AppState camera dimensions for consistency
         const auto& camera_state = camera_mgr_.GetState();
@@ -489,14 +562,56 @@ void CameraPanel::LoadProfileIntoState(const std::string& profile_name) {
         state_.camera_height = camera_state.current_height;
         state_.camera_fps = camera_state.current_fps;
     }
-    
+}
+
+void CameraPanel::LoadCameraSelection(const ConfigData& config, bool in_flatpak) {
+    if (in_flatpak) {
+        ui_cam_idx_ = config.camera.ui_cam_idx;
+        ui_res_idx_ = config.camera.ui_res_idx >= 0 ? config.camera.ui_res_idx : ui_res_idx_;
+        ui_fps_idx_ = config.camera.ui_fps_idx >= 0 ? config.camera.ui_fps_idx : ui_fps_idx_;
+        std::cout << "Profile loaded in Flatpak: camera settings retained (PipeWire session unchanged)." << std::endl;
+    } else if (config.camera.ui_cam_idx != ui_cam_idx_) {
+        ui_cam_idx_ = config.camera.ui_cam_idx;
+        ui_res_idx_ = config.camera.ui_res_idx >= 0 ? config.camera.ui_res_idx : 0;
+        ui_fps_idx_ = config.camera.ui_fps_idx >= 0 ? config.camera.ui_fps_idx : 0;
+        
+        // Apply camera change with UI indices
+        camera_mgr_.SetCurrentCamera(ui_cam_idx_, ui_res_idx_, ui_fps_idx_);
+        std::cout << "Profile loaded: Camera changed to index " << ui_cam_idx_ 
+                  << " with resolution index " << ui_res_idx_ 
+                  << " and FPS index " << ui_fps_idx_ << std::endl;
+    }
+}
+
+void CameraPanel::LoadResolutionSettings(const ConfigData& config, bool in_flatpak) {
+    if (!in_flatpak) {
+        // Same camera, but possibly different resolution/FPS using actual values
+        if (config.camera.res_w > 0 && config.camera.res_h > 0) {
+            camera_mgr_.SetResolution(config.camera.res_w, config.camera.res_h);
+            std::cout << "Profile loaded: Resolution changed to " 
+                      << config.camera.res_w << "x" << config.camera.res_h << std::endl;
+        }
+        if (config.camera.fps_value > 0) {
+            camera_mgr_.SetFPS(config.camera.fps_value);
+            std::cout << "Profile loaded: FPS changed to " << config.camera.fps_value << std::endl;
+        }
+        
+        // Update UI indices to match
+        ui_res_idx_ = config.camera.ui_res_idx >= 0 ? config.camera.ui_res_idx : ui_res_idx_;
+        ui_fps_idx_ = config.camera.ui_fps_idx >= 0 ? config.camera.ui_fps_idx : ui_fps_idx_;
+    }
+}
+
+void CameraPanel::LoadDisplaySettings(const ConfigData& config) {
     // Display settings
     state_.vsync_on = config.display.vsync_on;
     state_.show_mask = config.display.show_mask;
     state_.show_landmarks = config.display.show_landmarks;
     state_.show_mesh = config.display.show_mesh;
     state_.show_mesh_dense = config.display.show_mesh_dense;
-    
+}
+
+void CameraPanel::LoadBackgroundSettings(const ConfigData& config) {
     // Background settings
     state_.bg_mode = config.background.bg_mode;
     state_.blur_strength = config.background.blur_strength;
@@ -511,14 +626,18 @@ void CameraPanel::LoadProfileIntoState(const std::string& profile_name) {
         std::cout << "Loading background image from profile: " << config.background.bg_path << std::endl;
         effects_mgr_.SetBackgroundImageFromPath(config.background.bg_path);
     }
-    
+}
+
+void CameraPanel::LoadLandmarkSettings(const ConfigData& config) {
     // Landmark settings
     state_.lm_roi_mode = config.landmarks.lm_roi_mode;
     state_.lm_apply_rot = config.landmarks.lm_apply_rot;
     state_.lm_flip_x = config.landmarks.lm_flip_x;
     state_.lm_flip_y = config.landmarks.lm_flip_y;
     state_.lm_swap_xy = config.landmarks.lm_swap_xy;
-    
+}
+
+void CameraPanel::LoadBeautySettings(const ConfigData& config) {
     // Beauty settings - copy all beauty parameters
     state_.fx_skin = config.beauty.fx_skin;
     state_.fx_skin_adv = config.beauty.fx_skin_adv;
@@ -564,16 +683,32 @@ void CameraPanel::LoadProfileIntoState(const std::string& profile_name) {
     state_.fx_teeth = config.beauty.fx_teeth;
     state_.fx_teeth_strength = config.beauty.fx_teeth_strength;
     state_.fx_teeth_margin = config.beauty.fx_teeth_margin;
-    
+}
+
+void CameraPanel::LoadPerformanceSettings(const ConfigData& config) {
     // Performance settings
     state_.use_opencl = config.performance.use_opencl;
     
     // Debug settings (currently none)
-    
-    std::cout << "Profile loaded successfully: " << profile_name << std::endl;
 }
 
 bool CameraPanel::SaveStateToProfile(const std::string& profile_name) {
+    if (!ValidateProfileSave(profile_name)) {
+        return false;
+    }
+    
+    ConfigData config;
+    SaveCameraSettings(config);
+    SaveDisplaySettings(config);
+    SaveBackgroundSettings(config);
+    SaveLandmarkSettings(config);
+    SaveBeautySettings(config);
+    SavePerformanceSettings(config);
+    
+    return SaveProfileToManager(profile_name, config);
+}
+
+bool CameraPanel::ValidateProfileSave(const std::string& profile_name) {
     if (!config_mgr_) {
         std::cout << "Config manager not available for saving profile" << std::endl;
         return false;
@@ -584,9 +719,10 @@ bool CameraPanel::SaveStateToProfile(const std::string& profile_name) {
         return false;
     }
     
-    // Create ConfigData from current state
-    ConfigData config;
-    
+    return true;
+}
+
+void CameraPanel::SaveCameraSettings(ConfigData& config) {
     // Camera settings - save both UI indices and actual camera state
     const auto& camera_state = camera_mgr_.GetState();
     config.camera.ui_cam_idx = ui_cam_idx_;
@@ -595,14 +731,18 @@ bool CameraPanel::SaveStateToProfile(const std::string& profile_name) {
     config.camera.res_w = camera_state.current_width;
     config.camera.res_h = camera_state.current_height;
     config.camera.fps_value = camera_state.current_fps;
-    
+}
+
+void CameraPanel::SaveDisplaySettings(ConfigData& config) {
     // Display settings
     config.display.vsync_on = state_.vsync_on;
     config.display.show_mask = state_.show_mask;
     config.display.show_landmarks = state_.show_landmarks;
     config.display.show_mesh = state_.show_mesh;
     config.display.show_mesh_dense = state_.show_mesh_dense;
-    
+}
+
+void CameraPanel::SaveBackgroundSettings(ConfigData& config) {
     // Background settings
     config.background.bg_mode = state_.bg_mode;
     config.background.blur_strength = state_.blur_strength;
@@ -611,15 +751,26 @@ bool CameraPanel::SaveStateToProfile(const std::string& profile_name) {
     config.background.solid_color[0] = state_.solid_color[0];
     config.background.solid_color[1] = state_.solid_color[1];
     config.background.solid_color[2] = state_.solid_color[2];
-    
+}
+
+void CameraPanel::SaveLandmarkSettings(ConfigData& config) {
     // Landmark settings
     config.landmarks.lm_roi_mode = state_.lm_roi_mode;
     config.landmarks.lm_apply_rot = state_.lm_apply_rot;
     config.landmarks.lm_flip_x = state_.lm_flip_x;
     config.landmarks.lm_flip_y = state_.lm_flip_y;
     config.landmarks.lm_swap_xy = state_.lm_swap_xy;
-    
-    // Beauty settings - copy all beauty parameters
+}
+
+void CameraPanel::SaveBeautySettings(ConfigData& config) {
+    SaveBasicBeautySettings(config);
+    SaveWrinkleSettings(config);
+    SaveLipSettings(config);
+    SaveTeethSettings(config);
+}
+
+void CameraPanel::SaveBasicBeautySettings(ConfigData& config) {
+    // Basic beauty settings
     config.beauty.fx_skin = state_.fx_skin;
     config.beauty.fx_skin_adv = state_.fx_skin_adv;
     config.beauty.fx_skin_strength = state_.fx_skin_strength;
@@ -629,7 +780,9 @@ bool CameraPanel::SaveStateToProfile(const std::string& profile_name) {
     config.beauty.fx_skin_edge = state_.fx_skin_edge;
     config.beauty.fx_adv_scale = state_.fx_adv_scale;
     config.beauty.fx_adv_detail_preserve = state_.fx_adv_detail_preserve;
-    
+}
+
+void CameraPanel::SaveWrinkleSettings(ConfigData& config) {
     // Wrinkle settings
     config.beauty.fx_skin_wrinkle = state_.fx_skin_wrinkle;
     config.beauty.fx_skin_smile_boost = state_.fx_skin_smile_boost;
@@ -649,7 +802,9 @@ bool CameraPanel::SaveStateToProfile(const std::string& profile_name) {
     config.beauty.fx_wrinkle_baseline = state_.fx_wrinkle_baseline;
     config.beauty.fx_wrinkle_neg_cap = state_.fx_wrinkle_neg_cap;
     config.beauty.fx_wrinkle_preview = state_.fx_wrinkle_preview;
-    
+}
+
+void CameraPanel::SaveLipSettings(ConfigData& config) {
     // Lip effects
     config.beauty.fx_lipstick = state_.fx_lipstick;
     config.beauty.fx_lip_alpha = state_.fx_lip_alpha;
@@ -659,18 +814,21 @@ bool CameraPanel::SaveStateToProfile(const std::string& profile_name) {
     config.beauty.fx_lip_color[0] = state_.fx_lip_color[0];
     config.beauty.fx_lip_color[1] = state_.fx_lip_color[1];
     config.beauty.fx_lip_color[2] = state_.fx_lip_color[2];
-    
+}
+
+void CameraPanel::SaveTeethSettings(ConfigData& config) {
     // Teeth whitening
     config.beauty.fx_teeth = state_.fx_teeth;
     config.beauty.fx_teeth_strength = state_.fx_teeth_strength;
     config.beauty.fx_teeth_margin = state_.fx_teeth_margin;
-    
+}
+
+void CameraPanel::SavePerformanceSettings(ConfigData& config) {
     // Performance settings
     config.performance.use_opencl = state_.use_opencl;
-    
-    // Debug settings
-    // Debug settings (currently none)
-    
+}
+
+bool CameraPanel::SaveProfileToManager(const std::string& profile_name, const ConfigData& config) {
     // Save using ConfigManager
     bool success = config_mgr_->SaveProfile(profile_name, config);
     if (success) {
