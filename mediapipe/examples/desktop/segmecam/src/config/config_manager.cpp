@@ -506,7 +506,6 @@ void ConfigData::ApplyBeautyPreset(int preset_index) {
     // Auto processing scale
     state.auto_processing_scale = beauty.auto_processing_scale;
     state.target_fps = beauty.target_fps;
-    state.fx_adv_detail_preserve = beauty.fx_adv_detail_preserve;
     state.fx_lipstick = beauty.fx_lipstick;
     state.fx_lip_alpha = beauty.fx_lip_alpha;
     state.fx_lip_feather = beauty.fx_lip_feather;
