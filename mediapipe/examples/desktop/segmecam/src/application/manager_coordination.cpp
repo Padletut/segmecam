@@ -9,6 +9,18 @@
 #include <iostream>
 #include <cstring>
 
+// Helper function to reduce duplication in manager initialization
+template<typename T>
+bool InitializeManagerHelper(std::unique_ptr<T>& manager_ptr, const std::string& manager_name) {
+    try {
+        manager_ptr = std::make_unique<T>();
+        return true;
+    } catch (const std::exception& e) {
+        // Error logging is handled by the calling function
+        return false;
+    }
+}
+
 bool ManagerCoordination::SetupManagers(Managers& managers, segmecam::AppState& app_state) {
     std::cout << "Initializing essential managers..." << std::endl;
     
@@ -139,15 +151,16 @@ void ManagerCoordination::ApplyProfileSettingsToAppState(segmecam::AppState& app
 }
 
 bool ManagerCoordination::InitializeCameraManager(Managers& managers, segmecam::AppState& app_state) {
-    try {
-        managers.camera = std::make_unique<segmecam::CameraManager>();
-        
-        // Use camera settings from loaded profile if available, otherwise use defaults
-        segmecam::CameraConfig camera_config;
-        camera_config.default_camera_index = 0;  // Use camera 0 like original
-        
-        // Check if profile provided specific camera settings
-        if (app_state.camera_width > 0 && app_state.camera_height > 0) {
+    if (!InitializeManagerHelper(managers.camera, "CameraManager")) {
+        return false;
+    }
+    
+    // Use camera settings from loaded profile if available, otherwise use defaults
+    segmecam::CameraConfig camera_config;
+    camera_config.default_camera_index = 0;  // Use camera 0 like original
+    
+    // Check if profile provided specific camera settings
+    if (app_state.camera_width > 0 && app_state.camera_height > 0) {
             camera_config.default_width = app_state.camera_width;
             camera_config.default_height = app_state.camera_height;
             std::cout << "Using camera resolution from profile: " << app_state.camera_width << "x" << app_state.camera_height << std::endl;
@@ -171,42 +184,35 @@ bool ManagerCoordination::InitializeCameraManager(Managers& managers, segmecam::
         
         std::cout << "CameraManager initialized successfully" << std::endl;
         return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Exception initializing CameraManager: " << e.what() << std::endl;
-        return false;
-    }
 }
 
 bool ManagerCoordination::InitializeEffectsManager(Managers& managers, segmecam::AppState& app_state) {
-    try {
-        managers.effects = std::make_unique<segmecam::EffectsManager>();
-        
-        // Initialize effects with default configuration
-        segmecam::EffectsConfig effects_config;
-        effects_config.enable_opencl = true;  // Enable OpenCL by default if available
-        effects_config.enable_face_effects = true;
-        effects_config.enable_background_effects = true;
-        effects_config.default_processing_scale = 0.8f; // Match app_state default
-        effects_config.enable_performance_logging = false;
-        
-        int result = managers.effects->Initialize(effects_config);
-        if (result != 0) {
-            std::cerr << "EffectsManager initialization failed with code: " << result << std::endl;
-            return false;
-        }
-        
-        // Sync profile settings to EffectsManager after initialization
-        segmecam::ApplicationRun::SyncSettingsToEffectsManager(*managers.effects, app_state);
-        
-        // Sync status from EffectsManager back to app_state (e.g., OpenCL availability)
-        segmecam::ApplicationRun::SyncStatusFromEffectsManager(*managers.effects, app_state);
-        
-        std::cout << "EffectsManager initialized successfully" << std::endl;
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Exception initializing EffectsManager: " << e.what() << std::endl;
+    if (!InitializeManagerHelper(managers.effects, "EffectsManager")) {
         return false;
     }
+    
+    // Initialize effects with default configuration
+    segmecam::EffectsConfig effects_config;
+    effects_config.enable_opencl = true;  // Enable OpenCL by default if available
+    effects_config.enable_face_effects = true;
+    effects_config.enable_background_effects = true;
+    effects_config.default_processing_scale = 0.8f; // Match app_state default
+    effects_config.enable_performance_logging = false;
+    
+    int result = managers.effects->Initialize(effects_config);
+    if (result != 0) {
+        std::cerr << "EffectsManager initialization failed with code: " << result << std::endl;
+        return false;
+    }
+    
+    // Sync profile settings to EffectsManager after initialization
+    segmecam::ApplicationRun::SyncSettingsToEffectsManager(*managers.effects, app_state);
+        
+    // Sync status from EffectsManager back to app_state (e.g., OpenCL availability)
+    segmecam::ApplicationRun::SyncStatusFromEffectsManager(*managers.effects, app_state);
+        
+    std::cout << "EffectsManager initialized successfully" << std::endl;
+    return true;
 }
 
 void ManagerCoordination::LoadDefaultProfileBackgroundImage(Managers& managers, segmecam::AppState& app_state) {
@@ -239,18 +245,15 @@ void ManagerCoordination::LoadDefaultProfileBackgroundImage(Managers& managers, 
 }
 
 bool ManagerCoordination::InitializeUIManager(Managers& managers, segmecam::AppState& app_state) {
-    try {
-        managers.ui = std::make_unique<segmecam::UIManager>();
-        
-        // Note: UIManager Initialize() is called separately with existing window/GL context
-        // InitializePanels is called after UIManager is fully initialized
-        
-        std::cout << "UIManager created successfully" << std::endl;
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Exception initializing UIManager: " << e.what() << std::endl;
+    if (!InitializeManagerHelper(managers.ui, "UIManager")) {
         return false;
     }
+    
+    // Note: UIManager Initialize() is called separately with existing window/GL context
+    // InitializePanels is called after UIManager is fully initialized
+    
+    std::cout << "UIManager created successfully" << std::endl;
+    return true;
 }
 
 void ManagerCoordination::ApplyDisplaySettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data) {

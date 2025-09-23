@@ -1,4 +1,5 @@
 #include "include/render/segmecam_composite.h"
+#include "include/compositing_utils.h"
 
 // Persistently remembered preferred channel when mask comes as 4xU8 (SRGBA).
 // This avoids per-frame channel switches that can look like flicker.
@@ -77,23 +78,18 @@ cv::Mat CompositeBlurBackgroundBGR(const cv::Mat& frame_bgr,
                                    const cv::Mat& mask_u8,
                                    int blur_strength,
                                    float feather_px) {
-  cv::Mat frame_f; frame_bgr.convertTo(frame_f, CV_32FC3, 1.0/255.0);
+  cv::Mat result = frame_bgr.clone();
   cv::Mat mask_f; mask_u8.convertTo(mask_f, CV_32FC1, 1.0/255.0);
-  // Feather
-  int fks = (int)std::max(1.0f, feather_px) * 2 + 1;
-  if (feather_px > 0.5f) cv::GaussianBlur(mask_f, mask_f, cv::Size(fks,fks), 0);
-  cv::Mat bg_mask = 1.0f - mask_f;
-  int k = blur_strength | 1;
-  std::vector<cv::Mat> fch, out_ch(3);
-  cv::split(frame_f, fch);
-  for (int i=0;i<3;++i) {
-    cv::Mat bg_only = normalizedMaskedBlurChannel(fch[i], bg_mask, k);
-    out_ch[i] = fch[i].mul(mask_f) + bg_only.mul(1.0f - mask_f);
+
+  // Apply feathering if requested
+  if (feather_px > 0.5f) {
+    int fks = (int)std::max(1.0f, feather_px) * 2 + 1;
+    cv::GaussianBlur(mask_f, mask_f, cv::Size(fks, fks), 0);
   }
-  cv::Mat comp_f; cv::merge(out_ch, comp_f);
-  cv::Mat comp_u8; comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
-  cv::Mat rgb; cv::cvtColor(comp_u8, rgb, cv::COLOR_BGR2RGB);
-  return rgb;
+
+  // Use the shared utility for blurred background compositing
+  segmecam::CompositeWithBlurredBackground(result, frame_bgr, mask_f, blur_strength, true);
+  return result;
 }
 
 cv::Mat CompositeBlurBackgroundBGR_Accel(const cv::Mat& frame_bgr,
@@ -169,31 +165,19 @@ cv::Mat CompositeBlurBackgroundBGR_Accel(const cv::Mat& frame_bgr,
 cv::Mat CompositeImageBackgroundBGR(const cv::Mat& frame_bgr,
                                     const cv::Mat& mask_u8,
                                     const cv::Mat& bg_bgr) {
-  cv::Mat bg_resized; cv::resize(bg_bgr, bg_resized, frame_bgr.size(), 0, 0, cv::INTER_LINEAR);
-  cv::Mat frame_f, bg_f; frame_bgr.convertTo(frame_f, CV_32FC3, 1.0/255.0); bg_resized.convertTo(bg_f, CV_32FC3, 1.0/255.0);
+  cv::Mat result = frame_bgr.clone();
   cv::Mat mask_f; mask_u8.convertTo(mask_f, CV_32FC1, 1.0/255.0);
-  std::vector<cv::Mat> fch, bch, cch; cv::split(frame_f, fch); cv::split(bg_f, bch);
-  cch.resize(3);
-  for (int i=0;i<3;++i) cch[i] = fch[i].mul(mask_f) + bch[i].mul(1.0 - mask_f);
-  cv::Mat comp_f; cv::merge(cch, comp_f);
-  cv::Mat comp_u8; comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
-  cv::Mat rgb; cv::cvtColor(comp_u8, rgb, cv::COLOR_BGR2RGB);
-  return rgb;
+  segmecam::CompositeWithMask(result, bg_bgr, mask_f, true);
+  return result;
 }
 
 cv::Mat CompositeSolidBackgroundBGR(const cv::Mat& frame_bgr,
                                     const cv::Mat& mask_u8,
                                     const cv::Scalar& bgr) {
-  cv::Mat bg(frame_bgr.size(), CV_8UC3, bgr);
-  cv::Mat frame_f, bg_f; frame_bgr.convertTo(frame_f, CV_32FC3, 1.0/255.0); bg.convertTo(bg_f, CV_32FC3, 1.0/255.0);
+  cv::Mat result = frame_bgr.clone();
   cv::Mat mask_f; mask_u8.convertTo(mask_f, CV_32FC1, 1.0/255.0);
-  std::vector<cv::Mat> fch, bch, cch; cv::split(frame_f, fch); cv::split(bg_f, bch);
-  cch.resize(3);
-  for (int i=0;i<3;++i) cch[i] = fch[i].mul(mask_f) + bch[i].mul(1.0 - mask_f);
-  cv::Mat comp_f; cv::merge(cch, comp_f);
-  cv::Mat comp_u8; comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
-  cv::Mat rgb; cv::cvtColor(comp_u8, rgb, cv::COLOR_BGR2RGB);
-  return rgb;
+  segmecam::CompositeWithSolidColor(result, bgr, mask_f, true);
+  return result;
 }
 
 // Optimized image background composite with scale optimization and caching

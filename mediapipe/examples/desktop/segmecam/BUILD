@@ -1,11 +1,24 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library") # type: ignore
 
 cc_library( # type: ignore
+    name = "compositing_utils",
+    srcs = ["src/compositing_utils.cpp"],
+    hdrs = ["include/compositing_utils.h"],
+    includes = ["."],
+    deps = [
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+    ],
+    copts = ["-I/usr/include/opencv4"],
+)
+
+cc_library( # type: ignore
     name = "segmecam_composite",
     srcs = ["src/render/segmecam_composite.cpp"],
     hdrs = ["include/render/segmecam_composite.h"],
     includes = ["."],
     deps = [
+        ":compositing_utils",
         "//mediapipe/framework/formats:image_frame",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
