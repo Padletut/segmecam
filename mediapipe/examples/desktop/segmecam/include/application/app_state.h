@@ -137,6 +137,17 @@ struct AppState {
   void SaveToProfile(cv::FileStorage& fs) const;
   void LoadFromProfile(const cv::FileNode& root);
   
+  // Helper methods for loading specific setting categories
+  void LoadDisplaySettings(const cv::FileNode& root);
+  void LoadBackgroundSettings(const cv::FileNode& root);
+  void LoadLandmarkSettings(const cv::FileNode& root);
+  void LoadMeshSettings(const cv::FileNode& root);
+  void LoadSkinEffectSettings(const cv::FileNode& root);
+  void LoadPerformanceSettings(const cv::FileNode& root);
+  void LoadWrinkleSettings(const cv::FileNode& root);
+  void LoadLipEffectSettings(const cv::FileNode& root);
+  void LoadTeethSettings(const cv::FileNode& root);
+  
 private:
   int ReadInt(const cv::FileNode& n, int def) const;
   float ReadFloat(const cv::FileNode& n, float def) const;

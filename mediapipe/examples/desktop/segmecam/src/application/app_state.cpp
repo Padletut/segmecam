@@ -31,8 +31,23 @@ void AppState::SaveToProfile(cv::FileStorage& fs) const {
 }
 
 void AppState::LoadFromProfile(const cv::FileNode& root) {
+  LoadDisplaySettings(root);
+  LoadBackgroundSettings(root);
+  LoadLandmarkSettings(root);
+  LoadMeshSettings(root);
+  LoadSkinEffectSettings(root);
+  LoadPerformanceSettings(root);
+  LoadWrinkleSettings(root);
+  LoadLipEffectSettings(root);
+  LoadTeethSettings(root);
+}
+
+void AppState::LoadDisplaySettings(const cv::FileNode& root) {
   vsync_on = ReadInt(root["vsync_on"], vsync_on);
   show_mask = ReadInt(root["show_mask"], show_mask);
+}
+
+void AppState::LoadBackgroundSettings(const cv::FileNode& root) {
   bg_mode = ReadInt(root["bg_mode"], bg_mode);
   blur_strength = ReadInt(root["blur_strength"], blur_strength);
   feather_px = ReadFloat(root["feather_px"], feather_px);
@@ -51,16 +66,23 @@ void AppState::LoadFromProfile(const cv::FileNode& root) {
     root["bg_path"] >> bg_path_str;
     std::snprintf(bg_path_buf, sizeof(bg_path_buf), "%s", bg_path_str.c_str());
   }
-  
+}
+
+void AppState::LoadLandmarkSettings(const cv::FileNode& root) {
   show_landmarks = ReadInt(root["show_landmarks"], show_landmarks);
   lm_roi_mode = ReadInt(root["lm_roi_mode"], lm_roi_mode);
   lm_apply_rot = ReadInt(root["lm_apply_rot"], lm_apply_rot);
   lm_flip_x = ReadInt(root["lm_flip_x"], lm_flip_x);
   lm_flip_y = ReadInt(root["lm_flip_y"], lm_flip_y);
   lm_swap_xy = ReadInt(root["lm_swap_xy"], lm_swap_xy);
+}
+
+void AppState::LoadMeshSettings(const cv::FileNode& root) {
   show_mesh = ReadInt(root["show_mesh"], show_mesh);
   show_mesh_dense = ReadInt(root["show_mesh_dense"], show_mesh_dense);
-  
+}
+
+void AppState::LoadSkinEffectSettings(const cv::FileNode& root) {
   fx_skin = ReadInt(root["fx_skin"], fx_skin);
   fx_skin_adv = ReadInt(root["fx_skin_adv"], fx_skin_adv);
   fx_skin_strength = ReadFloat(root["fx_skin_strength"], fx_skin_strength);
@@ -70,10 +92,13 @@ void AppState::LoadFromProfile(const cv::FileNode& root) {
   fx_skin_edge = ReadFloat(root["fx_skin_edge"], fx_skin_edge);
   fx_adv_scale = ReadFloat(root["fx_adv_scale"], fx_adv_scale);
   fx_adv_detail_preserve = ReadFloat(root["fx_adv_detail_preserve"], fx_adv_detail_preserve);
-  
+}
+
+void AppState::LoadPerformanceSettings(const cv::FileNode& root) {
   use_opencl = ReadInt(root["use_opencl"], 1) != 0; // Default to enabled
-  
-  // Wrinkle settings
+}
+
+void AppState::LoadWrinkleSettings(const cv::FileNode& root) {
   fx_skin_wrinkle = ReadInt(root["fx_skin_wrinkle"], fx_skin_wrinkle);
   fx_skin_smile_boost = ReadFloat(root["fx_skin_smile_boost"], fx_skin_smile_boost);
   fx_skin_squint_boost = ReadFloat(root["fx_skin_squint_boost"], fx_skin_squint_boost);
@@ -92,8 +117,9 @@ void AppState::LoadFromProfile(const cv::FileNode& root) {
   fx_wrinkle_baseline = ReadFloat(root["fx_wrinkle_baseline"], fx_wrinkle_baseline);
   fx_wrinkle_neg_cap = ReadFloat(root["fx_wrinkle_neg_cap"], fx_wrinkle_neg_cap);
   fx_wrinkle_preview = ReadInt(root["fx_wrinkle_preview"], fx_wrinkle_preview);
-  
-  // Lip effects
+}
+
+void AppState::LoadLipEffectSettings(const cv::FileNode& root) {
   fx_lipstick = ReadInt(root["fx_lipstick"], fx_lipstick);
   fx_lip_alpha = ReadFloat(root["fx_lip_alpha"], fx_lip_alpha);
   fx_lip_feather = ReadFloat(root["fx_lip_feather"], fx_lip_feather);
@@ -107,8 +133,9 @@ void AppState::LoadFromProfile(const cv::FileNode& root) {
     fx_lip_color[1] = ReadFloat(lc_node[1], fx_lip_color[1]);
     fx_lip_color[2] = ReadFloat(lc_node[2], fx_lip_color[2]);
   }
-  
-  // Teeth whitening
+}
+
+void AppState::LoadTeethSettings(const cv::FileNode& root) {
   fx_teeth = ReadInt(root["fx_teeth"], fx_teeth);
   fx_teeth_strength = ReadFloat(root["fx_teeth_strength"], fx_teeth_strength);
   fx_teeth_margin = ReadFloat(root["fx_teeth_margin"], fx_teeth_margin);
