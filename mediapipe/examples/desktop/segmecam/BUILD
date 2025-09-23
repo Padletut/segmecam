@@ -463,11 +463,24 @@ cc_library( # type: ignore
 )
 
 cc_library( # type: ignore
+    name = "effects_utils",
+    srcs = ["src/effects/effects_utils.cpp"],
+    hdrs = ["include/effects/effects_utils.h"],
+    includes = [".", "include"],
+    deps = [
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+    ],
+    copts = ["-I/usr/include/opencv4"],
+)
+
+cc_library( # type: ignore
     name = "lip_effects",
     srcs = ["src/effects/lip_effects.cpp"],
     hdrs = ["include/effects/lip_effects.h"],
     includes = [".", "include"],
     deps = [
+        ":effects_utils",
         ":face_regions",
         "//mediapipe/framework/formats:landmark_cc_proto",
         "//mediapipe/framework/port:opencv_core",
@@ -482,6 +495,7 @@ cc_library( # type: ignore
     hdrs = ["include/effects/teeth_effects.h"],
     includes = [".", "include"],
     deps = [
+        ":effects_utils",
         ":face_regions",
         "//mediapipe/framework/formats:landmark_cc_proto",
         "//mediapipe/framework/port:opencv_core",
@@ -496,6 +510,7 @@ cc_library( # type: ignore
     hdrs = ["include/effects/skin_effects.h"],
     includes = [".", "include"],
     deps = [
+        ":effects_utils",
         ":face_regions",
         "//mediapipe/framework/formats:landmark_cc_proto",
         "//mediapipe/framework/port:opencv_core",

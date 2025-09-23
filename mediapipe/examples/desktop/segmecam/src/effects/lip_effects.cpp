@@ -1,13 +1,6 @@
 #include "include/effects/lip_effects.h"
+#include "include/effects/effects_utils.h"
 #include <cmath>
-
-namespace {
-static void featherMask(cv::Mat& mask, int ksize) {
-  if (ksize <= 1) return;
-  int k = (ksize | 1);
-  cv::GaussianBlur(mask, mask, cv::Size(k, k), 0);
-}
-} // namespace
 
 void ApplyLipRefinerBGR(cv::Mat& frame_bgr,
                         const FaceRegions& fr,
@@ -61,8 +54,8 @@ void ApplyLipRefinerBGR(cv::Mat& frame_bgr,
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(k, k));
     cv::dilate(mask, mask, kernel);
   }
-  if (feather_px > 0.5f) featherMask(mask, (int)std::round(feather_px));
-  if (feather_px > 0.5f) featherMask(mask, (int)std::round(feather_px));
+  if (feather_px > 0.5f) effects_utils::featherMask(mask, (int)std::round(feather_px));
+  if (feather_px > 0.5f) effects_utils::featherMask(mask, (int)std::round(feather_px));
 
   // Convert to LAB for perceptual color shift
   cv::Mat lab; cv::cvtColor(frame_bgr, lab, cv::COLOR_BGR2Lab);

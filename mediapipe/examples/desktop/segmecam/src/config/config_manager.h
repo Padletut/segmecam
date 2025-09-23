@@ -79,6 +79,11 @@ private:
     std::string ReadString(const cv::FileNode& node, const std::string& defaultValue) const;
     void ReadColorArray(const cv::FileNode& node, float* color, const float* defaultColor) const;
 
+    // Validation helper methods
+    bool ValidateCameraSettings(const ConfigData& config) const;
+    bool ValidateBackgroundSettings(const ConfigData& config) const;
+    bool ValidateColorArrays(const ConfigData& config) const;
+
     std::string profile_dir_;
     std::string default_profile_path_;
     

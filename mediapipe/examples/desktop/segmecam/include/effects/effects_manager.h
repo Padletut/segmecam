@@ -243,6 +243,11 @@ private:
     float CalculateScaleAdjustment(float avg_fps) const;
     void ApplyScaleAdjustment(float scale_adjustment, const std::chrono::steady_clock::time_point& now);
     void TrimFPSHistoryForStability();
+    
+    // Background effect helper methods
+    cv::Mat ApplyMaskVisualization(const cv::Mat& resized_mask);
+    cv::Mat ApplyBackgroundModeEffect(const cv::Mat& frame_bgr, const cv::Mat& resized_mask);
+    cv::Mat ApplyDefaultBackgroundEffect(const cv::Mat& frame_bgr);
 };
 
 } // namespace segmecam

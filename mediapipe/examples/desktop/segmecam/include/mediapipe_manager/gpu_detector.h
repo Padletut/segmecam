@@ -52,6 +52,7 @@ private:
     
     // Helper methods for complexity reduction
     static GPUBackend DetectBestGPUBackend(bool force_no_nvidia, bool force_no_mesa);
+    static GPUBackend TestGPUBackendsInPriority(bool force_no_nvidia, bool force_no_mesa);
     static void SetCapabilitiesFromBackend(GPUCapabilities& caps, GPUBackend backend);
     static std::vector<std::string> GetSearchPathsForEnvironment(const GPUCapabilities& caps);
     static std::vector<std::string> GetFlatpakSearchPaths(GPUBackend backend);

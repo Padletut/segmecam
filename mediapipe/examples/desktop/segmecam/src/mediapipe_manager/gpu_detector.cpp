@@ -29,17 +29,25 @@ GPUCapabilities GPUDetector::DetectGPUCapabilitiesForTesting(bool force_no_nvidi
 }
 
 GPUBackend GPUDetector::DetectBestGPUBackend(bool force_no_nvidia, bool force_no_mesa) {
+    // Test backends in priority order
+    GPUBackend backend = TestGPUBackendsInPriority(force_no_nvidia, force_no_mesa);
+    return backend != GPUBackend::NONE ? backend : GPUBackend::CPU_ONLY;
+}
+
+GPUBackend GPUDetector::TestGPUBackendsInPriority(bool force_no_nvidia, bool force_no_mesa) {
     if (!force_no_nvidia && TestNvidiaEGL()) {
         return GPUBackend::NVIDIA_EGL;
-    } else if (!force_no_mesa && TestAMDRadeon()) {
-        return GPUBackend::AMD_RADEON;
-    } else if (!force_no_mesa && TestIntelGPU()) {
-        return GPUBackend::INTEL_GPU;
-    } else if (!force_no_mesa && TestMesaEGL()) {
-        return GPUBackend::MESA_EGL;
-    } else {
-        return GPUBackend::CPU_ONLY;
     }
+    if (!force_no_mesa && TestAMDRadeon()) {
+        return GPUBackend::AMD_RADEON;
+    }
+    if (!force_no_mesa && TestIntelGPU()) {
+        return GPUBackend::INTEL_GPU;
+    }
+    if (!force_no_mesa && TestMesaEGL()) {
+        return GPUBackend::MESA_EGL;
+    }
+    return GPUBackend::NONE;
 }
 
 void GPUDetector::SetCapabilitiesFromBackend(GPUCapabilities& caps, GPUBackend backend) {

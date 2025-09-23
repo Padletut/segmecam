@@ -1,13 +1,6 @@
 #include "include/effects/skin_effects.h"
+#include "include/effects/effects_utils.h"
 #include <cmath>
-
-namespace {
-static void featherMask(cv::Mat& mask, int ksize) {
-  if (ksize <= 1) return;
-  int k = (ksize | 1);
-  cv::GaussianBlur(mask, mask, cv::Size(k, k), 0);
-}
-} // namespace
 
 void ApplySkinSmoothingBGR(cv::Mat& frame_bgr,
                            const FaceRegions& fr,
@@ -30,7 +23,7 @@ void ApplySkinSmoothingBGR(cv::Mat& frame_bgr,
     std::vector<std::vector<cv::Point>> e = {fr.right_eye};
     cv::fillPoly(mask, e, cv::Scalar(0));
   }
-  featherMask(mask, 15);
+  effects_utils::featherMask(mask, 15);
   // Bilateral filter strength mapping
   int d = 9;
   double sigmaColor = 25.0 + 75.0 * strength;

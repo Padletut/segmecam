@@ -167,9 +167,17 @@ cv::Mat EffectsManager::ApplyBackgroundEffect(const cv::Mat& frame_bgr, const cv
     
     // Check if user wants to show mask visualization (overrides all other background effects)
     if (state_.show_mask && !resized_mask.empty()) {
-        return VisualizeMask(resized_mask);
+        return ApplyMaskVisualization(resized_mask);
     }
     
+    return ApplyBackgroundModeEffect(frame_bgr, resized_mask);
+}
+
+cv::Mat EffectsManager::ApplyMaskVisualization(const cv::Mat& resized_mask) {
+    return VisualizeMask(resized_mask);
+}
+
+cv::Mat EffectsManager::ApplyBackgroundModeEffect(const cv::Mat& frame_bgr, const cv::Mat& resized_mask) {
     switch (beauty_state_.bg_mode) {
         case 1: // Blur
             return ApplyBlurBackground(frame_bgr, resized_mask, beauty_state_.blur_strength, beauty_state_.feather_px);
@@ -191,7 +199,12 @@ cv::Mat EffectsManager::ApplyBackgroundEffect(const cv::Mat& frame_bgr, const cv
             break;
     }
     
-    // No background effect or fallback - convert BGR to RGB for display
+    // No background effect or fallback
+    return ApplyDefaultBackgroundEffect(frame_bgr);
+}
+
+cv::Mat EffectsManager::ApplyDefaultBackgroundEffect(const cv::Mat& frame_bgr) {
+    // Convert BGR to RGB for display
     cv::Mat rgb;
     cv::cvtColor(frame_bgr, rgb, cv::COLOR_BGR2RGB);
     

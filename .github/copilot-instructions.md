@@ -35,6 +35,14 @@ bazel build -c opt --action_env=PKG_CONFIG_PATH --repo_env=PKG_CONFIG_PATH --cxx
 **ALWAYS build the `:segmecam` target and run the binary directly**
 **This ensures all proper paths, arguments, and configurations are set automatically!**
 
+## MCP Tool Usage ⚠️ ALWAYS USE CORRECT PARAMETERS ⚠️
+**When using the MCP tool `codacy_cli_analyze`, always include this input unless I specify another path:**
+```json
+{
+  "rootPath": "/home/padletut/segmecam"
+}
+```
+
 ## Project-Specific Patterns
 - **Header/Source Structure**: `.h` in `include/`, `.cpp` in `src/` with matching subdirectories
 - **Manager Pattern**: Each manager is self-contained with `Initialize()`, `Update()`, `Render()`, `Cleanup()` lifecycle methods

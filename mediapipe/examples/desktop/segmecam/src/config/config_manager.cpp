@@ -179,19 +179,30 @@ bool ConfigManager::LoadDefaultProfile(ConfigData& config) const {
 }
 
 bool ConfigManager::ValidateConfig(const ConfigData& config) const {
-    // Basic validation - can be extended as needed
+    return ValidateCameraSettings(config) &&
+           ValidateBackgroundSettings(config) &&
+           ValidateColorArrays(config);
+}
+
+bool ConfigManager::ValidateCameraSettings(const ConfigData& config) const {
     if (config.camera.res_w < 0 || config.camera.res_h < 0) return false;
     if (config.camera.fps_value < 0) return false;
+    return true;
+}
+
+bool ConfigManager::ValidateBackgroundSettings(const ConfigData& config) const {
     if (config.background.bg_mode < 0 || config.background.bg_mode > 3) return false;
     if (config.background.blur_strength < 1) return false;
     if (config.background.feather_px < 0.0f) return false;
-    
+    return true;
+}
+
+bool ConfigManager::ValidateColorArrays(const ConfigData& config) const {
     // Validate color arrays are in valid range [0.0, 1.0]
     for (int i = 0; i < 3; i++) {
         if (config.background.solid_color[i] < 0.0f || config.background.solid_color[i] > 1.0f) return false;
         if (config.beauty.fx_lip_color[i] < 0.0f || config.beauty.fx_lip_color[i] > 1.0f) return false;
     }
-    
     return true;
 }
 

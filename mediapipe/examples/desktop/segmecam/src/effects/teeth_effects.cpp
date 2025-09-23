@@ -1,13 +1,6 @@
 #include "include/effects/teeth_effects.h"
+#include "include/effects/effects_utils.h"
 #include <cmath>
-
-namespace {
-static void featherMask(cv::Mat& mask, int ksize) {
-  if (ksize <= 1) return;
-  int k = (ksize | 1);
-  cv::GaussianBlur(mask, mask, cv::Size(k, k), 0);
-}
-} // namespace
 
 void ApplyTeethWhitenBGR(cv::Mat& frame_bgr,
                          const FaceRegions& fr,
@@ -23,7 +16,7 @@ void ApplyTeethWhitenBGR(cv::Mat& frame_bgr,
     cv::Mat ker = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(k, k));
     cv::erode(mask, mask, ker);
   }
-  featherMask(mask, 5);
+  effects_utils::featherMask(mask, 5);
   // Convert to LAB and nudge b* toward blue (reduce yellow), slight L* increase.
   cv::Mat lab; cv::cvtColor(frame_bgr, lab, cv::COLOR_BGR2Lab);
   std::vector<cv::Mat> ch; cv::split(lab, ch);
