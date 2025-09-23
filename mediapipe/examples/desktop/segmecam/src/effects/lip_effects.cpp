@@ -40,11 +40,11 @@ void ApplyLipRefinerBGR(cv::Mat& frame_bgr,
   std::vector<int> ou(OUTER_UP, OUTER_UP+11), ol(OUTER_LO, OUTER_LO+11), iu(INNER_UP, INNER_UP+11), il(INNER_LO, INNER_LO+11);
 
   cv::Mat mask(frame_bgr.size(), CV_8UC1, cv::Scalar(0));
-  if (!ou.empty() && !iu.empty()) {
+  {
     auto poly_top = make_poly(ou, iu);
     cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{poly_top}, cv::Scalar(255));
   }
-  if (!ol.empty() && !il.empty()) {
+  {
     auto poly_bot = make_poly(ol, il);
     cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{poly_bot}, cv::Scalar(255));
   }
