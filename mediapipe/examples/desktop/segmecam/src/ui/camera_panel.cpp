@@ -4,7 +4,7 @@
 #include "include/effects/effects_manager.h"
 #include "src/config/config_manager.h"
 #include "cam_enum.h"
-#include "vcam.h"
+#include "include/camera/vcam.h"
 #include <iostream>
 #include <algorithm>
 #include <cstring>

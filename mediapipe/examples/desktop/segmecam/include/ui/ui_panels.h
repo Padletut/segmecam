@@ -3,7 +3,7 @@
 #include "imgui.h"
 #include <string>
 #include <vector>
-#include "app_state.h"
+#include "include/application/app_state.h"
 #include "include/camera/camera_manager.h"
 #include "cam_enum.h"
 #include "src/config/config_manager.h"
@@ -190,6 +190,7 @@ private:
     void RenderMaskControls();
     
     AppState& state_;
+    int scale_mode_ = 1;  // Background image scaling mode (0=Stretch, 1=Fit, 2=Fill, 3=Center, 4=Tile)
 };
 
 // Beauty and face effects panel

@@ -1,11 +1,11 @@
-#include "mediapipe/examples/desktop/segmecam/include/application/frame_processor.h"
-#include "mediapipe/examples/desktop/segmecam/include/application/mediapipe_processor.h"
-#include "mediapipe/examples/desktop/segmecam/include/application/render_utils.h"
-#include "mediapipe/examples/desktop/segmecam/include/application/portal_utils.h"
-#include "mediapipe/examples/desktop/segmecam/include/application/application_run.h"
-#include "mediapipe/examples/desktop/segmecam/include/effects/effects_manager.h"
+#include "include/application/frame_processor.h"
+#include "include/application/mediapipe_processor.h"
+#include "include/application/render_utils.h"
+#include "include/application/portal_utils.h"
+#include "include/application/application_run.h"
+#include "include/effects/effects_manager.h"
 #include "include/ui/ui_manager_enhanced.h"
-#include "mediapipe/examples/desktop/segmecam/app_state.h"
+#include "include/application/app_state.h"
 
 // Include MediaPipe for graph operations
 #include "mediapipe/framework/calculator_graph.h"

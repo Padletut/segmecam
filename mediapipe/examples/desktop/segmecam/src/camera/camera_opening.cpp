@@ -1,5 +1,5 @@
-#include "mediapipe/examples/desktop/segmecam/include/camera/camera_manager.h"
-#include "mediapipe/examples/desktop/segmecam/include/camera/gstreamer_utils.h"
+#include "include/camera/camera_manager.h"
+#include "include/camera/gstreamer_utils.h"
 #include <iostream>
 #include <cstdlib>  // for getenv
 

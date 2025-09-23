@@ -1,4 +1,4 @@
-#include "mediapipe/examples/desktop/segmecam/include/camera/camera_manager.h"
+#include "include/camera/camera_manager.h"
 #include <iostream>
 #include <vector>
 #include <dlfcn.h>

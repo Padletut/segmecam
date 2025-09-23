@@ -1,6 +1,6 @@
-#include "mediapipe/examples/desktop/segmecam/include/application/application_sync.h"
-#include "mediapipe/examples/desktop/segmecam/include/effects/effects_manager.h"
-#include "mediapipe/examples/desktop/segmecam/app_state.h"
+#include "include/application/application_sync.h"
+#include "include/effects/effects_manager.h"
+#include "include/application/app_state.h"
 
 #include <iostream>
 

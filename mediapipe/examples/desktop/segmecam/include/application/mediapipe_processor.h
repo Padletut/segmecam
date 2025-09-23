@@ -3,7 +3,7 @@
 
 #include <memory>
 #include <opencv2/opencv.hpp>
-#include "app_state.h"
+#include "include/application/app_state.h"
 
 // MediaPipe includes for complete types
 #include "mediapipe/framework/calculator_graph.h"

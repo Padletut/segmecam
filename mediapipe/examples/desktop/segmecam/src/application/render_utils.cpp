@@ -1,6 +1,6 @@
-#include "mediapipe/examples/desktop/segmecam/include/application/render_utils.h"
+#include "include/application/render_utils.h"
 #include "include/ui/ui_manager_enhanced.h"
-#include "mediapipe/examples/desktop/segmecam/app_state.h"
+#include "include/application/app_state.h"
 
 // Include ImGui for GUI
 #include "third_party/imgui/imgui.h"

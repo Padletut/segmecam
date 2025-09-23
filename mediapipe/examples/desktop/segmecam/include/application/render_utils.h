@@ -6,7 +6,7 @@
 #include <SDL.h>
 #include <GL/gl.h>
 #include "application/manager_coordination.h"
-#include "app_state.h"
+#include "include/application/app_state.h"
 
 // Forward declarations
 namespace segmecam {

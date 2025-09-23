@@ -1,6 +1,6 @@
-#include "mediapipe/examples/desktop/segmecam/include/application/mediapipe_processor.h"
-#include "mediapipe/examples/desktop/segmecam/segmecam_composite.h"
-#include "mediapipe/examples/desktop/segmecam/app_state.h"
+#include "include/application/mediapipe_processor.h"
+#include "segmecam_composite.h"
+#include "include/application/app_state.h"
 
 // Include MediaPipe for output stream polling
 #include "mediapipe/framework/calculator_graph.h"

@@ -4,7 +4,7 @@
 #include "include/camera/camera_manager.h"
 #include "include/effects/effects_manager.h"
 #include "include/ui/ui_manager_enhanced.h"
-#include "app_state.h"
+#include "include/application/app_state.h"
 #include <iostream>
 #include <cstring>
 

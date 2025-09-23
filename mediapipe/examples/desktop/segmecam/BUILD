@@ -38,8 +38,8 @@ cc_library( # type: ignore
 
 cc_library( # type: ignore
     name = "vcam",
-    srcs = ["vcam.cc"],
-    hdrs = ["vcam.h"],
+    srcs = ["src/camera/vcam.cc"],
+    hdrs = ["include/camera/vcam.h"],
     includes = ["."],
     deps = [
         "//mediapipe/framework/port:opencv_core",
@@ -51,8 +51,8 @@ cc_library( # type: ignore
 
 cc_library( # type: ignore
     name = "app_state",
-    srcs = ["app_state.cpp"],
-    hdrs = ["app_state.h"],
+    srcs = ["src/application/app_state.cpp"],
+    hdrs = ["include/application/app_state.h"],
     includes = ["."],
     deps = [
         ":vcam",
@@ -500,10 +500,10 @@ cc_binary( # pyright: ignore[reportUndefinedVariable]
         "include/application/mediapipe_processor.h",
         "src/application/render_utils.cpp",
         "include/application/render_utils.h",
-        "app_state.cpp",
-        "app_state.h",
-        "vcam.cc",
-        "vcam.h",
+        "src/application/app_state.cpp",
+        "include/application/app_state.h",
+        "src/camera/vcam.cc",
+        "include/camera/vcam.h",
     ],
     includes = [".", "include"],
     data = [

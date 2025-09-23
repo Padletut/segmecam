@@ -3,7 +3,7 @@
 #include "application/frame_processor.h"
 #include "application/application_sync.h"
 #include "include/ui/ui_manager_enhanced.h"
-#include "app_state.h"
+#include "include/application/app_state.h"
 #include <memory>
 #include <iostream>
 

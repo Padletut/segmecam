@@ -1,7 +1,7 @@
 #ifndef APPLICATION_SYNC_H
 #define APPLICATION_SYNC_H
 
-#include "app_state.h"
+#include "include/application/app_state.h"
 
 // Forward declarations
 namespace segmecam {

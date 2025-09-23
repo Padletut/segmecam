@@ -188,9 +188,8 @@ void BackgroundPanel::RenderImageInfo() {
 
 void BackgroundPanel::RenderImageScaling() {
     const char* scale_modes[] = {"Stretch", "Fit", "Fill", "Center", "Tile"};
-    static int scale_mode = 1; // Default to "Fit"
-    if (ImGui::Combo("Scaling", &scale_mode, scale_modes, IM_ARRAYSIZE(scale_modes))) {
-        std::cout << "Background scaling changed to: " << scale_modes[scale_mode] << std::endl;
+    if (ImGui::Combo("Scaling", &scale_mode_, scale_modes, IM_ARRAYSIZE(scale_modes))) {
+        std::cout << "Background scaling changed to: " << scale_modes[scale_mode_] << std::endl;
     }
 }
 
@@ -202,8 +201,7 @@ void BackgroundPanel::RenderImageOpacity() {
 }
 
 void BackgroundPanel::RenderImagePosition() {
-    static int scale_mode = 1; // Default to "Fit"
-    if (scale_mode == 3) { // Center mode
+    if (scale_mode_ == 3) { // Center mode
         static float offset_x = 0.0f;
         static float offset_y = 0.0f;
         ImGui::SliderFloat("Offset X", &offset_x, -1.0f, 1.0f);

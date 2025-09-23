@@ -7,7 +7,7 @@
 #include "application/manager_coordination.h"
 #include "application/application_config.h"
 #include "application/gpu_setup.h"
-#include "app_state.h"
+#include "include/application/app_state.h"
 
 // MediaPipe includes for complete types
 #include "mediapipe/framework/calculator_graph.h"

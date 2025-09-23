@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
-#include "vcam.h"
+#include "include/camera/vcam.h"
 
 namespace segmecam {
 

@@ -1,5 +1,5 @@
 // cppcheck-suppress missingInclude
-#include "mediapipe/examples/desktop/segmecam/include/camera/camera_manager.h"
+#include "include/camera/camera_manager.h"
 #include <iostream>
 #include <dlfcn.h>
 
