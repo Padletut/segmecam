@@ -27,7 +27,7 @@ bool LoadGStreamerFunctions(void* gst_lib) {
     if (!gst_lib) return false;
 
     // Define all GStreamer functions to load
-    GStreamerFunction functions[] = {
+    static const GStreamerFunction functions[] = {
         {"gst_init", reinterpret_cast<void**>(&gst_init)},
         {"gst_pipeline_new", reinterpret_cast<void**>(&gst_pipeline_new)},
         {"gst_element_factory_make", reinterpret_cast<void**>(&gst_element_factory_make)},
@@ -45,13 +45,17 @@ bool LoadGStreamerFunctions(void* gst_lib) {
         {"gst_sample_unref", reinterpret_cast<void**>(&gst_sample_unref)}
     };
 
-    // Load all functions
-    for (auto& func : functions) {
+    // Load all functions without individual checks
+    for (const auto& func : functions) {
         *func.func_ptr = dlsym(gst_lib, func.name);
+    }
+
+    // Single validation check for all functions
+    for (const auto& func : functions) {
         if (!*func.func_ptr) {
-            return false; // Early return if any function fails to load
+            return false;
         }
     }
 
-    return true; // All functions loaded successfully
+    return true;
 }
