@@ -164,4 +164,13 @@ void CameraManager::UpdateCameraStateFromCapture(const std::string& backend_name
     state_.is_opened = true;
 }
 
+// Helper method to update camera state with specific dimensions
+void CameraManager::UpdateCameraState(int target_width, int target_height, int target_fps) {
+    state_.current_width = target_width;
+    state_.current_height = target_height;
+    state_.actual_fps = target_fps;
+    state_.backend_name = "GStreamer (PipeWire)";
+    state_.is_opened = true;
+}
+
 } // namespace segmecam

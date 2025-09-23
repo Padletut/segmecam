@@ -82,6 +82,18 @@ bool CameraManager::ConfigurePipeWireAppSink() {
         return false;
     }
 
+    // Get the pipewiresrc element and set the remote fd
+    GstElement* pipewire_src = gst_bin_get_by_name(reinterpret_cast<GstBin*>(gst_pipeline_), "pipewiresrc0");
+    if (pipewire_src && portal_fd_ >= 0) {
+        std::cout << "🔌 Setting PipeWire remote fd " << portal_fd_ << " on pipewiresrc" << std::endl;
+        g_object_set(pipewire_src, "fd", portal_fd_, NULL);
+        std::cout << "✅ PipeWire remote fd configured" << std::endl;
+    } else if (portal_fd_ >= 0) {
+        std::cout << "⚠️  Could not find pipewiresrc element to set remote fd (fd=" << portal_fd_ << ")" << std::endl;
+    } else {
+        std::cout << "⚠️  No portal fd available for PipeWire remote" << std::endl;
+    }
+
     std::cout << "✅ GStreamer PipeWire pipeline created, configuring appsink..." << std::endl;
 
     // Configure appsink

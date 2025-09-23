@@ -198,6 +198,7 @@ public:
     bool CaptureFrameFlatpak(cv::Mat& frame);
     bool CaptureFrameNative(cv::Mat& frame);
     bool CaptureV4L2Frame(cv::Mat& frame);
+    bool CaptureV4L2FrameInternal(cv::Mat& frame);
     
     // Camera enumeration and selection
     const std::vector<CameraDesc>& GetCameraList() const { return cam_list_; }
@@ -287,6 +288,14 @@ private:
     bool ShouldContinueWaiting();
     bool IsTimeoutExpired(const std::chrono::steady_clock::time_point& deadline);
 
+    // V4L2 capture helpers
+    bool ValidateV4L2Initialization() const;
+    bool CheckV4L2PipelineState() const;
+    GstSample* PullV4L2Sample() const;
+    bool ExtractV4L2Buffer(GstSample* sample, GstBuffer*& buffer, GstMapInfo& map_info) const;
+    bool CreateFrameFromV4L2Buffer(GstSample* sample, const GstMapInfo& map_info, cv::Mat& frame);
+    bool InitializeV4L2Fallback();
+
     // Configuration and state
     CameraConfig config_;
     CameraState state_;
@@ -312,6 +321,7 @@ private:
     bool gst_initialized_ = false;
     bool camera_permission_granted_ = false;
     bool using_v4l2_source_ = false;  // Track if we're using V4L2 instead of PipeWire
+    int pipewire_failure_count_ = 0;  // Track consecutive PipeWire failures
     XdpPortal* portal_instance_ = nullptr;
     void* portal_library_handle_ = nullptr;
     int portal_fd_ = -1;
@@ -461,6 +471,10 @@ private:
     bool ValidatePortalConnection();
     void CleanupExistingPipeline();
     bool SetupAndStartPipeline(int target_width, int target_height, int target_fps);
+    void ConfigurePipeWireSource();
+    void ConfigurePipeWireSourceForNative();
+    bool StartPipeline();
+    void HandlePipelineStartFailure();
     void UpdateCameraState(int target_width, int target_height, int target_fps);
     
     void OnNewSample(GstAppSink* sink);

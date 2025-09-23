@@ -117,24 +117,14 @@ bool CameraManager::CreatePipeWirePipeline(int /*width*/, int /*height*/, int /*
         return false;
     }
 
-    // In Flatpak, prioritize V4L2 since portal PipeWire access may not work
-    // Outside Flatpak, try PipeWire first as originally designed
+    // In Flatpak, V4L2 devices are not accessible, so only try PipeWire
     if (IsRunningInFlatpak()) {
-        std::cout << "📷 Flatpak detected - trying V4L2 pipeline first..." << std::endl;
-        const char* v4l2_pipeline_desc =
-            "v4l2src device=/dev/video0 ! videoconvert ! "
-            "video/x-raw,format=BGR ! appsink name=sink emit-signals=true sync=false max-buffers=1 drop=true";
-
-        if (CreatePipelineFromDescription(v4l2_pipeline_desc)) {
-            std::cout << "✅ V4L2 pipeline created successfully in Flatpak" << std::endl;
-            using_v4l2_source_ = true;
-            return true;
-        } else {
-            std::cout << "⚠️  V4L2 pipeline failed in Flatpak, trying PipeWire..." << std::endl;
-        }
+        std::cout << "📷 Flatpak detected - using PipeWire (V4L2 not accessible)" << std::endl;
+    } else {
+        std::cout << "📷 Native environment - will try PipeWire first, V4L2 as fallback" << std::endl;
     }
 
-    // Try PipeWire source (for non-Flatpak or as fallback)
+    // Try PipeWire source
     const char* pipeline_desc =
         "pipewiresrc name=source do-timestamp=true ! videoconvert ! "
         "video/x-raw,format=BGR ! appsink name=sink emit-signals=true sync=false max-buffers=1 drop=true";
@@ -142,16 +132,21 @@ bool CameraManager::CreatePipeWirePipeline(int /*width*/, int /*height*/, int /*
     std::cout << "🔍 Trying PipeWire pipeline: " << pipeline_desc << std::endl;
 
     if (!CreatePipelineFromDescription(pipeline_desc)) {
-        std::cout << "⚠️  PipeWire pipeline failed, trying V4L2 pipeline..." << std::endl;
-        // Fallback to V4L2 pipeline
-        const char* v4l2_pipeline_desc =
-            "v4l2src device=/dev/video0 ! videoconvert ! "
-            "video/x-raw,format=BGR ! appsink name=sink emit-signals=true sync=false max-buffers=1 drop=true";
+        if (!IsRunningInFlatpak()) {
+            std::cout << "⚠️  PipeWire pipeline failed, trying V4L2 pipeline..." << std::endl;
+            // Fallback to V4L2 pipeline (only on native systems)
+            const char* v4l2_pipeline_desc =
+                "v4l2src device=/dev/video0 ! videoconvert ! "
+                "video/x-raw,format=BGR ! appsink name=sink emit-signals=true sync=false max-buffers=1 drop=true";
 
-        if (!CreatePipelineFromDescription(v4l2_pipeline_desc)) {
+            if (!CreatePipelineFromDescription(v4l2_pipeline_desc)) {
+                return false;
+            }
+            using_v4l2_source_ = true;  // Using V4L2 fallback
+        } else {
+            std::cout << "⚠️  PipeWire pipeline failed in Flatpak (V4L2 not available)" << std::endl;
             return false;
         }
-        using_v4l2_source_ = true;  // Using V4L2 fallback
     } else {
         using_v4l2_source_ = false; // Using PipeWire
     }
@@ -208,6 +203,17 @@ bool CameraManager::SetupAndStartPipeline(int target_width, int target_height, i
 
     std::cout << "🎬 Starting PipeWire camera capture..." << std::endl;
 
+    ConfigurePipeWireSource();
+
+    if (!StartPipeline()) {
+        HandlePipelineStartFailure();
+        return false;
+    }
+
+    return true;
+}
+
+void CameraManager::ConfigurePipeWireSource() {
     // Only set PipeWire-specific properties if we have a pipewire source AND not using V4L2
     if (pipewire_src_ && portal_fd_ >= 0 && !using_v4l2_source_) {
         g_object_set(pipewire_src_, "fd", portal_fd_, NULL);
@@ -215,19 +221,7 @@ bool CameraManager::SetupAndStartPipeline(int target_width, int target_height, i
 
         // In Flatpak with portal, don't try to enumerate nodes - the portal should make camera available automatically
         if (!IsRunningInFlatpak()) {
-            // Try to find and set a camera path (only for non-Flatpak)
-            std::vector<int> camera_nodes = EnumeratePipeWireCameraNodes();
-            if (!camera_nodes.empty()) {
-                int camera_node = camera_nodes[0];  // Use first available camera
-                std::string camera_path = std::to_string(camera_node);
-                g_object_set(pipewire_src_, "path", camera_path.c_str(), NULL);
-                std::cout << "🔧 Set PipeWire source path: " << camera_path << std::endl;
-            } else {
-                std::cout << "⚠️  No PipeWire camera nodes found, trying default camera..." << std::endl;
-                // Try setting path to "0" as a fallback (some systems use this for default camera)
-                g_object_set(pipewire_src_, "path", "0", NULL);
-                std::cout << "🔧 Set PipeWire source path to default: 0" << std::endl;
-            }
+            ConfigurePipeWireSourceForNative();
         } else {
             std::cout << "ℹ️  Using PipeWire portal - camera should be available automatically" << std::endl;
             // Don't set any path - let the portal handle camera routing
@@ -239,31 +233,40 @@ bool CameraManager::SetupAndStartPipeline(int target_width, int target_height, i
             std::cout << "ℹ️  Using PipeWire source but no portal fd available" << std::endl;
         }
     }
-
-    int ret = gst_element_set_state(pipeline_, GST_STATE_PLAYING);
-    if (ret == GST_STATE_CHANGE_FAILURE) {
-        std::cerr << "❌ Failed to start pipeline" << std::endl;
-        gst_element_set_state(pipeline_, GST_STATE_NULL);
-        gst_object_unref(pipeline_);
-        pipeline_ = nullptr;
-        appsink_ = nullptr;
-        gst_appsink_ = nullptr;
-        if (pipewire_src_) {
-            gst_object_unref(pipewire_src_);
-            pipewire_src_ = nullptr;
-        }
-    }
-    return true;
 }
 
-void CameraManager::UpdateCameraState(int target_width, int target_height, int target_fps) {
-    state_.current_width = target_width;
-    state_.current_height = target_height;
-    state_.current_fps = target_fps;
-    state_.actual_fps = target_fps;
-    state_.backend_name = "GStreamer (PipeWire)";
-    state_.is_opened = true;
-    std::cout << "✅ PipeWire camera capture started" << std::endl;
+void CameraManager::ConfigurePipeWireSourceForNative() {
+    // Try to find and set a camera path (only for non-Flatpak)
+    std::vector<int> camera_nodes = EnumeratePipeWireCameraNodes();
+    if (!camera_nodes.empty()) {
+        int camera_node = camera_nodes[0];  // Use first available camera
+        std::string camera_path = std::to_string(camera_node);
+        g_object_set(pipewire_src_, "path", camera_path.c_str(), NULL);
+        std::cout << "🔧 Set PipeWire source path: " << camera_path << std::endl;
+    } else {
+        std::cout << "⚠️  No PipeWire camera nodes found, trying default camera..." << std::endl;
+        // Try setting path to "0" as a fallback (some systems use this for default camera)
+        g_object_set(pipewire_src_, "path", "0", NULL);
+        std::cout << "🔧 Set PipeWire source path to default: 0" << std::endl;
+    }
+}
+
+bool CameraManager::StartPipeline() {
+    int ret = gst_element_set_state(pipeline_, GST_STATE_PLAYING);
+    return ret != GST_STATE_CHANGE_FAILURE;
+}
+
+void CameraManager::HandlePipelineStartFailure() {
+    std::cerr << "❌ Failed to start pipeline" << std::endl;
+    gst_element_set_state(pipeline_, GST_STATE_NULL);
+    gst_object_unref(pipeline_);
+    pipeline_ = nullptr;
+    appsink_ = nullptr;
+    gst_appsink_ = nullptr;
+    if (pipewire_src_) {
+        gst_object_unref(pipewire_src_);
+        pipewire_src_ = nullptr;
+    }
 }
 
 bool CameraManager::StartPipeWireCapture(int width, int height, int fps) {
