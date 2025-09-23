@@ -158,7 +158,6 @@ void DebugPanel::Render() {
     
     if (ImGui::CollapsingHeader("Debug Controls")) {
         RenderOverlayControls();
-        RenderDebugVisualization();
         RenderPerformanceStats();
         RenderAdvancedSettings();
     }
@@ -173,12 +172,6 @@ void DebugPanel::RenderOverlayControls() {
     ImGui::Checkbox("Show Face Mesh", &state_.show_mesh);
 }
 
-void DebugPanel::RenderDebugVisualization() {
-    ImGui::Text("Debug Visualization");
-    ImGui::Separator();
-    
-    ImGui::Checkbox("Composite RGB debug", &state_.dbg_composite_rgb);
-}
 
 void DebugPanel::RenderPerformanceStats() {
     RenderBasicStats();
