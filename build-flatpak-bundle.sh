@@ -20,6 +20,6 @@ flatpak build-export repo build-dir
 # 5. Create distributable bundle
 flatpak build-bundle repo segmecam.flatpak org.segmecam.SegmeCam
 
-echo "\n✅ SegmeCam Flatpak bundle created: segmecam.flatpak"
-echo "Install with: flatpak install --user segmecam.flatpak"
-echo "Run with: flatpak run org.segmecam.SegmeCam"
+printf "\n✅ SegmeCam Flatpak bundle created: segmecam.flatpak"
+printf "Install with: flatpak install --user segmecam.flatpak"
+printf "Run with: flatpak run org.segmecam.SegmeCam"
