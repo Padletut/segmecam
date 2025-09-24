@@ -69,7 +69,7 @@
 
 ## 2.5) Video Output: Virtual Webcam
 
-**Current Status:** ✅ Implemented with `--device=all` (temporary solution)
+**Current Status:** ✅ Not implemented with `--device=all` (temporary solution)
 
 - [x] Virtual webcam output via v4l2loopback devices
 - [x] Flatpak permissions added: `--device=all`, `--filesystem=xdg-run/pipewire-0`

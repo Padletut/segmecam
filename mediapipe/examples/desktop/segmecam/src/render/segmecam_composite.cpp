@@ -39,7 +39,7 @@ cv::Mat PerformCompositingWithUpscale(const cv::Mat& small_frame, const cv::Mat&
   
   cv::Mat rgb;
   cv::cvtColor(final_comp, rgb, cv::COLOR_BGR2RGB);
-  return rgb;
+  return final_comp;
 }
 
 cv::Mat DecodeMaskToU8(const mediapipe::ImageFrame& mask, bool* logged_once) {
@@ -116,7 +116,23 @@ cv::Mat CompositeBlurBackgroundBGR(const cv::Mat& frame_bgr,
                                    int blur_strength,
                                    float feather_px) {
   cv::Mat result = frame_bgr.clone();
-  cv::Mat mask_f; mask_u8.convertTo(mask_f, CV_32FC1, 1.0/255.0);
+  
+  // Ensure mask is single-channel
+  cv::Mat mask_single;
+  if (mask_u8.channels() > 1) {
+    std::cout << "🔍 WARNING: Mask has " << mask_u8.channels() << " channels, extracting first channel" << std::endl;
+    std::vector<cv::Mat> channels;
+    cv::split(mask_u8, channels);
+    mask_single = channels[0].clone();
+  } else {
+    mask_single = mask_u8;
+  }
+  
+  cv::Mat mask_f; mask_single.convertTo(mask_f, CV_32FC1, 1.0/255.0);
+  
+  std::cout << "🔍 BLUR BGR DEBUG - mask_u8: " << mask_u8.cols << "x" << mask_u8.rows << " type:" << mask_u8.type() << " channels:" << mask_u8.channels()
+            << " mask_single: " << mask_single.cols << "x" << mask_single.rows << " type:" << mask_single.type()
+            << " mask_f: " << mask_f.cols << "x" << mask_f.rows << " type:" << mask_f.type() << std::endl;
 
   // Apply feathering if requested
   if (feather_px > 0.5f) {
@@ -125,7 +141,7 @@ cv::Mat CompositeBlurBackgroundBGR(const cv::Mat& frame_bgr,
   }
 
   // Use the shared utility for blurred background compositing
-  segmecam::CompositeWithBlurredBackground(result, frame_bgr, mask_f, blur_strength, true);
+  segmecam::CompositeWithBlurredBackground(result, frame_bgr, mask_f, blur_strength, false);
   return result;
 }
 
@@ -136,6 +152,14 @@ cv::Mat CompositeBlurBackgroundBGR_Accel(const cv::Mat& frame_bgr,
                                          bool use_ocl,
                                          float scale) {
   scale = std::clamp(scale, 0.4f, 1.0f);
+  
+  // Debug: Check mask properties
+  std::cout << "🔍 COMPOSITE DEBUG - Frame: " << frame_bgr.cols << "x" << frame_bgr.rows << " type:" << frame_bgr.type() 
+            << " Mask: " << mask_u8.cols << "x" << mask_u8.rows << " type:" << mask_u8.type() << std::endl;
+  
+  // Force CPU path to test
+  use_ocl = false;
+  
   if (!use_ocl && std::abs(scale - 1.0f) < 1e-3f) {
     return CompositeBlurBackgroundBGR(frame_bgr, mask_u8, blur_strength, feather_px);
   }
@@ -171,7 +195,7 @@ cv::Mat CompositeBlurBackgroundBGR_Accel(const cv::Mat& frame_bgr,
                   << "] -> RGB output: [" << (int)rgb_pixel[0] << "," << (int)rgb_pixel[1] << "," << (int)rgb_pixel[2] << "]" << std::endl;
     }
     
-    return rgb;
+    return comp_u8;
   }
   // OpenCL path via UMat
   cv::UMat src_u; small_src.copyTo(src_u);
@@ -195,7 +219,7 @@ cv::Mat CompositeBlurBackgroundBGR_Accel(const cv::Mat& frame_bgr,
   cv::UMat comp_f; cv::merge(out, comp_f); cv::UMat comp_u8; comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
   cv::Mat comp_bgr; comp_u8.copyTo(comp_bgr);
   cv::Mat rgb; cv::cvtColor(comp_bgr, rgb, cv::COLOR_BGR2RGB);
-  return rgb;
+  return comp_bgr;
 }
 
 
@@ -204,7 +228,7 @@ cv::Mat CompositeImageBackgroundBGR(const cv::Mat& frame_bgr,
                                     const cv::Mat& bg_bgr) {
   cv::Mat result = frame_bgr.clone();
   cv::Mat mask_f; mask_u8.convertTo(mask_f, CV_32FC1, 1.0/255.0);
-  segmecam::CompositeWithMask(result, bg_bgr, mask_f, true);
+  segmecam::CompositeWithMask(result, bg_bgr, mask_f, false);
   return result;
 }
 
@@ -213,7 +237,7 @@ cv::Mat CompositeSolidBackgroundBGR(const cv::Mat& frame_bgr,
                                     const cv::Scalar& bgr) {
   cv::Mat result = frame_bgr.clone();
   cv::Mat mask_f; mask_u8.convertTo(mask_f, CV_32FC1, 1.0/255.0);
-  segmecam::CompositeWithSolidColor(result, bgr, mask_f, true);
+  segmecam::CompositeWithSolidColor(result, bgr, mask_f, false);
   return result;
 }
 

@@ -4,9 +4,15 @@
 #include <memory>
 #include <opencv2/opencv.hpp>
 #include "mediapipe/framework/formats/landmark.pb.h"
-#include "include/effects/segmecam_face_effects.h"
-#include "include/render/segmecam_composite.h"
-#include "include/effects/presets.h"
+#include "effects/segmecam_face_effects.h"
+#include "render/segmecam_composite.h"
+#include "effects/presets.h"
+
+// New modular includes
+#include "effects/background/background_effects.h"
+#include "effects/performance/performance_monitor.h"
+#include "effects/config/effects_config.h"
+#include "effects/face_processor.h"
 
 namespace segmecam {
 
@@ -25,11 +31,11 @@ struct EffectsState {
     bool is_initialized = false;
     bool opencl_available = false;
     bool opencl_enabled = false;
-    
+
     // Last processed frame info
     int last_frame_width = 0;
     int last_frame_height = 0;
-    
+
     // Performance tracking
     double last_smoothing_time_ms = 0.0;
     double last_background_time_ms = 0.0;
@@ -39,6 +45,8 @@ struct EffectsState {
     // Debug state
     bool show_mask = false;
     bool show_landmarks = false;
+    bool show_mesh = false;
+    bool show_mesh_dense = false;
 };
 
 // Comprehensive effects manager for background replacement, face effects, and image processing
@@ -56,11 +64,19 @@ public:
                         const cv::Mat& segmentation_mask,
                         const mediapipe::NormalizedLandmarkList* face_landmarks = nullptr);
     
-    // Background effects
-    cv::Mat ApplyBackgroundEffect(const cv::Mat& frame_bgr, const cv::Mat& mask);
-    cv::Mat ApplyBlurBackground(const cv::Mat& frame_bgr, const cv::Mat& mask, int blur_strength, float feather_px);
-    cv::Mat ApplyImageBackground(const cv::Mat& frame_bgr, const cv::Mat& mask, const cv::Mat& bg_image);
-    cv::Mat ApplySolidBackground(const cv::Mat& frame_bgr, const cv::Mat& mask, const cv::Scalar& color);
+    // Background effects - delegated to BackgroundEffects module
+    cv::Mat ApplyBackgroundEffect(const cv::Mat& frame_bgr, const cv::Mat& mask) {
+        return background_effects_->ApplyBackgroundEffect(frame_bgr, mask, beauty_state_);
+    }
+    cv::Mat ApplyBlurBackground(const cv::Mat& frame_bgr, const cv::Mat& mask, int blur_strength, float feather_px) {
+        return background_effects_->ApplyBlurBackground(frame_bgr, mask, blur_strength, feather_px);
+    }
+    cv::Mat ApplyImageBackground(const cv::Mat& frame_bgr, const cv::Mat& mask, const cv::Mat& bg_image) {
+        return background_effects_->ApplyImageBackground(frame_bgr, mask, bg_image);
+    }
+    cv::Mat ApplySolidBackground(const cv::Mat& frame_bgr, const cv::Mat& mask, const cv::Scalar& color) {
+        return background_effects_->ApplySolidBackground(frame_bgr, mask, color);
+    }
     
     // Face effects
     void ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks);
@@ -71,92 +87,226 @@ public:
                         const mediapipe::NormalizedLandmarkList& landmarks, const cv::Size& frame_size);
     void ApplyTeethWhitening(cv::Mat& frame_bgr, const FaceRegions& regions);
     
-    // Beauty presets
-    void ApplyBeautyPreset(int preset_index);
-    void GetCurrentBeautyState(BeautyState& state) const;
-    void SetBeautyState(const BeautyState& state);
+    // Beauty presets - delegated to EffectsConfiguration module
+    void ApplyBeautyPreset(int preset_index) {
+        effects_config_->ApplyBeautyPreset(preset_index);
+    }
+    void GetCurrentBeautyState(BeautyState& state) const {
+        effects_config_->GetCurrentBeautyState(state);
+    }
+    void SetBeautyState(const BeautyState& state) {
+        effects_config_->SetBeautyState(state);
+    }
     
     // Background settings
-    void SetBackgroundMode(int mode); // 0=None, 1=Blur, 2=Image, 3=Solid
-    void SetBlurStrength(int strength);
-    void SetFeatherAmount(float feather_px);
-    void SetBackgroundImage(const cv::Mat& image);
-    void SetBackgroundImageFromPath(const std::string& path);
-    void SetSolidBackgroundColor(float r, float g, float b);
-    void SetShowMask(bool enabled);
+    void SetBackgroundMode(int mode) {
+        effects_config_->SetBackgroundMode(mode);
+    }
+    void SetBlurStrength(int strength) {
+        effects_config_->SetBlurStrength(strength);
+    }
+    void SetFeatherAmount(float feather_px) {
+        effects_config_->SetFeatherAmount(feather_px);
+    }
+    void SetBackgroundImage(const cv::Mat& image) {
+        effects_config_->SetBackgroundImage(image);
+        if (background_effects_) {
+            background_effects_->SetBackgroundImage(image);
+        }
+    }
+    void SetBackgroundImageFromPath(const std::string& path) {
+        effects_config_->SetBackgroundImageFromPath(path);
+        // The effects_config_->SetBackgroundImageFromPath will call SetBackgroundImage internally,
+        // which will set it on background_effects_
+    }
+    void SetSolidBackgroundColor(float r, float g, float b) {
+        effects_config_->SetSolidBackgroundColor(r, g, b);
+    }
+    void SetShowMask(bool enabled) {
+        effects_config_->SetShowMask(enabled);
+    }
     
     // Skin smoothing controls
-    void SetSkinSmoothingEnabled(bool enabled);
-    void SetSkinSmoothingStrength(float strength);
-    void SetSkinSmoothingAdvanced(bool advanced);
-    void SetSkinSmoothingAmount(float amount);
-    void SetSkinSmoothingRadius(float radius_px);
-    void SetSkinTexturePreservation(float texture_thresh);
-    void SetSkinEdgeFeather(float edge_feather_px);
+    void SetSkinSmoothingEnabled(bool enabled) {
+        effects_config_->SetSkinSmoothingEnabled(enabled);
+    }
+    void SetSkinSmoothingStrength(float strength) {
+        effects_config_->SetSkinSmoothingStrength(strength);
+    }
+    void SetSkinSmoothingAdvanced(bool advanced) {
+        effects_config_->SetSkinSmoothingAdvanced(advanced);
+    }
+    void SetSkinSmoothingAmount(float amount) {
+        effects_config_->SetSkinSmoothingAmount(amount);
+    }
+    void SetSkinSmoothingRadius(float radius_px) {
+        effects_config_->SetSkinSmoothingRadius(radius_px);
+    }
+    void SetSkinTexturePreservation(float texture_thresh) {
+        effects_config_->SetSkinTexturePreservation(texture_thresh);
+    }
+    void SetSkinEdgeFeather(float edge_feather_px) {
+        effects_config_->SetSkinEdgeFeather(edge_feather_px);
+    }
     
     // Wrinkle-aware controls
-    void SetWrinkleAwareEnabled(bool enabled);
-    void SetWrinkleGain(float gain);
-    void SetSmileBoost(float boost);
-    void SetSquintBoost(float boost);
-    void SetForeheadBoost(float boost);
-    void SetSuppressLowerFace(bool enabled);
-    void SetLowerFaceRatio(float ratio);
-    void SetIgnoreGlasses(bool enabled);
-    void SetGlassesMargin(float margin_px);
-    void SetWrinkleSensitivity(float keep_ratio);
-    void SetCustomWrinkleScales(bool enabled);
-    void SetWrinkleMinWidth(float min_px);
-    void SetWrinkleMaxWidth(float max_px);
-    void SetWrinkleSkinGate(bool enabled);
-    void SetWrinkleMaskGain(float gain);
-    void SetWrinkleBaselineBoost(float boost);
-    void SetWrinkleNegativeCap(float cap);
-    void SetWrinklePreview(bool enabled);
+    void SetWrinkleAwareEnabled(bool enabled) {
+        effects_config_->SetWrinkleAwareEnabled(enabled);
+    }
+    void SetWrinkleGain(float gain) {
+        effects_config_->SetWrinkleGain(gain);
+    }
+    void SetSmileBoost(float boost) {
+        effects_config_->SetSmileBoost(boost);
+    }
+    void SetSquintBoost(float boost) {
+        effects_config_->SetSquintBoost(boost);
+    }
+    void SetForeheadBoost(float boost) {
+        effects_config_->SetForeheadBoost(boost);
+    }
+    void SetSuppressLowerFace(bool enabled) {
+        effects_config_->SetSuppressLowerFace(enabled);
+    }
+    void SetLowerFaceRatio(float ratio) {
+        effects_config_->SetLowerFaceRatio(ratio);
+    }
+    void SetIgnoreGlasses(bool enabled) {
+        effects_config_->SetIgnoreGlasses(enabled);
+    }
+    void SetGlassesMargin(float margin_px) {
+        effects_config_->SetGlassesMargin(margin_px);
+    }
+    void SetWrinkleSensitivity(float keep_ratio) {
+        effects_config_->SetWrinkleSensitivity(keep_ratio);
+    }
+    void SetCustomWrinkleScales(bool enabled) {
+        effects_config_->SetCustomWrinkleScales(enabled);
+    }
+    void SetWrinkleMinWidth(float min_px) {
+        effects_config_->SetWrinkleMinWidth(min_px);
+    }
+    void SetWrinkleMaxWidth(float max_px) {
+        effects_config_->SetWrinkleMaxWidth(max_px);
+    }
+    void SetWrinkleSkinGate(bool enabled) {
+        effects_config_->SetWrinkleSkinGate(enabled);
+    }
+    void SetWrinkleMaskGain(float gain) {
+        effects_config_->SetWrinkleMaskGain(gain);
+    }
+    void SetWrinkleBaselineBoost(float boost) {
+        effects_config_->SetWrinkleBaselineBoost(boost);
+    }
+    void SetWrinkleNegativeCap(float cap) {
+        effects_config_->SetWrinkleNegativeCap(cap);
+    }
+    void SetWrinklePreview(bool enabled) {
+        effects_config_->SetWrinklePreview(enabled);
+    }
     
     // Advanced processing controls
-    void SetProcessingScale(float scale);
-    void SetDetailPreservation(float preserve);
+    void SetProcessingScale(float scale) {
+        effects_config_->SetProcessingScale(scale);
+    }
+    void SetDetailPreservation(float preserve) {
+        effects_config_->SetDetailPreservation(preserve);
+    }
     
     // Lip effects controls
-    void SetLipstickEnabled(bool enabled);
-    void SetLipAlpha(float alpha);
-    void SetLipFeather(float feather_px);
-    void SetLipLightness(float lightness);
-    void SetLipBandGrow(float band_px);
-    void SetLipColor(float r, float g, float b);
+    void SetLipstickEnabled(bool enabled) {
+        effects_config_->SetLipstickEnabled(enabled);
+    }
+    void SetLipAlpha(float alpha) {
+        effects_config_->SetLipAlpha(alpha);
+    }
+    void SetLipFeather(float feather_px) {
+        effects_config_->SetLipFeather(feather_px);
+    }
+    void SetLipLightness(float lightness) {
+        effects_config_->SetLipLightness(lightness);
+    }
+    void SetLipBandGrow(float band_px) {
+        effects_config_->SetLipBandGrow(band_px);
+    }
+    void SetLipColor(float r, float g, float b) {
+        effects_config_->SetLipColor(r, g, b);
+    }
     
     // Teeth whitening controls
-    void SetTeethWhiteningEnabled(bool enabled);
-    void SetTeethWhiteningStrength(float strength);
-    void SetTeethMargin(float margin_px);
+    void SetTeethWhiteningEnabled(bool enabled) {
+        effects_config_->SetTeethWhiteningEnabled(enabled);
+    }
+    void SetTeethWhiteningStrength(float strength) {
+        effects_config_->SetTeethWhiteningStrength(strength);
+    }
+    void SetTeethMargin(float margin_px) {
+        effects_config_->SetTeethMargin(margin_px);
+    }
     
     // OpenCL acceleration
-    void SetOpenCLEnabled(bool enabled);
+    void SetOpenCLEnabled(bool enabled) {
+        effects_config_->SetOpenCLEnabled(enabled);
+    }
     bool IsOpenCLAvailable() const { return state_.opencl_available; }
     bool IsOpenCLEnabled() const { return state_.opencl_enabled; }
     
     // Auto processing scale
-    void SetAutoProcessingScaleEnabled(bool enabled);
-    void SetTargetFPS(float target_fps);
-    void UpdateAutoProcessingScale(float current_fps);
-    void UpdateTargetFPSFromCamera(float camera_fps); // NEW: Auto-set target based on camera
-    bool IsAutoProcessingScaleEnabled() const;
-    float GetCurrentFPS() const;
-    float GetTargetFPS() const;
-    float GetProcessingScale() const;
+    void SetAutoProcessingScaleEnabled(bool enabled) {
+        performance_monitor_->SetAutoProcessingScaleEnabled(enabled);
+    }
+    void SetTargetFPS(float target_fps) {
+        performance_monitor_->SetTargetFPS(target_fps);
+    }
+    void UpdateAutoProcessingScale(float current_fps) {
+        performance_monitor_->UpdateAutoProcessingScale(current_fps);
+    }
+    void UpdateTargetFPSFromCamera(float camera_fps) {
+        performance_monitor_->UpdateTargetFPSFromCamera(camera_fps);
+    }
+    bool IsAutoProcessingScaleEnabled() const {
+        return performance_monitor_->IsAutoProcessingScaleEnabled();
+    }
+    float GetCurrentFPS() const {
+        return performance_monitor_->GetCurrentFPS();
+    }
+    float GetTargetFPS() const {
+        return performance_monitor_->GetTargetFPS();
+    }
+    float GetProcessingScale() const {
+        return performance_monitor_->GetProcessingScale();
+    }
     
-    // Debug and visualization
-    void SetShowLandmarks(bool enabled);
-    void DrawLandmarks(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks);
-    cv::Mat VisualizeMask(const cv::Mat& mask);
+    // Debug and visualization - delegated to EffectsConfiguration module
+    void SetShowLandmarks(bool enabled) {
+        state_.show_landmarks = enabled;
+    }
+    void SetShowMesh(bool enabled) {
+        state_.show_mesh = enabled;
+    }
+    void SetShowMeshDense(bool enabled) {
+        state_.show_mesh_dense = enabled;
+    }
+    void DrawLandmarks(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks) {
+        face_processor_->DrawLandmarks(frame_bgr, landmarks);
+    }
+    void DrawMesh(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks) {
+        face_processor_->DrawMesh(frame_bgr, landmarks, state_.show_mesh_dense);
+    }
+    cv::Mat VisualizeMask(const cv::Mat& mask) {
+        return VisualizeMaskRGB(mask);
+    }
     
     // Performance monitoring
     void UpdatePerformanceStats();
     double GetLastSmoothingTime() const { return state_.last_smoothing_time_ms; }
     double GetLastBackgroundTime() const { return state_.last_background_time_ms; }
-    double GetAverageProcessingTime() const;
-    void ResetPerformanceStats();
+    double GetAverageProcessingTime() const {
+        return performance_monitor_->GetAverageProcessingTime();
+    }
+    void ResetPerformanceStats() {
+        performance_monitor_->ResetPerformanceStats();
+    }
     
     // State access
     const EffectsState& GetState() const { return state_; }
@@ -176,21 +326,11 @@ private:
     // Background image storage
     cv::Mat background_image_;
     
-    // Performance tracking
-    std::chrono::steady_clock::time_point last_perf_log_time_;
-    double perf_sum_frame_ms_ = 0.0;
-    double perf_sum_smooth_ms_ = 0.0;
-    double perf_sum_bg_ms_ = 0.0;
-    uint32_t perf_sum_frames_ = 0;
-    
-    // Auto processing scale
-    bool auto_scale_enabled_ = false;
-    float target_fps_ = 14.5f;
-    float current_fps_ = 0.0f;
-    std::chrono::steady_clock::time_point last_fps_update_;
-    std::chrono::steady_clock::time_point last_scale_adjustment_;
-    std::vector<float> fps_history_;
-    static constexpr size_t FPS_HISTORY_SIZE = 10;
+    // New modular components
+    std::unique_ptr<BackgroundEffects> background_effects_;
+    std::unique_ptr<PerformanceMonitor> performance_monitor_;
+    std::unique_ptr<EffectsConfiguration> effects_config_;
+    std::unique_ptr<FaceProcessor> face_processor_;
     
     // Helper methods
     FaceRegions ExtractFaceRegionsFromLandmarks(const mediapipe::NormalizedLandmarkList& landmarks, 

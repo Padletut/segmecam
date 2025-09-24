@@ -14,6 +14,8 @@ void ApplicationSync::SyncSettingsToEffectsManager(EffectsManager& effects_manag
     effects_manager.SetSolidBackgroundColor(app_state.solid_color[0], app_state.solid_color[1], app_state.solid_color[2]);
     effects_manager.SetShowMask(app_state.show_mask);
     effects_manager.SetShowLandmarks(app_state.show_landmarks);
+    effects_manager.SetShowMesh(app_state.show_mesh);
+    effects_manager.SetShowMeshDense(app_state.show_mesh_dense);
 
     // Sync background image if available
     if (!app_state.bg_image.empty()) {

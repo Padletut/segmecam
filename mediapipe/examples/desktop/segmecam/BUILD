@@ -467,7 +467,7 @@ cc_library(
 )
 
 cc_library( # type: ignore
-    name = "ui_manager_enhanced", 
+    name = "ui_manager_enhanced",
     srcs = ["src/ui/ui_manager_enhanced.cpp"],
     hdrs = ["include/ui/ui_manager_enhanced.h"],
     includes = [".", "include"],
@@ -581,6 +581,10 @@ cc_library( # type: ignore
     hdrs = ["include/effects/effects_manager.h"],
     includes = [".", "include"],
     deps = [
+        ":background_effects",
+        ":performance_monitor",
+        ":effects_config",
+        ":face_processor",
         ":segmecam_composite",
         ":segmecam_face_effects",
         ":presets",
@@ -598,6 +602,66 @@ cc_library( # type: ignore
         "-lopencv_imgproc",
         "-lopencv_highgui",
     ],
+)
+
+# Background Effects Module
+cc_library( # type: ignore
+    name = "background_effects",
+    srcs = ["src/effects/background/background_effects.cpp"],
+    hdrs = ["include/effects/background/background_effects.h"],
+    includes = [".", "include"],
+    deps = [
+        ":segmecam_composite",
+        ":segmecam_face_effects",
+        ":presets",
+        ":app_state",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+    ],
+    copts = ["-I/usr/include/opencv4"],
+)
+
+# Performance Monitor Module
+cc_library( # type: ignore
+    name = "performance_monitor",
+    srcs = ["src/effects/performance/performance_monitor.cpp"],
+    hdrs = ["include/effects/performance/performance_monitor.h"],
+    includes = [".", "include"],
+    deps = [
+        "//mediapipe/framework/port:opencv_core",
+    ],
+)
+
+# Effects Configuration Module
+cc_library( # type: ignore
+    name = "effects_config",
+    srcs = ["src/effects/config/effects_config.cpp"],
+    hdrs = ["include/effects/config/effects_config.h"],
+    includes = [".", "include"],
+    deps = [
+        ":app_state",
+        ":presets",
+        "//mediapipe/framework/port:opencv_core",
+    ],
+)
+
+# Face Processor Module
+cc_library( # type: ignore
+    name = "face_processor",
+    srcs = ["src/effects/face_processor.cpp"],
+    hdrs = ["include/effects/face_processor.h"],
+    includes = [".", "include", "include/effects"],
+    deps = [
+        ":face_regions",
+        ":segmecam_face_effects",
+        ":segmecam_composite",
+        ":presets",
+        "//mediapipe/framework/formats:landmark_cc_proto",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+        "//mediapipe/tasks/cc/vision/face_landmarker:face_landmarks_connections",
+    ],
+    copts = ["-I/usr/include/opencv4"],
 )
 
 cc_binary( # pyright: ignore[reportUndefinedVariable]

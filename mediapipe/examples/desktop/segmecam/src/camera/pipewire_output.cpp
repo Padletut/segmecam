@@ -19,7 +19,7 @@ static void on_stream_state_changed(void* data, enum pw_stream_state old_state,
   try {
     std::cout << "🔄 PipeWire state callback: casting data to events" << std::endl;
     segmecam::PipeWireEvents* events = static_cast<segmecam::PipeWireEvents*>(data);
-    std::cout << "🔄 PipeWire state callback: events=" << (void*)events << std::endl;
+    std::cout << "🔄 PipeWire state callback: events=" << static_cast<void*>(events) << std::endl;
     if (!events) {
       std::cerr << "❌ PipeWire state callback: events is null" << std::endl;
       return;
@@ -31,7 +31,7 @@ static void on_stream_state_changed(void* data, enum pw_stream_state old_state,
     }
 
     segmecam::PipeWireOutput* self = events->output;
-    std::cout << "🔄 PipeWire state callback: self=" << (void*)self << std::endl;
+    std::cout << "🔄 PipeWire state callback: self=" << static_cast<void*>(self) << std::endl;
     if (!self) {
       std::cerr << "❌ PipeWire state callback: self is null" << std::endl;
       return;
@@ -118,7 +118,7 @@ static void on_stream_format_changed(void* data, uint32_t id, const struct spa_p
    // std::cout << "🔄 PipeWire param callback: parsing format" << std::endl;
     // Parse the negotiated format
     uint32_t media_type, media_subtype;
-    std::cout << "[PipeWire param callback] spa_format_parse param=" << (void*)param << std::endl;
+    std::cout << "[PipeWire param callback] spa_format_parse param=" << static_cast<const void*>(param) << std::endl;
     std::cout << "[PipeWire param callback] param->type=" << param->type << ", param->size=" << param->size << std::endl;
     int parse_result = spa_format_parse(param, &media_type, &media_subtype);
     std::cout << "[PipeWire param callback] spa_format_parse result=" << parse_result << std::endl;
@@ -129,7 +129,7 @@ static void on_stream_format_changed(void* data, uint32_t id, const struct spa_p
         std::cerr << "  type: " << param->type << std::endl;
         std::cerr << "  size: " << param->size << std::endl;
         if (param->size > 0 && param->size <= 256) {
-            const uint8_t* data = (const uint8_t*)param;
+            const uint8_t* data = reinterpret_cast<const uint8_t*>(param);
             std::cerr << "  raw bytes: ";
             for (size_t i = 0; i < param->size && i < 32; ++i) {
                 std::cerr << std::hex << (int)data[i] << " ";

@@ -423,8 +423,9 @@ void ApplyFrequencySeparation(cv::Mat& Lf, const cv::Mat& weight, float amount, 
   // Use lighter attenuation for positive detail to keep sheen/pores.
   cv::Mat pos_atten = wrinkle_preview ? cv::Mat::zeros(atten.size(), CV_32F) : (weight * (amount * 0.15f));
   // Stronger attenuation on negative detail (wrinkle shadows), clamped to user cap
-  float cap = std::clamp(neg_atten_cap, 0.4f, 1.0f);
-  cv::Mat neg_atten = cv::min(cap, atten);
+  // In wrinkle preview mode, apply maximum smoothing to wrinkles for visibility
+  float cap = wrinkle_preview ? 1.0f : std::clamp(neg_atten_cap, 0.4f, 1.0f);
+  cv::Mat neg_atten = wrinkle_preview ? cv::Mat::ones(atten.size(), CV_32F) : cv::min(cap, atten);
 
   cv::Mat outL = base + detail_pos.mul(1.0f - pos_atten) + detail_neg.mul(1.0f - neg_atten);
   outL = cv::min(cv::max(outL, 0.0f), 1.0f);

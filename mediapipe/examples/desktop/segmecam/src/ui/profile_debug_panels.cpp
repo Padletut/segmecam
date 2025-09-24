@@ -161,7 +161,17 @@ void DebugPanel::RenderOverlayControls() {
     
     ImGui::Checkbox("Show Face Landmarks", &state_.show_landmarks);
     ImGui::Checkbox("Show Segmentation Mask", &state_.show_mask);
+    
+    // Mesh visualization
     ImGui::Checkbox("Show Face Mesh", &state_.show_mesh);
+    if (state_.show_mesh) {
+        ImGui::SameLine();
+        ImGui::Checkbox("Dense", &state_.show_mesh_dense);
+        ImGui::SameLine();
+        if (ImGui::Button("?##mesh_dense")) {
+            ImGui::SetTooltip("Show all 468 landmarks vs reduced set");
+        }
+    }
 }
 
 
@@ -176,12 +186,6 @@ void DebugPanel::RenderBasicStats() {
     
     ImGui::Text("FPS: %.1f", state_.fps);
     ImGui::Text("Frame ID: %lld", (long long)state_.frame_id);
-    
-    if (state_.perf_log && state_.perf_sum_frames > 0) {
-        ImGui::Text("Avg Frame Time: %.2f ms", state_.perf_sum_frame_ms / state_.perf_sum_frames);
-        ImGui::Text("Avg Smooth Time: %.2f ms", state_.perf_sum_smooth_ms / state_.perf_sum_frames);
-        ImGui::Text("Avg Background Time: %.2f ms", state_.perf_sum_bg_ms / state_.perf_sum_frames);
-    }
 }
 
 void DebugPanel::RenderPerformanceOptimization() {
@@ -261,7 +265,6 @@ void DebugPanel::RenderAdvancedSettings() {
         ImGui::TextColored(ImVec4(1, 0.6f, 0, 1), "⚠️  OpenCL: Not Available");
     }
     
-    ImGui::Checkbox("Performance Logging", &state_.perf_log);
     ImGui::Checkbox("VSync", &state_.vsync_on);
 }
 

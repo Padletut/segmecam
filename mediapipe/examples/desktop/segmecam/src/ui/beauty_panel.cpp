@@ -40,13 +40,6 @@ void BeautyPanel::RenderPresets() {
 
 void BeautyPanel::RenderPerformanceControls() {
     ImGui::Checkbox("OpenCL", &state_.use_opencl);
-    ImGui::SameLine();
-    ImGui::Checkbox("Perf log", &state_.perf_log);
-    
-    if (state_.perf_log) {
-        ImGui::SameLine();
-        ImGui::SliderInt("Interval (ms)", &state_.perf_log_interval_ms, 500, 10000);
-    }
     
     ImGui::Separator();
 }
