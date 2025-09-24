@@ -111,6 +111,7 @@ dist/
 *.rej
 *_old.cpp
 *_backup.*
+mediapipe/examples/desktop/segmecam/src/ui/profile_debug_panels_backup.cpp
 
 # Old/temporary files
 app-old-just-example.cc
@@ -139,4 +140,4 @@ build_ios_examples.sh
 codacy-fixes.patch
 .codacy/results.sarif
 .continue/mcpServers/new-mcp-server.yaml
-
+profile_debug_panels_backup.cpp
