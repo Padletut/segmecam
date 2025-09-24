@@ -48,6 +48,7 @@ public:
   void ShowPanel(const std::string& panel_name, bool show = true);
   void TogglePanel(const std::string& panel_name);
   bool IsPanelVisible(const std::string& panel_name) const;
+  UIPanel* FindPanel(const std::string& name);
   
   // Texture management
   void UploadTexture(const cv::Mat& rgb);
@@ -77,7 +78,6 @@ private:
   
   // Panel management
   void RegisterPanel(std::unique_ptr<UIPanel> panel);
-  UIPanel* FindPanel(const std::string& name);
   
   // Dropped file handling
   void HandleDroppedFile(char* dropped_path);

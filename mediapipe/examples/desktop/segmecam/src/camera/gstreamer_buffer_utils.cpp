@@ -150,4 +150,28 @@ bool ConvertBufferToBgr(const BufferInfo& buffer_info,
     return true;
 }
 
+
+// Convert BGR (cv::Mat) to YUY2 (packed, width*height*2 bytes)
+// Output buffer must be preallocated to width*height*2 bytes
+void BGRToYUY2(const cv::Mat& bgr, uint8_t* yuy2_out) {
+    const int W = bgr.cols, H = bgr.rows;
+    const uint8_t* p = bgr.data; int stride = (int)bgr.step; uint8_t* o = yuy2_out;
+    auto clamp8 = [](int v) { return (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v); };
+    for (int y=0; y<H; ++y) {
+        const uint8_t* row = p + y * stride;
+        for (int x=0; x<W; x+=2) {
+            int b0=row[x*3+0], g0=row[x*3+1], r0=row[x*3+2];
+            int b1=row[(x+1)*3+0], g1=row[(x+1)*3+1], r1=row[(x+1)*3+2];
+            int Y0 = ( 66*r0 +129*g0 + 25*b0 +128)>>8; Y0 += 16;
+            int Y1 = ( 66*r1 +129*g1 + 25*b1 +128)>>8; Y1 += 16;
+            int U  = (-38*r0 - 74*g0 +112*b0 +128)>>8; U += 128;
+            int V  = (112*r0 - 94*g0 - 18*b0 +128)>>8; V += 128;
+            int U1 = (-38*r1 - 74*g1 +112*b1 +128)>>8; U1 += 128;
+            int V1 = (112*r1 - 94*g1 - 18*b1 +128)>>8; V1 += 128;
+            U = (U + U1) >> 1; V = (V + V1) >> 1;
+            *o++ = clamp8(Y0); *o++ = clamp8(U); *o++ = clamp8(Y1); *o++ = clamp8(V);
+        }
+    }
+}
+
 } // namespace segmecam

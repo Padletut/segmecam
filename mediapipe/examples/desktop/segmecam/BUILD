@@ -331,11 +331,13 @@ cc_library( # type: ignore
     deps = [
         ":gstreamer_buffer_utils",  # for buffer conversion utilities
         ":segmecam_face_effects",  # for cam_enum.h
+        ":pipewire_output",  # for PipeWire video output
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_highgui",
     ],
     copts = [
         "-I/usr/include/opencv4",
+        "-I/usr/include/pipewire-0.3",
     ] + select({
         "//conditions:default": [],
         ":flatpak_build": [],
@@ -362,6 +364,29 @@ config_setting(
     define_values = {
         "FLATPAK_BUILD": "true",
     },
+)
+
+# PipeWire Output Library (Flatpak Video Output)
+cc_library( # type: ignore
+    name = "pipewire_output",
+    srcs = ["src/camera/pipewire_output.cpp"],
+    hdrs = ["include/camera/pipewire_output.h"],
+    includes = [".", "include"],
+    deps = [
+        ":gstreamer_buffer_utils",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+    ],
+    copts = [
+        "-I/usr/include/opencv4",
+        "-I/usr/include/pipewire-0.3",
+        "-I/usr/include/spa-0.2",
+    ],
+    linkopts = [
+        "-lopencv_core",
+        "-lopencv_imgproc",
+        "-lpipewire-0.3",
+    ],
 )
 
 # Render Manager Library (Phase 3 Refactoring)
@@ -416,6 +441,7 @@ cc_library( # type: ignore
     ],
     copts = [
         "-I/usr/include/opencv4",
+        "-I/usr/include/pipewire-0.3",
     ],
     linkopts = [
         "-lopencv_core",
@@ -453,6 +479,7 @@ cc_library( # type: ignore
     copts = [
         "-I/usr/include/SDL2",
         "-I/usr/include/opencv4",
+        "-I/usr/include/pipewire-0.3",
     ],
     linkopts = [
         "-lSDL2",
@@ -647,6 +674,7 @@ cc_binary( # pyright: ignore[reportUndefinedVariable]
     copts = [
         "-I/usr/include/SDL2",
         "-I/usr/include/opencv4",
+        "-I/usr/include/pipewire-0.3",
     ],
     linkopts = [
         "-lGL",

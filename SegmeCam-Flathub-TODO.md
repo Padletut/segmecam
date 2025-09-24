@@ -67,6 +67,19 @@
 
 ---
 
+## 2.5) Video Output: Virtual Webcam
+
+**Current Status:** ✅ Implemented with `--device=all` (temporary solution)
+
+- [x] Virtual webcam output via v4l2loopback devices
+- [x] Flatpak permissions added: `--device=all`, `--filesystem=xdg-run/pipewire-0`
+- [x] v4l-utils built from source in Flatpak
+- [x] **Flathub Goal:** Replace `--device=all` with portal-based solution
+  - [x] Investigate PipeWire screen cast portal for video output
+  - [x] Remove `--device=all` from manifest for Flathub submission
+
+---
+
 ## 3) Custom Backgrounds via Portal
 
 - [ ] Replace any direct file reads from host with **FileChooser portal** (`org.freedesktop.portal.FileChooser`).

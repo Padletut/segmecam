@@ -33,6 +33,7 @@ finish-args:
   - --socket=wayland
   - --share=ipc
   - --device=dri
+  - --filesystem=xdg-run/pipewire-0
   - --persist=.config/segmecam
 
 build-options:

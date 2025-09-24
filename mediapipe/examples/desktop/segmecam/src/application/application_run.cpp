@@ -45,6 +45,20 @@ int ApplicationRun::ExecuteMainLoop(
         return 1;
     }
 
+    // Initialize PipeWire output for Flatpak compatibility
+    // TODO: Add config option to enable/disable PipeWire output
+    // Commented out to disable auto-initialization of PipeWire output
+    /*
+    if (!managers.camera->InitializePipeWireOutput("SegmeCam Virtual Camera", 640, 480, 30)) {
+        std::cout << "⚠️  Failed to initialize PipeWire output, continuing without it" << std::endl;
+    } else {
+        std::cout << "✅ PipeWire output initialized successfully" << std::endl;
+    }
+    */
+
+    // Virtual camera handles PipeWire streaming automatically
+    // No need for separate PipeWire output initialization
+
     // Initialize frame processing state variables
     int64_t frame_id = 0;
     double fps = 0.0;
@@ -65,15 +79,23 @@ int ApplicationRun::ExecuteMainLoop(
 
     // Main application loop
     while (params.running) {
-        // Process SDL events and UI
-        if (!managers.ui->ProcessEvents(params.running)) {
-            std::cout << "🛑 UI requested exit" << std::endl;
-            break;
-        }
+        try {
+            // Process SDL events and UI
+            if (!managers.ui->ProcessEvents(params.running)) {
+                std::cout << "🛑 UI requested exit" << std::endl;
+                break;
+            }
 
-        // Process one complete frame
-        if (!FrameProcessor::ProcessFrame(params)) {
-            std::cout << "⚠️  Frame processing failed, continuing..." << std::endl;
+            // Process one complete frame
+            if (!FrameProcessor::ProcessFrame(params)) {
+                std::cout << "⚠️  Frame processing failed, continuing..." << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "❌ Exception in main loop: " << e.what() << std::endl;
+            break;
+        } catch (...) {
+            std::cerr << "❌ Unknown exception in main loop" << std::endl;
+            break;
         }
 
         params.frame_count++;

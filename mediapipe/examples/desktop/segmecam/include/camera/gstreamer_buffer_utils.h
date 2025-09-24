@@ -19,4 +19,8 @@ bool ConvertBufferToBgr(const BufferInfo& buffer_info,
                         int stride_hint,
                         cv::Mat& output);
 
+// Convert BGR (cv::Mat) to YUY2 (packed, width*height*2 bytes)
+// Output buffer must be preallocated to width*height*2 bytes
+void BGRToYUY2(const cv::Mat& bgr, uint8_t* yuy2_out);
+
 } // namespace segmecam

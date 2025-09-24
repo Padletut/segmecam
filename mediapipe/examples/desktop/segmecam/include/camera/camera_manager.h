@@ -11,6 +11,7 @@
 #include "gstreamer_buffer_utils.h"
 #include "camera_controls.h"
 #include "gstreamer_utils.h"
+#include "include/camera/pipewire_output.h"
 
 // Forward declarations for GStreamer types (to avoid header dependencies)
 #ifdef __cplusplus
@@ -273,6 +274,13 @@ public:
     int GetCurrentWidth() const { return state_.current_width; }
     int GetCurrentHeight() const { return state_.current_height; }
     int GetCurrentFPS() const { return state_.current_fps; }
+    
+    // PipeWire Output Methods (Flatpak Video Streaming)
+    bool InitializePipeWireOutput(const std::string& stream_name, int width, int height, int fps);
+    void ShutdownPipeWireOutput();
+    bool SendFrameToPipeWire(const cv::Mat& frame);
+    bool IsPipeWireOutputActive() const;
+    const std::string& GetPipeWireStreamName() const;
 
 private:
     // Helper methods
@@ -337,6 +345,9 @@ private:
     std::mutex frame_mutex_;
     std::condition_variable frame_ready_cv_;
     bool frame_ready_ = false;
+    
+    // PipeWire Output
+    std::unique_ptr<PipeWireOutput> pipewire_output_;
     
     // Direct GStreamer camera capture (fallback for Flatpak)
     GstElement* gst_pipeline_ = nullptr;

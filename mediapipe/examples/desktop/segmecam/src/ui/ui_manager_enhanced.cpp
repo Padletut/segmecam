@@ -244,6 +244,12 @@ void UIManager::EndFrame() {
 }
 
 void UIManager::RenderUI() {
+    // Process deferred PipeWire initialization before rendering UI
+    auto* camera_panel = static_cast<CameraPanel*>(FindPanel("Camera"));
+    if (camera_panel) {
+        camera_panel->ProcessDeferredPipeWireInitialization();
+    }
+    
     RenderVideoPreview();
     
     if (show_main_window_) {

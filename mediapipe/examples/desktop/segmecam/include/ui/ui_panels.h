@@ -40,6 +40,9 @@ public:
     
     // Update UI to show the currently loaded default profile
     void UpdateDefaultProfileDisplay();
+    
+    // Process deferred PipeWire initialization
+    void ProcessDeferredPipeWireInitialization();
 
 private:
     void RenderCameraSelection();
@@ -63,6 +66,12 @@ private:
     void RenderVirtualCameraResolutionInfo();
     void RenderVirtualCameraStartButton();
     void RenderVirtualCameraHelp();
+    
+    // PipeWire output controls
+    void RenderPipeWireOutputSection();
+    void RenderPipeWireOutputActive();
+    void RenderPipeWireOutputInactive();
+    void RenderPipeWireOutputHelp();
     
     // Helper methods for camera controls
     void GetControlRanges();
@@ -105,6 +114,12 @@ private:
     // Profile management UI state  
     int ui_profile_idx_ = -1;
     char profile_name_buf_[128] = {0};
+    
+    // PipeWire output UI state
+    bool pipewire_start_requested_ = false;
+    int pipewire_width_ = 640;
+    int pipewire_height_ = 480;
+    int pipewire_fps_ = 30;
     
     // Profile helper methods
     void LoadProfileIntoState(const std::string& profile_name);

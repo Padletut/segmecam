@@ -293,7 +293,20 @@ static bool is_output_device(int fd) {
   v4l2_capability cap{};
   if (ioctl(fd, VIDIOC_QUERYCAP, &cap) != 0) return false;
   uint32_t caps = (cap.device_caps != 0) ? cap.device_caps : cap.capabilities;
-  return (caps & V4L2_CAP_VIDEO_OUTPUT) || (caps & V4L2_CAP_VIDEO_OUTPUT_MPLANE);
+
+  // Check for standard video output capabilities
+  if ((caps & V4L2_CAP_VIDEO_OUTPUT) || (caps & V4L2_CAP_VIDEO_OUTPUT_MPLANE)) {
+    return true;
+  }
+
+  // Special case for v4l2loopback devices which may not have the output capability bits set
+  // but are still valid output devices
+  std::string driver_name = reinterpret_cast<const char*>(cap.driver);
+  if (driver_name == "v4l2 loopback") {
+    return true;
+  }
+
+  return false;
 }
 
 static LoopbackDesc create_loopback_desc(const std::string& path, int fd) {

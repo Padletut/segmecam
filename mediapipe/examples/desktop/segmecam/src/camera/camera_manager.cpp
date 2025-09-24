@@ -380,4 +380,48 @@ void CameraManager::UpdateFPSOptions(const std::string& cam_path, int width, int
 
 // ConvertSampleToBgr implementation moved to camera_gstreamer_conversion.cpp
 
+// PipeWire Output Methods (Flatpak Video Streaming)
+bool CameraManager::InitializePipeWireOutput(const std::string& stream_name, int width, int height, int fps) {
+    if (pipewire_output_) {
+        std::cout << "⚠️  PipeWire output already initialized" << std::endl;
+        return true;
+    }
+
+    pipewire_output_ = std::make_unique<PipeWireOutput>();
+    if (!pipewire_output_->Initialize(stream_name, width, height, fps)) {
+        std::cout << "❌ Failed to initialize PipeWire output stream" << std::endl;
+        pipewire_output_.reset();
+        return false;
+    }
+
+    std::cout << "✅ PipeWire output stream initialized: " << stream_name 
+              << " (" << width << "x" << height << " @ " << fps << " FPS)" << std::endl;
+    return true;
+}
+
+void CameraManager::ShutdownPipeWireOutput() {
+    if (pipewire_output_) {
+        pipewire_output_->Shutdown();
+        pipewire_output_.reset();
+        std::cout << "🛑 PipeWire output stream shut down" << std::endl;
+    }
+}
+
+bool CameraManager::SendFrameToPipeWire(const cv::Mat& frame) {
+    if (!pipewire_output_ || !pipewire_output_->IsActive()) {
+        return false;
+    }
+  //  std::cout << "📺 PipeWire: Sending frame " << frame.cols << "x" << frame.rows << " to stream" << std::endl;
+    return pipewire_output_->SendFrame(frame);
+}
+
+bool CameraManager::IsPipeWireOutputActive() const {
+    return pipewire_output_ && pipewire_output_->IsActive();
+}
+
+const std::string& CameraManager::GetPipeWireStreamName() const {
+    static const std::string empty_string;
+    return pipewire_output_ ? pipewire_output_->GetStreamName() : empty_string;
+}
+
 } // namespace segmecam

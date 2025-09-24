@@ -46,9 +46,8 @@ std::vector<CameraDesc> CameraEnumeration::EnumerateCamerasPortal(const CameraCo
 }
 
 std::vector<LoopbackDesc> CameraEnumeration::EnumerateLoopbackDevices() const {
-    // This would typically enumerate v4l2loopback devices
-    // For now, return empty list as this is handled elsewhere
-    return {};
+    // Call the global enumeration function
+    return ::EnumerateLoopbackDevices();
 }
 
 std::vector<int> CameraEnumeration::EnumerateFPS(const std::string& cam_path, int width, int height) const {

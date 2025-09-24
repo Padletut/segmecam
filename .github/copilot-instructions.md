@@ -19,6 +19,9 @@ SegmeCam uses a **modular manager architecture** at `mediapipe/examples/desktop/
 bazel build -c opt --action_env=PKG_CONFIG_PATH --repo_env=PKG_CONFIG_PATH --cxxopt=-I/usr/include/opencv4 //mediapipe/examples/desktop/segmecam:segmecam
 ./bazel-bin/mediapipe/examples/desktop/segmecam/segmecam
 
+# 🚨 FLATPAK BUILD - USE THIS FOR FLATPAK PACKAGING! 🚨
+./build-flatpak-working.sh
+
 # 🚨 NEVER use manual bazel commands for building the main app! 🚨
 # 🚨 Build script handles all proper paths, arguments, and configurations automatically! 🚨
 

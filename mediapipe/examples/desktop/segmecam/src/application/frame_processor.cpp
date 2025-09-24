@@ -137,12 +137,26 @@ void FrameProcessor::HandleVirtualCameraOutput(
     AppState& app_state,
     const cv::Mat& display_rgb) {
 
-    if (!app_state.vcam.IsOpen() || display_rgb.empty()) {
+    if (display_rgb.empty()) {
         return;
     }
 
-    // Check if frame size matches vcam, reopen if needed
-    if (display_rgb.cols != app_state.vcam.Width() || display_rgb.rows != app_state.vcam.Height()) {
+    // Auto-select first available virtual camera if none is selected and auto-start is enabled
+    if (!app_state.vcam.IsOpen() && app_state.vcam_auto_start) {
+        auto vcam_list = camera_mgr.GetVCamList();
+        if (!vcam_list.empty()) {
+            // Use first available virtual camera
+            app_state.ui_vcam_idx = 0;
+            app_state.virtual_camera_path = vcam_list[0].path;
+            app_state.vcam.Open(vcam_list[0].path, display_rgb.cols, display_rgb.rows);
+            std::cout << "📹 Auto-selected virtual camera: " << vcam_list[0].name << " (" << vcam_list[0].path << ")" << std::endl;
+        } else {
+            return; // No virtual cameras available
+        }
+    }
+
+    // Check if frame size matches vcam, reopen if needed (only if vcam is already open)
+    if (app_state.vcam.IsOpen() && (display_rgb.cols != app_state.vcam.Width() || display_rgb.rows != app_state.vcam.Height())) {
         // Get virtual camera list and reopen with correct size
         auto vcam_list = camera_mgr.GetVCamList();
         if (app_state.ui_vcam_idx >= 0 && app_state.ui_vcam_idx < (int)vcam_list.size()) {
@@ -150,10 +164,25 @@ void FrameProcessor::HandleVirtualCameraOutput(
         }
     }
 
-    // Convert RGB to BGR and write to virtual camera
+    // Convert RGB to BGR for virtual camera and PipeWire output
     cv::Mat display_bgr;
     cv::cvtColor(display_rgb, display_bgr, cv::COLOR_RGB2BGR);
-    app_state.vcam.WriteBGR(display_bgr);
+
+    // Write to virtual camera only if open
+    if (app_state.vcam.IsOpen()) {
+        std::cout << "VCam: About to write frame to vcam" << std::endl;
+        app_state.vcam.WriteBGR(display_bgr);
+    } else {
+      //  std::cout << "VCam: Not open, skipping write" << std::endl;
+    }
+
+    // Send frame to custom PipeWire output for Flatpak compatibility
+    if (camera_mgr.IsPipeWireOutputActive()) {
+        camera_mgr.SendFrameToPipeWire(display_bgr);
+    }
+
+    // Virtual camera automatically creates PipeWire node for GStreamer consumption
+    // Custom PipeWire output provides additional Flatpak-compatible streaming
 }
 
 void FrameProcessor::HandleDroppedFiles(

@@ -38,6 +38,7 @@ struct AppState {
   float auto_scale_last_adjustment = 0.0f;
   uint32_t auto_scale_last_time_ms = 0;
   bool auto_scale_enabled = false;
+  bool vcam_auto_start = false;
   
   // Background mode: 0=None, 1=Blur, 2=Image, 3=Solid Color
   int bg_mode = 1; // Default to Blur mode to show segmentation effects
