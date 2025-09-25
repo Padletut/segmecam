@@ -64,11 +64,11 @@ struct AppState {
   float fx_adv_detail_preserve = 0.18f; // 0..0.5, re-inject hi-freq after upsample
   
   // Wrinkle reduction
-  bool fx_skin_wrinkle = true;
+  bool fx_skin_wrinkle = false;
   float fx_skin_smile_boost = 0.6f;
   float fx_skin_squint_boost = 0.5f;
   float fx_skin_forehead_boost = 0.8f;
-  float fx_skin_wrinkle_gain = 1.5f;
+  float fx_skin_wrinkle_gain = 1.0f;
   bool fx_wrinkle_suppress_lower = true;
   float fx_wrinkle_lower_ratio = 0.45f;
   bool fx_wrinkle_ignore_glasses = true;

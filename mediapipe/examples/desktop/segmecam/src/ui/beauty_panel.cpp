@@ -80,7 +80,7 @@ void BeautyPanel::RenderWrinkleControls() {
         ImGui::Indent();
         
         // Sensitivity & boosts
-        ImGui::SliderFloat("Wrinkle gain", &state_.fx_skin_wrinkle_gain, 0.0f, 8.0f);
+        ImGui::SliderFloat("Wrinkle gain", &state_.fx_skin_wrinkle_gain, 0.0f, 1.0f);
         ImGui::SliderFloat("Smile boost", &state_.fx_skin_smile_boost, 0.0f, 1.0f);
         ImGui::SliderFloat("Squint boost", &state_.fx_skin_squint_boost, 0.0f, 1.0f);
         ImGui::SliderFloat("Forehead boost", &state_.fx_skin_forehead_boost, 0.0f, 2.0f);

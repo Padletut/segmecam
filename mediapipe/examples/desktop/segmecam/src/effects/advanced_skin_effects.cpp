@@ -546,18 +546,22 @@ void ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceRegions& fr,
   // Phase 2: Extract expressions and build boosts
   FacialExpressionMetrics metrics = ExtractFacialExpressions(lms, frame_bgr.cols, frame_bgr.rows);
   cv::Mat expression_boost = BuildExpressionBoostMap(metrics, frame_bgr.size(), config.expression, fr, frame_bgr);
-  cv::Mat wrinkle_boost = BuildWrinkleBoostMap(frame_bgr, fr, metrics, config.wrinkle, Lf, base);
+  cv::Mat wrinkle_boost = config.wrinkle_enabled ? 
+    BuildWrinkleBoostMap(frame_bgr, fr, metrics, config.wrinkle, Lf, base) : 
+    cv::Mat::zeros(frame_bgr.size(), CV_32F);
 
   // Phase 3: Combine and apply boosts
   cv::Mat face_gate_u8;
   cv::compare(weight, 1e-6, face_gate_u8, cv::CMP_GT);
   cv::Mat face_gate;
   face_gate_u8.convertTo(face_gate, CV_32F, 1.0/255.0);
-  cv::Mat boost_final = CombineBoostMaps(expression_boost, wrinkle_boost, config.baseline_boost, face_gate);
+  // Only apply baseline boost when wrinkle-aware is enabled
+  float effective_baseline = config.wrinkle_enabled ? config.baseline_boost : 0.0f;
+  cv::Mat boost_final = CombineBoostMaps(expression_boost, wrinkle_boost, effective_baseline, face_gate);
 
   // Phase 4: Apply frequency separation
   ApplyFrequencySeparation(Lf, weight, amount, config.boost_gain, boost_final,
-                          config.wrinkle_preview, config.neg_atten_cap);
+                          config.wrinkle_enabled && config.wrinkle_preview, config.neg_atten_cap);
 
   // Phase 5: Convert back to BGR
   cv::Mat lab;

@@ -14,7 +14,7 @@ struct BeautyState {
   float solid_color[3] = {0.0f, 0.0f, 0.0f}; // RGB 0..1 for solid background
 
   // Skin smoothing core
-  bool fx_skin = false;
+  bool fx_skin = true;
   bool fx_skin_adv = true;
   float fx_skin_amount = 0.5f;
   float fx_skin_radius = 6.0f;
@@ -22,11 +22,11 @@ struct BeautyState {
   float fx_skin_edge = 12.0f;
 
   // Wrinkle-aware
-  bool fx_skin_wrinkle = true;
+  bool fx_skin_wrinkle = false;
   float fx_skin_smile_boost = 0.5f;
   float fx_skin_squint_boost = 0.5f;
   float fx_skin_forehead_boost = 0.8f;
-  float fx_skin_wrinkle_gain = 1.5f;
+  float fx_skin_wrinkle_gain = 1.0f;
   bool fx_wrinkle_suppress_lower = true;
   float fx_wrinkle_lower_ratio = 0.45f;
   bool fx_wrinkle_ignore_glasses = true;

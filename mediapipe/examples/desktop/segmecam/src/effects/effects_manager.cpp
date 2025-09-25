@@ -41,6 +41,7 @@ SkinSmoothingConfig EffectsManager::CreateSkinSmoothingConfig(float scale) const
     config.expression.forehead_boost = beauty_state_.fx_skin_forehead_boost;
     config.expression.forehead_margin_px = 10.0f * scale;
     config.boost_gain = beauty_state_.fx_skin_wrinkle_gain;
+    config.wrinkle_enabled = beauty_state_.fx_skin_wrinkle;
     config.wrinkle.region_gates.suppress_lower_face = beauty_state_.fx_wrinkle_suppress_lower;
     config.wrinkle.region_gates.lower_face_ratio = beauty_state_.fx_wrinkle_lower_ratio;
     config.wrinkle.region_gates.ignore_glasses = beauty_state_.fx_wrinkle_ignore_glasses;
