@@ -136,6 +136,56 @@ public:
 
 private:
   /**
+   * @brief Check if already initialized with same parameters
+   * @param stream_name Stream name to check
+   * @param width Width to check
+   * @param height Height to check
+   * @param fps FPS to check
+   * @return true if already initialized with same params
+   */
+  bool check_already_initialized(const std::string& stream_name, int width, int height, int fps);
+
+  /**
+   * @brief Validate initialization parameters
+   * @param width Frame width
+   * @param height Frame height
+   * @param fps Frame rate
+   * @param stream_name Stream name
+   * @return true if parameters are valid
+   */
+  bool validate_parameters(int width, int height, int fps, const std::string& stream_name);
+
+  /**
+   * @brief Set the stream parameters
+   * @param stream_name Stream name
+   * @param width Frame width
+   * @param height Frame height
+   * @param fps Frame rate
+   */
+  void set_parameters(const std::string& stream_name, int width, int height, int fps);
+
+  /**
+   * @brief Validate initial state and frame for SendFrame
+   * @param frame The frame to validate
+   * @return true if valid
+   */
+  bool validate_state_and_frame(const cv::Mat& frame);
+
+  /**
+   * @brief Validate frame properties (dimensions and channels)
+   * @param frame The frame to validate
+   * @return true if valid
+   */
+  bool validate_frame_properties(const cv::Mat& frame);
+
+  /**
+   * @brief Store frame for PipeWire callback
+   * @param frame The frame to store
+   * @return true if stored successfully
+   */
+  bool store_frame(const cv::Mat& frame);
+
+  /**
    * @brief Create PipeWire stream properties
    * @return Properties object or nullptr on failure
    */

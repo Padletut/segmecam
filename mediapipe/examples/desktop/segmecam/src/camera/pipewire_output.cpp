@@ -49,7 +49,7 @@ static void on_stream_state_changed(void* data, enum pw_stream_state old_state,
   if (!data) return;
 
   auto* events = static_cast<segmecam::PipeWireEvents*>(data);
-  if (!events || !events->output) return;
+  if (!events->output) return;
 
   const char* old_str = pw_stream_state_as_string(old_state);
   const char* new_str = pw_stream_state_as_string(new_state);
@@ -233,8 +233,15 @@ static cv::Mat get_frame_to_send(segmecam::PipeWireOutput* self, int process_cou
 }
 
 // Helper function to validate frame and format
-static bool validate_frame_and_format(segmecam::PipeWireOutput* self, const cv::Mat& frame, pw_buffer* buffer, int process_count) {
-  // Check if format has been negotiated
+// Helper functions for validate_frame_and_format refactoring
+static bool check_format_negotiated(segmecam::PipeWireOutput* self, pw_buffer* buffer, int process_count);
+static bool check_buffers_ready(segmecam::PipeWireOutput* self, pw_buffer* buffer, int process_count);
+static bool validate_frame_dimensions(segmecam::PipeWireOutput* self, const cv::Mat& frame, pw_buffer* buffer);
+static size_t calculate_expected_size(const cv::Mat& frame, spa_video_info_raw format);
+static bool validate_buffer_size(segmecam::PipeWireOutput* self, pw_buffer* buffer, size_t expected_size);
+
+// Helper function implementations
+static bool check_format_negotiated(segmecam::PipeWireOutput* self, pw_buffer* buffer, int process_count) {
   if (!self->IsFormatNegotiated()) {
     if (process_count <= 3) {
       std::cout << "PipeWire process callback: format not negotiated yet, skipping frame" << std::endl;
@@ -242,8 +249,10 @@ static bool validate_frame_and_format(segmecam::PipeWireOutput* self, const cv::
     pw_stream_queue_buffer(self->GetStream(), buffer);
     return false;
   }
+  return true;
+}
 
-  // Check if buffers are ready
+static bool check_buffers_ready(segmecam::PipeWireOutput* self, pw_buffer* buffer, int process_count) {
   if (!self->AreBuffersReady()) {
     if (process_count <= 3) {
       std::cout << "PipeWire process callback: buffers not ready yet (AreBuffersReady()=" << self->AreBuffersReady() << "), skipping frame" << std::endl;
@@ -251,8 +260,10 @@ static bool validate_frame_and_format(segmecam::PipeWireOutput* self, const cv::
     pw_stream_queue_buffer(self->GetStream(), buffer);
     return false;
   }
+  return true;
+}
 
-  // Validate frame dimensions against negotiated format
+static bool validate_frame_dimensions(segmecam::PipeWireOutput* self, const cv::Mat& frame, pw_buffer* buffer) {
   spa_video_info_raw format = self->GetNegotiatedFormat();
   if (frame.cols != (int)format.size.width || frame.rows != (int)format.size.height) {
     std::cerr << "PipeWire process callback: frame dimensions mismatch - frame: "
@@ -261,33 +272,43 @@ static bool validate_frame_and_format(segmecam::PipeWireOutput* self, const cv::
     pw_stream_queue_buffer(self->GetStream(), buffer);
     return false;
   }
+  return true;
+}
 
-  // Calculate expected size based on negotiated format
-  size_t expected_size = 0;
+static size_t calculate_expected_size(const cv::Mat& frame, spa_video_info_raw format) {
   switch (format.format) {
     case SPA_VIDEO_FORMAT_YUY2:
     case SPA_VIDEO_FORMAT_UYVY:
-      expected_size = frame.cols * frame.rows * 2;
-      break;
+      return frame.cols * frame.rows * 2;
     case SPA_VIDEO_FORMAT_BGR:
-      expected_size = frame.total() * frame.elemSize();
-      break;
+      return frame.total() * frame.elemSize();
     case SPA_VIDEO_FORMAT_RGB:
     case SPA_VIDEO_FORMAT_BGRx:
     case SPA_VIDEO_FORMAT_RGBx:
-      expected_size = frame.cols * frame.rows * 4;
-      break;
+      return frame.cols * frame.rows * 4;
     default:
-      expected_size = frame.total() * frame.elemSize();
-      break;
+      return frame.total() * frame.elemSize();
   }
+}
 
+static bool validate_buffer_size(segmecam::PipeWireOutput* self, pw_buffer* buffer, size_t expected_size) {
   struct spa_buffer* spa_buf = buffer->buffer;
   if (spa_buf->datas[0].maxsize < expected_size) {
     std::cerr << "PipeWire buffer too small: " << spa_buf->datas[0].maxsize << " < " << expected_size << std::endl;
     pw_stream_queue_buffer(self->GetStream(), buffer);
     return false;
   }
+  return true;
+}
+
+static bool validate_frame_and_format(segmecam::PipeWireOutput* self, const cv::Mat& frame, pw_buffer* buffer, int process_count) {
+  if (!check_format_negotiated(self, buffer, process_count)) return false;
+  if (!check_buffers_ready(self, buffer, process_count)) return false;
+  if (!validate_frame_dimensions(self, frame, buffer)) return false;
+
+  spa_video_info_raw format = self->GetNegotiatedFormat();
+  size_t expected_size = calculate_expected_size(frame, format);
+  if (!validate_buffer_size(self, buffer, expected_size)) return false;
 
   return true;
 }
@@ -339,28 +360,36 @@ static void set_buffer_metadata(pw_buffer* buffer, size_t copy_size, int stride)
   }
 }
 
-// Helper function to convert YUY2 frame
-static bool convert_yuy2_frame(const cv::Mat& frame, pw_buffer* buffer, int process_count) {
-  struct spa_buffer* spa_buf = buffer->buffer;
-  size_t copy_size = frame.cols * frame.rows * 2;
-  int stride = frame.cols * 2;
+// Helper functions for convert_yuy2_frame refactoring
+static bool validate_yuy2_buffer_size(struct spa_buffer* spa_buf, size_t copy_size);
+static void log_yuy2_conversion_info(int process_count, size_t copy_size, size_t maxsize, int stride, const cv::Mat& frame);
+static void perform_yuy2_conversion(const cv::Mat& frame, struct spa_buffer* spa_buf);
+static void log_yuy2_first_bytes(int process_count, void* data, size_t copy_size);
 
+// Helper function to validate YUY2 buffer size
+static bool validate_yuy2_buffer_size(struct spa_buffer* spa_buf, size_t copy_size) {
   if (spa_buf->datas[0].maxsize < copy_size) {
     std::cerr << "PipeWire buffer too small for YUY2 frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
     return false;
   }
+  return true;
+}
 
+// Helper function to log YUY2 conversion info
+static void log_yuy2_conversion_info(int process_count, size_t copy_size, size_t maxsize, int stride, const cv::Mat& frame) {
   if (process_count <= 3) {
-    std::cout << "[YUY2] copy_size=" << copy_size << ", maxsize=" << spa_buf->datas[0].maxsize << ", stride=" << stride << std::endl;
+    std::cout << "[YUY2] copy_size=" << copy_size << ", maxsize=" << maxsize << ", stride=" << stride << std::endl;
     std::cout << "[YUY2] frame type=" << frame.type() << ", step=" << frame.step << ", cols=" << frame.cols << ", rows=" << frame.rows << std::endl;
   }
+}
 
-  memset(spa_buf->datas[0].data, 0x80, copy_size);
-
+// Helper function to perform YUY2 conversion
+static void perform_yuy2_conversion(const cv::Mat& frame, struct spa_buffer* spa_buf) {
   if (frame.type() == CV_8UC3 && frame.isContinuous() && frame.cols % 2 == 0) {
     segmecam::BGRToYUY2(frame, static_cast<uint8_t*>(spa_buf->datas[0].data));
   } else {
     uint8_t* yuy2 = static_cast<uint8_t*>(spa_buf->datas[0].data);
+    size_t copy_size = frame.cols * frame.rows * 2;
     for (size_t i = 0; i < copy_size; i += 4) {
       yuy2[i+0] = 128; // Y0
       yuy2[i+1] = 128; // U
@@ -368,15 +397,35 @@ static bool convert_yuy2_frame(const cv::Mat& frame, pw_buffer* buffer, int proc
       yuy2[i+3] = 128; // V
     }
   }
+}
 
+// Helper function to log YUY2 first bytes
+static void log_yuy2_first_bytes(int process_count, void* data, size_t copy_size) {
   if (process_count <= 3) {
-    uint8_t* yuy2 = static_cast<uint8_t*>(spa_buf->datas[0].data);
+    uint8_t* yuy2 = static_cast<uint8_t*>(data);
     std::cout << "[YUY2] First 16 bytes: ";
     for (int i = 0; i < 16 && i < (int)copy_size; ++i) {
       std::cout << std::hex << (int)yuy2[i] << " ";
     }
     std::cout << std::dec << std::endl;
   }
+}
+
+// Helper function to convert YUY2 frame
+static bool convert_yuy2_frame(const cv::Mat& frame, pw_buffer* buffer, int process_count) {
+  struct spa_buffer* spa_buf = buffer->buffer;
+  size_t copy_size = frame.cols * frame.rows * 2;
+  int stride = frame.cols * 2;
+
+  if (!validate_yuy2_buffer_size(spa_buf, copy_size)) return false;
+
+  log_yuy2_conversion_info(process_count, copy_size, spa_buf->datas[0].maxsize, stride, frame);
+
+  memset(spa_buf->datas[0].data, 0x80, copy_size);
+
+  perform_yuy2_conversion(frame, spa_buf);
+
+  log_yuy2_first_bytes(process_count, spa_buf->datas[0].data, copy_size);
 
   set_buffer_metadata(buffer, copy_size, stride);
   return true;
@@ -456,7 +505,7 @@ static void on_stream_format_changed(void* data, uint32_t id, const struct spa_p
   if (!data) return;
 
   auto* events = static_cast<segmecam::PipeWireEvents*>(data);
-  if (!events || !events->output) return;
+  if (!events->output) return;
 
   auto* self = events->output;
 
@@ -532,20 +581,21 @@ PipeWireOutput::~PipeWireOutput() {
   Shutdown();
 }
 
-bool PipeWireOutput::Initialize(const std::string& stream_name, int width, int height, int fps) {
-  // If already initialized with the same parameters, just return success
+bool PipeWireOutput::check_already_initialized(const std::string& stream_name, int width, int height, int fps) {
   if (initialized_ && stream_name_ == stream_name && width_ == width && height_ == height && fps_ == fps) {
     std::cout << "PipeWire output already initialized with matching parameters, skipping re-initialization" << std::endl;
-    return true;
+    return false;  // Don't proceed with initialization
   }
 
-  // If initialized with different parameters, we need to shut down first
   if (initialized_) {
     std::cout << "PipeWire output already initialized with different parameters, shutting down first..." << std::endl;
     Shutdown();
   }
 
-  // Validate parameters
+  return true;  // Proceed with initialization
+}
+
+bool PipeWireOutput::validate_parameters(int width, int height, int fps, const std::string& stream_name) {
   if (width <= 0 || height <= 0 || fps <= 0) {
     std::cerr << "Invalid PipeWire parameters: " << width << "x" << height << "@" << fps << "fps" << std::endl;
     return false;
@@ -556,19 +606,33 @@ bool PipeWireOutput::Initialize(const std::string& stream_name, int width, int h
     return false;
   }
 
+  return true;
+}
+
+void PipeWireOutput::set_parameters(const std::string& stream_name, int width, int height, int fps) {
   stream_name_ = stream_name;
   width_ = width;
   height_ = height;
   fps_ = fps;
 
   std::cout << "Initializing PipeWire output: " << stream_name << " (" << width << "x" << height << "@" << fps << "fps)" << std::endl;
+}
+
+bool PipeWireOutput::Initialize(const std::string& stream_name, int width, int height, int fps) {
+  if (!check_already_initialized(stream_name, width, height, fps)) {
+    return true;  // Already initialized with same params
+  }
+
+  if (!validate_parameters(width, height, fps, stream_name)) {
+    return false;
+  }
+
+  set_parameters(stream_name, width, height, fps);
 
   if (!CreatePipeWireStream()) {
     std::cerr << "Failed to create PipeWire stream" << std::endl;
     return false;
   }
-
-  // Thread loop is now started in CreatePipeWireStream()
 
   initialized_ = true;
   active_ = true;
@@ -615,44 +679,54 @@ void PipeWireOutput::Shutdown() {
   std::cout << "PipeWire output shutdown complete" << std::endl;
 }
 
-bool PipeWireOutput::SendFrame(const cv::Mat& frame) {
-  if (!active_ || !initialized_ || frame.empty()) {
-    return false;
-  }
+bool PipeWireOutput::validate_state_and_frame(const cv::Mat& frame) {
+  return active_ && initialized_ && !frame.empty();
+}
 
-  // Validate frame dimensions
+bool PipeWireOutput::validate_frame_properties(const cv::Mat& frame) {
   if (frame.cols != width_ || frame.rows != height_) {
     std::cerr << "Frame dimensions mismatch: expected " << width_ << "x" << height_
               << ", got " << frame.cols << "x" << frame.rows << std::endl;
     return false;
   }
 
-  // Validate frame format
   if (frame.channels() != 3 && frame.channels() != 4) {
     std::cerr << "Unsupported frame format: " << frame.channels() << " channels" << std::endl;
     return false;
   }
 
-  try {
-    // Store frame for PipeWire callback (keep original BGR format)
-    cv::Mat frame_to_store = frame.clone();
+  return true;
+}
 
-    // Store frame for PipeWire callback
+bool PipeWireOutput::store_frame(const cv::Mat& frame) {
+  try {
+    cv::Mat frame_to_store = frame.clone();
     {
       std::unique_lock<std::mutex> lock(frame_mutex_);
       current_frame_ = frame_to_store;
       frame_ready_ = true;
     }
-
     frame_cv_.notify_one();
     return true;
   } catch (const std::exception& e) {
-    std::cerr << "❌ Exception in PipeWireOutput::SendFrame: " << e.what() << std::endl;
+    std::cerr << "❌ Exception in PipeWireOutput::store_frame: " << e.what() << std::endl;
     return false;
   } catch (...) {
-    std::cerr << "❌ Unknown exception in PipeWireOutput::SendFrame" << std::endl;
+    std::cerr << "❌ Unknown exception in PipeWireOutput::store_frame" << std::endl;
     return false;
   }
+}
+
+bool PipeWireOutput::SendFrame(const cv::Mat& frame) {
+  if (!validate_state_and_frame(frame)) {
+    return false;
+  }
+
+  if (!validate_frame_properties(frame)) {
+    return false;
+  }
+
+  return store_frame(frame);
 }
 
 bool PipeWireOutput::CreatePipeWireStream() {
