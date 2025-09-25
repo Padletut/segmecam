@@ -1,4 +1,5 @@
 #include "include/camera/pipewire_output.h"
+#include "include/camera/gstreamer_buffer_utils.h"
 
 #include <iostream>
 #include <cstring>
@@ -9,480 +10,508 @@
 #include <spa/param/buffers.h>
 #include <spa/pod/builder.h>
 #include <spa/param/param.h>
+static void log_buffer_info(pw_buffer* buffer, int& process_count) {
+  if (process_count < 3) {
+    struct spa_buffer* spa_buf = buffer->buffer;
+    std::cout << "PipeWire buffer info: n_datas=" << spa_buf->n_datas
+              << ", datas[0].maxsize=" << spa_buf->datas[0].maxsize << std::endl;
+    std::cout << "PipeWire process callback #" << process_count << " - buffer valid" << std::endl;
+    process_count++;
+  }
+}
 #include "mediapipe/framework/port/opencv_imgproc_inc.h"
-#include "camera/gstreamer_buffer_utils.h"
+#include <opencv2/opencv.hpp>
+// Helper functions for frame conversion
+static bool convert_yuy2_frame(const cv::Mat& frame, pw_buffer* buffer, int process_count);
+static bool convert_bgr_frame(const cv::Mat& frame, pw_buffer* buffer);
+static bool convert_rgb_frame(const cv::Mat& frame, pw_buffer* buffer);
+static bool convert_bgrx_frame(const cv::Mat& frame, pw_buffer* buffer);
+static bool convert_rgbx_frame(const cv::Mat& frame, pw_buffer* buffer);
 
 // Static callback functions
+
+// Forward declarations for helper functions
+static void handle_format_parameter(segmecam::PipeWireOutput* self, const struct spa_pod* param);
+static void parse_video_format(segmecam::PipeWireOutput* self, const struct spa_pod* param);
+static void dump_param_structure(const struct spa_pod* param);
+static void dump_spa_pod(const struct spa_pod* param);
+
+// Helper functions for on_stream_process refactoring
+static bool validate_process_callback_data(void* data, segmecam::PipeWireOutput*& self);
+static pw_buffer* dequeue_and_validate_buffer(segmecam::PipeWireOutput* self);
+static cv::Mat get_frame_to_send(segmecam::PipeWireOutput* self, int process_count);
+static bool validate_frame_and_format(segmecam::PipeWireOutput* self, const cv::Mat& frame, pw_buffer* buffer, int process_count);
+static bool convert_frame_to_buffer(segmecam::PipeWireOutput* self, const cv::Mat& frame, pw_buffer* buffer, int process_count);
+static void set_buffer_metadata(pw_buffer* buffer, size_t copy_size, int stride);
+
 static void on_stream_state_changed(void* data, enum pw_stream_state old_state,
                                    enum pw_stream_state new_state, const char* error) {
-  std::cout << "🔄 PipeWire state callback: ENTER" << std::endl;
-  try {
-    std::cout << "🔄 PipeWire state callback: casting data to events" << std::endl;
-    segmecam::PipeWireEvents* events = static_cast<segmecam::PipeWireEvents*>(data);
-    std::cout << "🔄 PipeWire state callback: events=" << static_cast<void*>(events) << std::endl;
-    if (!events) {
-      std::cerr << "❌ PipeWire state callback: events is null" << std::endl;
-      return;
-    }
-    std::cout << "🔄 PipeWire state callback: checking events->output" << std::endl;
-    if (!events->output) {
-      std::cerr << "❌ PipeWire state callback: events->output is null" << std::endl;
-      return;
-    }
+  if (!data) return;
 
-    segmecam::PipeWireOutput* self = events->output;
-    std::cout << "🔄 PipeWire state callback: self=" << static_cast<void*>(self) << std::endl;
-    if (!self) {
-      std::cerr << "❌ PipeWire state callback: self is null" << std::endl;
-      return;
-    }
+  auto* events = static_cast<segmecam::PipeWireEvents*>(data);
+  if (!events || !events->output) return;
 
-    std::cout << "🔄 PipeWire state callback: getting state strings" << std::endl;
-    const char* old_str = pw_stream_state_as_string(old_state);
-    const char* new_str = pw_stream_state_as_string(new_state);
-    std::cout << "PipeWire stream state changed: " << old_str << " -> " << new_str << std::endl;
+  const char* old_str = pw_stream_state_as_string(old_state);
+  const char* new_str = pw_stream_state_as_string(new_state);
+  std::cout << "PipeWire stream state changed: " << old_str << " -> " << new_str << std::endl;
 
-    if (error) {
-      std::cerr << "PipeWire stream error: " << error << std::endl;
-    }
+  if (error) {
+    std::cerr << "PipeWire stream error: " << error << std::endl;
+  }
 
-    // Log when stream becomes active
-    if (new_state == PW_STREAM_STATE_STREAMING) {
-      std::cout << "PipeWire stream is now active and should be discoverable by OBS Studio" << std::endl;
-    } else if (new_state == PW_STREAM_STATE_ERROR) {
-      std::cerr << "PipeWire stream entered ERROR state!" << std::endl;
-    } else if (new_state == PW_STREAM_STATE_UNCONNECTED) {
-      std::cout << "PipeWire stream is unconnected" << std::endl;
-    } else if (new_state == PW_STREAM_STATE_CONNECTING) {
-      std::cout << "PipeWire stream is connecting..." << std::endl;
-    } else if (new_state == PW_STREAM_STATE_PAUSED) {
-      std::cout << "PipeWire stream is paused - waiting for consumer to connect" << std::endl;
-    }
-    std::cout << "🔄 PipeWire state callback: COMPLETED" << std::endl;
-  } catch (const std::exception& e) {
-    std::cerr << "❌ Exception in PipeWire state callback: " << e.what() << std::endl;
-  } catch (...) {
-    std::cerr << "❌ Unknown exception in PipeWire state callback" << std::endl;
+  // Log state-specific messages
+  if (new_state == PW_STREAM_STATE_STREAMING) {
+    std::cout << "PipeWire stream is now active and should be discoverable by OBS Studio" << std::endl;
   }
 }
 
-static void on_stream_format_changed(void* data, uint32_t id, const struct spa_pod* param) {
-  std::cout << "🔄 PipeWire param callback: ENTER - id=" << id << std::endl;
-  try {
-  //  std::cout << "🔄 PipeWire param callback: casting data to events" << std::endl;
-    segmecam::PipeWireEvents* events = static_cast<segmecam::PipeWireEvents*>(data);
-  //  std::cout << "🔄 PipeWire param callback: events=" << (void*)events << std::endl;
-    if (!events) {
-   //   std::cerr << "❌ PipeWire param callback: events is null" << std::endl;
-      return;
-    }
-   // std::cout << "🔄 PipeWire param callback: checking events->output" << std::endl;
-    if (!events->output) {
-   //   std::cerr << "❌ PipeWire param callback: events->output is null" << std::endl;
-      return;
-    }
+// Helper function to handle format parameter parsing
+static void handle_format_parameter(segmecam::PipeWireOutput* self, const struct spa_pod* param) {
+  if (!param) return;
 
-    segmecam::PipeWireOutput* self = events->output;
-   // std::cout << "🔄 PipeWire param callback: self=" << (void*)self << std::endl;
-    if (!self) {
-   //   std::cerr << "❌ PipeWire param callback: self is null" << std::endl;
-      return;
-    }
+  // Parse the negotiated format
+  uint32_t media_type, media_subtype;
+  std::cout << "[PipeWire param callback] spa_format_parse param=" << static_cast<const void*>(param) << std::endl;
+  std::cout << "[PipeWire param callback] param->type=" << param->type << ", param->size=" << param->size << std::endl;
+  int parse_result = spa_format_parse(param, &media_type, &media_subtype);
+  std::cout << "[PipeWire param callback] spa_format_parse result=" << parse_result << std::endl;
 
-   // std::cout << "🔄 PipeWire param callback: checking param id" << std::endl;
-    // Only handle format parameters
-    std::cout << "[PipeWire param callback] Received param id=" << id << " (SPA_PARAM_Format=" << SPA_PARAM_Format << ", SPA_PARAM_Buffers=" << SPA_PARAM_Buffers << ")" << std::endl;
-
-    // For output streams with PW_STREAM_FLAG_MAP_BUFFERS, buffers should be ready when we get any param
-    // This is a workaround since format parsing is failing
-    std::cout << "[PipeWire param callback] Marking buffers as ready (workaround for output stream)" << std::endl;
-    self->SetBuffersReady(true);
-
-    // Handle different parameter types
-    if (id == SPA_PARAM_Buffers) {
-      std::cout << "[PipeWire param callback] Buffers allocated - marking as ready" << std::endl;
-      self->SetBuffersReady(true);
-      return;
-    }
-    if (id != SPA_PARAM_Format) {
-      std::cout << "[PipeWire param callback] Ignoring param id " << id << " (not format or buffers)" << std::endl;
-      return;
-    }
-
-   // std::cout << "🔄 PipeWire param callback: checking param pointer" << std::endl;
-    if (!param) {
-   //   std::cerr << "PipeWire param callback: param is null" << std::endl;
-      return;
-    }
-
-   // std::cout << "🔄 PipeWire param callback: parsing format" << std::endl;
-    // Parse the negotiated format
-    uint32_t media_type, media_subtype;
-    std::cout << "[PipeWire param callback] spa_format_parse param=" << static_cast<const void*>(param) << std::endl;
-    std::cout << "[PipeWire param callback] param->type=" << param->type << ", param->size=" << param->size << std::endl;
-    int parse_result = spa_format_parse(param, &media_type, &media_subtype);
-    std::cout << "[PipeWire param callback] spa_format_parse result=" << parse_result << std::endl;
-    if (parse_result < 0) {
-        std::cerr << "[PipeWire param callback] ERROR: spa_format_parse failed (result=" << parse_result << "), param type=" << param->type << std::endl;
-        // Try to dump the param structure
-        std::cerr << "[PipeWire param callback] Dumping param structure:" << std::endl;
-        std::cerr << "  type: " << param->type << std::endl;
-        std::cerr << "  size: " << param->size << std::endl;
-        if (param->size > 0 && param->size <= 256) {
-            const uint8_t* data = reinterpret_cast<const uint8_t*>(param);
-            std::cerr << "  raw bytes: ";
-            for (size_t i = 0; i < param->size && i < 32; ++i) {
-                std::cerr << std::hex << (int)data[i] << " ";
-            }
-            std::cerr << std::dec << std::endl;
-        }
-        return;
-    }
-    std::cout << "PipeWire negotiated format - media_type: " << media_type << ", media_subtype: " << media_subtype << std::endl;
-
-    // For video formats, parse additional parameters
-    if (media_type == SPA_MEDIA_TYPE_video) {
-        spa_video_info_raw video_info = {};
-        int raw_parse_result = spa_format_video_raw_parse(param, &video_info);
-        if (raw_parse_result == 0) {
-            std::cout << "PipeWire negotiated video format:" << std::endl;
-            std::cout << "  Format: " << video_info.format << std::endl;
-            std::cout << "  Size: " << video_info.size.width << "x" << video_info.size.height << std::endl;
-            std::cout << "  Framerate: " << video_info.framerate.num << "/" << video_info.framerate.denom << " fps" << std::endl;
-            // Store the negotiated format for use in process callback
-            self->SetNegotiatedFormat(video_info);
-            std::cout << "PipeWire format stored for frame processing" << std::endl;
-            // For output streams with PW_STREAM_FLAG_MAP_BUFFERS, buffers should be ready after format negotiation
-            self->SetBuffersReady(true);
-            std::cout << "PipeWire buffers marked as ready (output stream with MAP_BUFFERS)" << std::endl;
-        } else {
-            std::cerr << "[PipeWire param callback] ERROR: spa_format_video_raw_parse failed (result=" << raw_parse_result << ")" << std::endl;
-            // Print the raw param pod for debugging
-            std::cerr << "[PipeWire param callback] Dumping spa_pod (first 64 bytes): ";
-            const uint8_t* pod_bytes = reinterpret_cast<const uint8_t*>(param);
-            for (int i = 0; i < 64 && i < (int)param->size; ++i) {
-                std::cerr << std::hex << (int)pod_bytes[i] << " ";
-            }
-            std::cerr << std::dec << std::endl;
-            // Fallback: assume YUY2 640x480 30fps since that's what GStreamer negotiated
-            std::cerr << "[PipeWire param callback] Using fallback format: YUY2 640x480 30fps" << std::endl;
-            spa_video_info_raw fallback = {};
-            fallback.format = SPA_VIDEO_FORMAT_YUY2;
-            fallback.size.width = 640;
-            fallback.size.height = 480;
-            fallback.framerate.num = 30;
-            fallback.framerate.denom = 1;
-            self->SetNegotiatedFormat(fallback);
-            std::cout << "PipeWire fallback format stored for frame processing" << std::endl;
-        }
-    }
-    std::cout << "PipeWire param callback completed" << std::endl;
-  } catch (const std::exception& e) {
-    std::cerr << "❌ Exception in PipeWire param callback: " << e.what() << std::endl;
-  } catch (...) {
-    std::cerr << "❌ Unknown exception in PipeWire param callback" << std::endl;
+  if (parse_result < 0) {
+    std::cerr << "[PipeWire param callback] ERROR: spa_format_parse failed (result=" << parse_result << "), param type=" << param->type << std::endl;
+    dump_param_structure(param);
+    return;
   }
+
+  std::cout << "PipeWire negotiated format - media_type: " << media_type << ", media_subtype: " << media_subtype << std::endl;
+
+  // For video formats, parse additional parameters
+  if (media_type == SPA_MEDIA_TYPE_video) {
+    parse_video_format(self, param);
+  }
+}
+
+// Helper function to parse video format details
+static void parse_video_format(segmecam::PipeWireOutput* self, const struct spa_pod* param) {
+  spa_video_info_raw video_info = {};
+  int raw_parse_result = spa_format_video_raw_parse(param, &video_info);
+
+  if (raw_parse_result == 0) {
+    std::cout << "PipeWire negotiated video format:" << std::endl;
+    std::cout << "  Format: " << video_info.format << std::endl;
+    std::cout << "  Size: " << video_info.size.width << "x" << video_info.size.height << std::endl;
+    std::cout << "  Framerate: " << video_info.framerate.num << "/" << video_info.framerate.denom << " fps" << std::endl;
+
+    // Store the negotiated format for use in process callback
+    self->SetNegotiatedFormat(video_info);
+    std::cout << "PipeWire format stored for frame processing" << std::endl;
+
+    // For output streams with PW_STREAM_FLAG_MAP_BUFFERS, buffers should be ready after format negotiation
+    self->SetBuffersReady(true);
+    std::cout << "PipeWire buffers marked as ready (output stream with MAP_BUFFERS)" << std::endl;
+  } else {
+    std::cerr << "[PipeWire param callback] ERROR: spa_format_video_raw_parse failed (result=" << raw_parse_result << ")" << std::endl;
+    dump_spa_pod(param);
+
+    // Fallback: assume YUY2 640x480 30fps since that's what GStreamer negotiated
+    std::cerr << "[PipeWire param callback] Using fallback format: YUY2 640x480 30fps" << std::endl;
+    spa_video_info_raw fallback = {};
+    fallback.format = SPA_VIDEO_FORMAT_YUY2;
+    fallback.size.width = 640;
+    fallback.size.height = 480;
+    fallback.framerate.num = 30;
+    fallback.framerate.denom = 1;
+    self->SetNegotiatedFormat(fallback);
+    std::cout << "PipeWire fallback format stored for frame processing" << std::endl;
+  }
+}
+
+// Helper function to dump param structure for debugging
+static void dump_param_structure(const struct spa_pod* param) {
+  std::cerr << "[PipeWire param callback] Dumping param structure:" << std::endl;
+  std::cerr << "  type: " << param->type << std::endl;
+  std::cerr << "  size: " << param->size << std::endl;
+  if (param->size > 0 && param->size <= 256) {
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(param);
+    std::cerr << "  raw bytes: ";
+    for (size_t i = 0; i < param->size && i < 32; ++i) {
+      std::cerr << std::hex << (int)data[i] << " ";
+    }
+    std::cerr << std::dec << std::endl;
+  }
+}
+
+// Helper function to dump spa_pod for debugging
+static void dump_spa_pod(const struct spa_pod* param) {
+  std::cerr << "[PipeWire param callback] Dumping spa_pod (first 64 bytes): ";
+  const uint8_t* pod_bytes = reinterpret_cast<const uint8_t*>(param);
+  for (int i = 0; i < 64 && i < (int)param->size; ++i) {
+    std::cerr << std::hex << (int)pod_bytes[i] << " ";
+  }
+  std::cerr << std::dec << std::endl;
+}
+
+// Helper function to validate process callback data
+static bool validate_process_callback_data(void* data, segmecam::PipeWireOutput*& self) {
+  segmecam::PipeWireEvents* events = static_cast<segmecam::PipeWireEvents*>(data);
+  if (!events) {
+    std::cerr << "❌ PipeWire process callback: events is null" << std::endl;
+    return false;
+  }
+
+  if (!events->output) {
+    std::cerr << "❌ PipeWire process callback: events->output is null" << std::endl;
+    return false;
+  }
+
+  self = events->output;
+
+  if (!self->IsActive()) {
+    std::cerr << "PipeWire process callback: output not active" << std::endl;
+    return false;
+  }
+
+  if (!self->GetStream()) {
+    std::cerr << "PipeWire process callback: stream is null" << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
+// Helper function to dequeue and validate buffer
+static pw_buffer* dequeue_and_validate_buffer(segmecam::PipeWireOutput* self) {
+  pw_buffer* buffer = pw_stream_dequeue_buffer(self->GetStream());
+  if (!buffer) {
+    std::cerr << "PipeWire process callback: failed to dequeue buffer" << std::endl;
+    return nullptr;
+  }
+
+  // Check buffer validity with additional safety checks
+  if (!buffer->buffer || !buffer->buffer->datas || buffer->buffer->n_datas == 0) {
+    std::cerr << "PipeWire process callback: invalid buffer structure" << std::endl;
+    pw_stream_queue_buffer(self->GetStream(), buffer);
+    return nullptr;
+  }
+
+  // Additional buffer validation
+  struct spa_buffer* spa_buf = buffer->buffer;
+  if (!spa_buf->datas[0].data || spa_buf->datas[0].maxsize == 0) {
+    std::cerr << "PipeWire process callback: buffer data is invalid - not queuing back" << std::endl;
+    // Don't queue back invalid buffers to prevent sending empty buffers to consumers
+    return nullptr;
+  }
+
+  return buffer;
+}
+
+// Helper function to get frame to send
+static cv::Mat get_frame_to_send(segmecam::PipeWireOutput* self, int process_count) {
+  cv::Mat frame_to_send;
+  {
+    std::unique_lock<std::mutex> lock(self->GetFrameMutex());
+    if (self->GetFrameReady()) {
+      frame_to_send = self->GetCurrentFrame().clone();
+      self->GetFrameReady() = false;
+      self->GetLastFrame() = frame_to_send.clone();  // Store as last frame
+
+      if (process_count <= 3) {
+        std::cout << "PipeWire process callback: sending NEW frame "
+                  << frame_to_send.cols << "x" << frame_to_send.rows << "x"
+                  << frame_to_send.channels() << std::endl;
+      }
+    } else if (!self->GetLastFrame().empty()) {
+      // No new frame, but we have a previous frame - reuse it
+      frame_to_send = self->GetLastFrame().clone();
+      if (process_count <= 3) {
+        std::cout << "PipeWire process callback: reusing LAST frame "
+                  << frame_to_send.cols << "x" << frame_to_send.rows << "x"
+                  << frame_to_send.channels() << std::endl;
+      }
+    }
+  }
+  return frame_to_send;
+}
+
+// Helper function to validate frame and format
+static bool validate_frame_and_format(segmecam::PipeWireOutput* self, const cv::Mat& frame, pw_buffer* buffer, int process_count) {
+  // Check if format has been negotiated
+  if (!self->IsFormatNegotiated()) {
+    if (process_count <= 3) {
+      std::cout << "PipeWire process callback: format not negotiated yet, skipping frame" << std::endl;
+    }
+    pw_stream_queue_buffer(self->GetStream(), buffer);
+    return false;
+  }
+
+  // Check if buffers are ready
+  if (!self->AreBuffersReady()) {
+    if (process_count <= 3) {
+      std::cout << "PipeWire process callback: buffers not ready yet (AreBuffersReady()=" << self->AreBuffersReady() << "), skipping frame" << std::endl;
+    }
+    pw_stream_queue_buffer(self->GetStream(), buffer);
+    return false;
+  }
+
+  // Validate frame dimensions against negotiated format
+  spa_video_info_raw format = self->GetNegotiatedFormat();
+  if (frame.cols != (int)format.size.width || frame.rows != (int)format.size.height) {
+    std::cerr << "PipeWire process callback: frame dimensions mismatch - frame: "
+              << frame.cols << "x" << frame.rows
+              << ", negotiated: " << format.size.width << "x" << format.size.height << std::endl;
+    pw_stream_queue_buffer(self->GetStream(), buffer);
+    return false;
+  }
+
+  // Calculate expected size based on negotiated format
+  size_t expected_size = 0;
+  switch (format.format) {
+    case SPA_VIDEO_FORMAT_YUY2:
+    case SPA_VIDEO_FORMAT_UYVY:
+      expected_size = frame.cols * frame.rows * 2;
+      break;
+    case SPA_VIDEO_FORMAT_BGR:
+      expected_size = frame.total() * frame.elemSize();
+      break;
+    case SPA_VIDEO_FORMAT_RGB:
+    case SPA_VIDEO_FORMAT_BGRx:
+    case SPA_VIDEO_FORMAT_RGBx:
+      expected_size = frame.cols * frame.rows * 4;
+      break;
+    default:
+      expected_size = frame.total() * frame.elemSize();
+      break;
+  }
+
+  struct spa_buffer* spa_buf = buffer->buffer;
+  if (spa_buf->datas[0].maxsize < expected_size) {
+    std::cerr << "PipeWire buffer too small: " << spa_buf->datas[0].maxsize << " < " << expected_size << std::endl;
+    pw_stream_queue_buffer(self->GetStream(), buffer);
+    return false;
+  }
+
+  return true;
+}
+
+// Helper function to convert frame to buffer
+static bool convert_frame_to_buffer(segmecam::PipeWireOutput* self, const cv::Mat& frame, pw_buffer* buffer, int process_count) {
+  spa_video_info_raw format = self->GetNegotiatedFormat();
+
+  if (!buffer->buffer->datas[0].data) {
+    std::cerr << "PipeWire buffer data pointer is null!" << std::endl;
+    return false;
+  }
+
+  switch (format.format) {
+    case SPA_VIDEO_FORMAT_YUY2:
+      return convert_yuy2_frame(frame, buffer, process_count);
+    case SPA_VIDEO_FORMAT_BGR:
+      return convert_bgr_frame(frame, buffer);
+    case SPA_VIDEO_FORMAT_RGB:
+      return convert_rgb_frame(frame, buffer);
+    case SPA_VIDEO_FORMAT_BGRx:
+      return convert_bgrx_frame(frame, buffer);
+    case SPA_VIDEO_FORMAT_RGBx:
+      return convert_rgbx_frame(frame, buffer);
+    default:
+      std::cerr << "PipeWire process callback: unsupported negotiated format: " << format.format << std::endl;
+      return false;
+  }
+}
+
+// Helper function to set buffer metadata
+static void set_buffer_metadata(pw_buffer* buffer, size_t copy_size, int stride) {
+  struct spa_buffer* spa_buf = buffer->buffer;
+
+  // Set SPA buffer metadata for GStreamer compatibility
+  spa_buf->datas[0].chunk->size = copy_size;
+  spa_buf->datas[0].chunk->stride = stride;
+  spa_buf->datas[0].chunk->flags = 0;
+  spa_buf->datas[0].chunk->offset = 0;
+
+  // Ensure all other data chunks are properly initialized (set to empty)
+  for (uint32_t i = 1; i < spa_buf->n_datas; ++i) {
+    if (spa_buf->datas[i].chunk) {
+      spa_buf->datas[i].chunk->size = 0;
+      spa_buf->datas[i].chunk->offset = 0;
+      spa_buf->datas[i].chunk->stride = 0;
+      spa_buf->datas[i].chunk->flags = 0;
+    }
+  }
+}
+
+// Helper function to convert YUY2 frame
+static bool convert_yuy2_frame(const cv::Mat& frame, pw_buffer* buffer, int process_count) {
+  struct spa_buffer* spa_buf = buffer->buffer;
+  size_t copy_size = frame.cols * frame.rows * 2;
+  int stride = frame.cols * 2;
+
+  if (spa_buf->datas[0].maxsize < copy_size) {
+    std::cerr << "PipeWire buffer too small for YUY2 frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
+    return false;
+  }
+
+  if (process_count <= 3) {
+    std::cout << "[YUY2] copy_size=" << copy_size << ", maxsize=" << spa_buf->datas[0].maxsize << ", stride=" << stride << std::endl;
+    std::cout << "[YUY2] frame type=" << frame.type() << ", step=" << frame.step << ", cols=" << frame.cols << ", rows=" << frame.rows << std::endl;
+  }
+
+  memset(spa_buf->datas[0].data, 0x80, copy_size);
+
+  if (frame.type() == CV_8UC3 && frame.isContinuous() && frame.cols % 2 == 0) {
+    segmecam::BGRToYUY2(frame, static_cast<uint8_t*>(spa_buf->datas[0].data));
+  } else {
+    uint8_t* yuy2 = static_cast<uint8_t*>(spa_buf->datas[0].data);
+    for (size_t i = 0; i < copy_size; i += 4) {
+      yuy2[i+0] = 128; // Y0
+      yuy2[i+1] = 128; // U
+      yuy2[i+2] = 128; // Y1
+      yuy2[i+3] = 128; // V
+    }
+  }
+
+  if (process_count <= 3) {
+    uint8_t* yuy2 = static_cast<uint8_t*>(spa_buf->datas[0].data);
+    std::cout << "[YUY2] First 16 bytes: ";
+    for (int i = 0; i < 16 && i < (int)copy_size; ++i) {
+      std::cout << std::hex << (int)yuy2[i] << " ";
+    }
+    std::cout << std::dec << std::endl;
+  }
+
+  set_buffer_metadata(buffer, copy_size, stride);
+  return true;
+}
+
+// Helper function to convert BGR frame
+static bool convert_bgr_frame(const cv::Mat& frame, pw_buffer* buffer) {
+  struct spa_buffer* spa_buf = buffer->buffer;
+  size_t copy_size = frame.total() * frame.elemSize();
+  int stride = frame.cols * frame.elemSize();
+
+  if (spa_buf->datas[0].maxsize < copy_size) {
+    std::cerr << "PipeWire buffer too small for BGR frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
+    return false;
+  }
+
+  memcpy(spa_buf->datas[0].data, frame.data, copy_size);
+  set_buffer_metadata(buffer, copy_size, stride);
+  return true;
+}
+
+// Helper function to convert RGB frame
+static bool convert_rgb_frame(const cv::Mat& frame, pw_buffer* buffer) {
+  struct spa_buffer* spa_buf = buffer->buffer;
+  cv::Mat converted;
+  cv::cvtColor(frame, converted, cv::COLOR_BGR2RGB);
+  size_t copy_size = converted.total() * converted.elemSize();
+  int stride = converted.cols * converted.elemSize();
+
+  if (spa_buf->datas[0].maxsize < copy_size) {
+    std::cerr << "PipeWire buffer too small for RGB frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
+    return false;
+  }
+
+  memcpy(spa_buf->datas[0].data, converted.data, copy_size);
+  set_buffer_metadata(buffer, copy_size, stride);
+  return true;
+}
+
+// Helper function to convert BGRx frame
+static bool convert_bgrx_frame(const cv::Mat& frame, pw_buffer* buffer) {
+  struct spa_buffer* spa_buf = buffer->buffer;
+  cv::Mat converted;
+  cv::cvtColor(frame, converted, cv::COLOR_BGR2BGRA);
+  size_t copy_size = converted.total() * converted.elemSize();
+  int stride = converted.cols * converted.elemSize();
+
+  if (spa_buf->datas[0].maxsize < copy_size) {
+    std::cerr << "PipeWire buffer too small for BGRx frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
+    return false;
+  }
+
+  memcpy(spa_buf->datas[0].data, converted.data, copy_size);
+  set_buffer_metadata(buffer, copy_size, stride);
+  return true;
+}
+
+// Helper function to convert RGBx frame
+static bool convert_rgbx_frame(const cv::Mat& frame, pw_buffer* buffer) {
+  struct spa_buffer* spa_buf = buffer->buffer;
+  cv::Mat converted;
+  cv::cvtColor(frame, converted, cv::COLOR_BGR2RGBA);
+  size_t copy_size = converted.total() * converted.elemSize();
+  int stride = converted.cols * converted.elemSize();
+
+  if (spa_buf->datas[0].maxsize < copy_size) {
+    std::cerr << "PipeWire buffer too small for RGBx frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
+    return false;
+  }
+
+  memcpy(spa_buf->datas[0].data, converted.data, copy_size);
+  set_buffer_metadata(buffer, copy_size, stride);
+  return true;
+}
+
+static void on_stream_format_changed(void* data, uint32_t id, const struct spa_pod* param) {
+  if (!data) return;
+
+  auto* events = static_cast<segmecam::PipeWireEvents*>(data);
+  if (!events || !events->output) return;
+
+  auto* self = events->output;
+
+  std::cout << "🔄 PipeWire param callback: ENTER - id=" << id << std::endl;
+
+  // Mark buffers ready (workaround for output streams)
+  self->SetBuffersReady(true);
+
+  if (id == SPA_PARAM_Buffers) {
+    std::cout << "[PipeWire param callback] Buffers allocated - marking as ready" << std::endl;
+    return;
+  }
+
+  if (id == SPA_PARAM_Format) {
+    handle_format_parameter(self, param);
+  }
+
   std::cout << "🔄 PipeWire param callback: EXIT" << std::endl;
 }
 
 static void on_stream_process(void* data) {
- // std::cout << "🔄 PipeWire process callback: ENTER" << std::endl;
-  try {
-    // std::cout << "🔄 PipeWire process callback: casting data to events" << std::endl;
-    segmecam::PipeWireEvents* events = static_cast<segmecam::PipeWireEvents*>(data);
-    // std::cout << "🔄 PipeWire process callback: events=" << (void*)events << std::endl;
-    if (!events) {
-      std::cerr << "❌ PipeWire process callback: events is null" << std::endl;
-      return;
-    }
-    // std::cout << "🔄 PipeWire process callback: checking events->output" << std::endl;
-    if (!events->output) {
-      std::cerr << "❌ PipeWire process callback: events->output is null" << std::endl;
-      return;
-    }
+  segmecam::PipeWireOutput* self = nullptr;
 
-    segmecam::PipeWireOutput* self = events->output;
-    // std::cout << "🔄 PipeWire process callback: self=" << (void*)self << std::endl;
-    if (!self) {
-      std::cerr << "❌ PipeWire process callback: self is null" << std::endl;
-      return;
-    }
-
-    std::cout << "🔄 PipeWire process callback: checking if active" << std::endl;
-    if (!self->IsActive()) {
-      std::cerr << "PipeWire process callback: output not active" << std::endl;
-      return;
-    }
-
-    std::cout << "🔄 PipeWire process callback: checking stream" << std::endl;
-    // Additional safety check: ensure stream is still valid
-    if (!self->GetStream()) {
-      std::cerr << "PipeWire process callback: stream is null" << std::endl;
-      return;
-    }
-
-    std::cout << "🔄 PipeWire process callback: dequeuing buffer" << std::endl;
-    // Get buffer from PipeWire
-    pw_buffer* buffer = pw_stream_dequeue_buffer(self->GetStream());
-    if (!buffer) {
-      std::cerr << "PipeWire process callback: failed to dequeue buffer" << std::endl;
-      return;
-    }
-
-    // Check buffer validity with additional safety checks
-    if (!buffer->buffer || !buffer->buffer->datas || buffer->buffer->n_datas == 0) {
-      std::cerr << "PipeWire process callback: invalid buffer structure" << std::endl;
-      pw_stream_queue_buffer(self->GetStream(), buffer);
-      return;
-    }
-
-    // Additional buffer validation
-    struct spa_buffer* spa_buf = buffer->buffer;
-    if (!spa_buf->datas[0].data || spa_buf->datas[0].maxsize == 0) {
-      std::cerr << "PipeWire process callback: buffer data is invalid - not queuing back" << std::endl;
-      // Don't queue back invalid buffers to prevent sending empty buffers to consumers
-      return;
-    }
-
-    // Log first few process calls
-    static int process_count = 0;
-    if (process_count < 3) {
-      std::cout << "PipeWire buffer info: n_datas=" << spa_buf->n_datas
-                << ", datas[0].maxsize=" << spa_buf->datas[0].maxsize << std::endl;
-      std::cout << "PipeWire process callback #" << process_count << " - buffer valid" << std::endl;
-      process_count++;
-    }
-
-    // Check if we have a new frame ready
-    cv::Mat frame_to_send;
-    bool is_new_frame = false;
-    {
-      std::unique_lock<std::mutex> lock(self->GetFrameMutex());
-      if (self->GetFrameReady()) {
-        frame_to_send = self->GetCurrentFrame().clone();
-        self->GetFrameReady() = false;
-        self->GetLastFrame() = frame_to_send.clone();  // Store as last frame
-        is_new_frame = true;
-
-        if (process_count <= 3) {
-          std::cout << "PipeWire process callback: sending NEW frame "
-                    << frame_to_send.cols << "x" << frame_to_send.rows << "x"
-                    << frame_to_send.channels() << std::endl;
-        }
-      } else if (!self->GetLastFrame().empty()) {
-        // No new frame, but we have a previous frame - reuse it
-        frame_to_send = self->GetLastFrame().clone();
-        if (process_count <= 3) {
-          std::cout << "PipeWire process callback: reusing LAST frame "
-                    << frame_to_send.cols << "x" << frame_to_send.rows << "x"
-                    << frame_to_send.channels() << std::endl;
-        }
-      }
-    }
-
-    if (!frame_to_send.empty()) {
-      // Check if format has been negotiated
-      if (!self->IsFormatNegotiated()) {
-        if (process_count <= 3) {
-          std::cout << "PipeWire process callback: format not negotiated yet, skipping frame" << std::endl;
-        }
-        // Queue buffer back without sending frame
-        pw_stream_queue_buffer(self->GetStream(), buffer);
-        return;
-      }
-
-      // Check if buffers are ready
-      if (!self->AreBuffersReady()) {
-        if (process_count <= 3) {
-          std::cout << "PipeWire process callback: buffers not ready yet (AreBuffersReady()=" << self->AreBuffersReady() << "), skipping frame" << std::endl;
-        }
-        // Queue buffer back without sending frame
-        pw_stream_queue_buffer(self->GetStream(), buffer);
-        return;
-      }
-
-      // Validate frame dimensions against negotiated format
-      spa_video_info_raw format = self->GetNegotiatedFormat();
-      if (frame_to_send.cols != (int)format.size.width || frame_to_send.rows != (int)format.size.height) {
-        std::cerr << "PipeWire process callback: frame dimensions mismatch - frame: "
-                  << frame_to_send.cols << "x" << frame_to_send.rows
-                  << ", negotiated: " << format.size.width << "x" << format.size.height << std::endl;
-        pw_stream_queue_buffer(self->GetStream(), buffer);
-        return;
-      }
-
-      // Calculate expected size based on negotiated format (moved here)
-      size_t expected_size = 0;
-      switch (format.format) {
-        case SPA_VIDEO_FORMAT_YUY2:
-        case SPA_VIDEO_FORMAT_UYVY:
-          expected_size = frame_to_send.cols * frame_to_send.rows * 2;
-          break;
-        case SPA_VIDEO_FORMAT_BGR:
-          expected_size = frame_to_send.total() * frame_to_send.elemSize();
-          break;
-        case SPA_VIDEO_FORMAT_RGB:
-        case SPA_VIDEO_FORMAT_BGRx:
-        case SPA_VIDEO_FORMAT_RGBx:
-          expected_size = frame_to_send.cols * frame_to_send.rows * 4;
-          break;
-        default:
-          expected_size = frame_to_send.total() * frame_to_send.elemSize();
-          break;
-      }
-
-      if (spa_buf->datas[0].maxsize < expected_size) {
-        std::cerr << "PipeWire buffer too small: " << spa_buf->datas[0].maxsize << " < " << expected_size << std::endl;
-        pw_stream_queue_buffer(self->GetStream(), buffer);
-        return;
-      }
-
-      // Safe memcpy with negotiated format conversion
-      if (!spa_buf->datas[0].data) {
-        std::cerr << "PipeWire buffer data pointer is null!" << std::endl;
-        pw_stream_queue_buffer(self->GetStream(), buffer);
-        return;
-      }
-
-      // Use shared format conversion logic from gstreamer_buffer_utils.cpp
-
-      size_t copy_size = 0;
-      int stride = 0;
-      switch (format.format) {
-        case SPA_VIDEO_FORMAT_YUY2: {
-          // Use shared BGRToYUY2 utility for output
-          copy_size = frame_to_send.cols * frame_to_send.rows * 2;
-          stride = frame_to_send.cols * 2;
-          if (spa_buf->datas[0].maxsize < copy_size) {
-            std::cerr << "PipeWire buffer too small for YUY2 frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
-            pw_stream_queue_buffer(self->GetStream(), buffer);
-            return;
-          }
-          // Debug: print buffer and frame info
-          std::cout << "[YUY2] copy_size=" << copy_size << ", maxsize=" << spa_buf->datas[0].maxsize << ", stride=" << stride << std::endl;
-          std::cout << "[YUY2] frame type=" << frame_to_send.type() << ", step=" << frame_to_send.step << ", cols=" << frame_to_send.cols << ", rows=" << frame_to_send.rows << std::endl;
-          // Assert tight packing for debug
-          if (frame_to_send.type() == CV_8UC3 && frame_to_send.isContinuous()) {
-            if (frame_to_send.step != frame_to_send.cols * 3) {
-              std::cerr << "[YUY2] Frame step != cols*3! step=" << frame_to_send.step << ", cols*3=" << (frame_to_send.cols*3) << std::endl;
-            }
-          }
-          // Zero output buffer for debug
-          memset(spa_buf->datas[0].data, 0x80, copy_size);
-          // Only convert if frame is valid
-          if (frame_to_send.type() == CV_8UC3 && frame_to_send.isContinuous() && frame_to_send.cols % 2 == 0) {
-            segmecam::BGRToYUY2(frame_to_send, static_cast<uint8_t*>(spa_buf->datas[0].data));
-          } else {
-            // Fill with gray YUY2 pattern for debug
-            uint8_t* yuy2 = static_cast<uint8_t*>(spa_buf->datas[0].data);
-            for (int i = 0; i < copy_size; i += 4) {
-              yuy2[i+0] = 128; // Y0
-              yuy2[i+1] = 128; // U
-              yuy2[i+2] = 128; // Y1
-              yuy2[i+3] = 128; // V
-            }
-          }
-          // Print first 16 bytes for debug
-          uint8_t* yuy2 = static_cast<uint8_t*>(spa_buf->datas[0].data);
-          std::cout << "[YUY2] First 16 bytes: ";
-          for (int i = 0; i < 16 && i < (int)copy_size; ++i) {
-            std::cout << std::hex << (int)yuy2[i] << " ";
-          }
-          std::cout << std::dec << std::endl;
-          break;
-        }
-        case SPA_VIDEO_FORMAT_BGR: {
-          copy_size = frame_to_send.total() * frame_to_send.elemSize();
-          stride = frame_to_send.cols * frame_to_send.elemSize();
-          if (spa_buf->datas[0].maxsize < copy_size) {
-            std::cerr << "PipeWire buffer too small for BGR frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
-            pw_stream_queue_buffer(self->GetStream(), buffer);
-            return;
-          }
-          memcpy(spa_buf->datas[0].data, frame_to_send.data, copy_size);
-          break;
-        }
-        case SPA_VIDEO_FORMAT_RGB: {
-          cv::Mat converted;
-          cv::cvtColor(frame_to_send, converted, cv::COLOR_BGR2RGB);
-          copy_size = converted.total() * converted.elemSize();
-          stride = converted.cols * converted.elemSize();
-          if (spa_buf->datas[0].maxsize < copy_size) {
-            std::cerr << "PipeWire buffer too small for RGB frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
-            pw_stream_queue_buffer(self->GetStream(), buffer);
-            return;
-          }
-          memcpy(spa_buf->datas[0].data, converted.data, copy_size);
-          break;
-        }
-        case SPA_VIDEO_FORMAT_BGRx: {
-          cv::Mat converted;
-          cv::cvtColor(frame_to_send, converted, cv::COLOR_BGR2BGRA);
-          copy_size = converted.total() * converted.elemSize();
-          stride = converted.cols * converted.elemSize();
-          if (spa_buf->datas[0].maxsize < copy_size) {
-            std::cerr << "PipeWire buffer too small for BGRx frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
-            pw_stream_queue_buffer(self->GetStream(), buffer);
-            return;
-          }
-          memcpy(spa_buf->datas[0].data, converted.data, copy_size);
-          break;
-        }
-        case SPA_VIDEO_FORMAT_RGBx: {
-          cv::Mat converted;
-          cv::cvtColor(frame_to_send, converted, cv::COLOR_BGR2RGBA);
-          copy_size = converted.total() * converted.elemSize();
-          stride = converted.cols * converted.elemSize();
-          if (spa_buf->datas[0].maxsize < copy_size) {
-            std::cerr << "PipeWire buffer too small for RGBx frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
-            pw_stream_queue_buffer(self->GetStream(), buffer);
-            return;
-          }
-          memcpy(spa_buf->datas[0].data, converted.data, copy_size);
-          break;
-        }
-        default:
-          std::cerr << "PipeWire process callback: unsupported negotiated format: " << format.format << std::endl;
-          pw_stream_queue_buffer(self->GetStream(), buffer);
-          return;
-      }
-
-      // Set SPA buffer metadata for GStreamer compatibility
-      spa_buf->datas[0].chunk->size = copy_size;
-      spa_buf->datas[0].chunk->stride = stride;
-      spa_buf->datas[0].chunk->flags = 0;
-      spa_buf->datas[0].chunk->offset = 0;
-
-      // Ensure all other data chunks are properly initialized (set to empty)
-      for (uint32_t i = 1; i < spa_buf->n_datas; ++i) {
-        if (spa_buf->datas[i].chunk) {
-          spa_buf->datas[i].chunk->size = 0;
-          spa_buf->datas[i].chunk->offset = 0;
-          spa_buf->datas[i].chunk->stride = 0;
-          spa_buf->datas[i].chunk->flags = 0;
-        }
-      }
-
-      if (process_count <= 3) {
-        std::cout << "PipeWire process callback: copied " << copy_size << " bytes to buffer (format=" << format.format << ")" << std::endl;
-      }
-    } else {
-      // No frame available at all (neither new nor last)
-      if (process_count <= 3) {
-        std::cout << "PipeWire process callback: no frame available at all" << std::endl;
-      }
-      // Queue buffer back without sending frame
-      pw_stream_queue_buffer(self->GetStream(), buffer);
-      return;
-    }
-
-    // Queue buffer back
-    pw_stream_queue_buffer(self->GetStream(), buffer);
-  } catch (const std::exception& e) {
-    std::cerr << "❌ Exception in PipeWire process callback: " << e.what() << std::endl;
-  } catch (...) {
-    std::cerr << "❌ Unknown exception in PipeWire process callback" << std::endl;
+  if (!validate_process_callback_data(data, self)) {
+    return;
   }
+
+  pw_buffer* buffer = dequeue_and_validate_buffer(self);
+  if (!buffer) {
+    return;
+  }
+
+  // Log first few process calls
+  static int process_count = 0;
+  log_buffer_info(buffer, process_count);
+
+  cv::Mat frame_to_send = get_frame_to_send(self, process_count);
+
+  if (!frame_to_send.empty()) {
+    if (!validate_frame_and_format(self, frame_to_send, buffer, process_count)) {
+      return;
+    }
+
+    if (!convert_frame_to_buffer(self, frame_to_send, buffer, process_count)) {
+      return;
+    }
+  } else {
+    // No frame available at all (neither new nor last)
+    if (process_count <= 3) {
+      std::cout << "PipeWire process callback: no frame available at all" << std::endl;
+    }
+  }
+
+  // Queue buffer back
+  pw_stream_queue_buffer(self->GetStream(), buffer);
 }
 
 namespace segmecam {

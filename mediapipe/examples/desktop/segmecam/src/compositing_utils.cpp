@@ -19,12 +19,59 @@
 
 namespace segmecam {
 
+// Helper functions for CompositeWithMask refactoring
+static cv::Mat prepare_mask(const cv::Mat& mask_f32);
+static void resize_inputs(const cv::Size& target_size, const cv::Mat& background_bgr,
+                         const cv::Mat& mask_single, cv::Mat& bg_resized, cv::Mat& mask_resized);
+static void prepare_for_blending(const cv::Mat& frame_bgr, const cv::Mat& bg_resized,
+                                cv::Mat& frame_f, cv::Mat& bg_f);
+static void broadcast_mask_channels(const cv::Mat& mask_clamped, const cv::Mat& mask_inv,
+                                   const cv::Mat& frame_f, cv::Mat& mask_3ch, cv::Mat& mask_inv_3ch);
+static cv::Mat perform_blending(const cv::Mat& frame_f, const cv::Mat& bg_f,
+                               const cv::Mat& mask_3ch, const cv::Mat& mask_inv_3ch);
+static void finalize_result(cv::Mat& frame_bgr, const cv::Mat& result_f, bool convert_to_rgb);
+
 void CompositeWithMask(cv::Mat& frame_bgr, const cv::Mat& background_bgr,
                       const cv::Mat& mask_f32, bool convert_to_rgb) {
     if (frame_bgr.empty() || background_bgr.empty() || mask_f32.empty()) {
         return;
     }
 
+    // Prepare mask (extract single channel and clamp to [0,1])
+    cv::Mat mask_prepared = prepare_mask(mask_f32);
+
+    // Resize inputs to match frame size
+    cv::Size target_size = frame_bgr.size();
+    cv::Mat bg_resized, mask_resized;
+    resize_inputs(target_size, background_bgr, mask_prepared, bg_resized, mask_resized);
+
+    // Convert to float for blending
+    cv::Mat frame_f, bg_f;
+    prepare_for_blending(frame_bgr, bg_resized, frame_f, bg_f);
+
+    // Create inverted mask for background
+    cv::Mat mask_inv;
+    cv::subtract(1.0f, mask_resized, mask_inv);
+
+    // Broadcast mask channels for proper multiplication with BGR images
+    cv::Mat mask_3ch, mask_inv_3ch;
+    broadcast_mask_channels(mask_resized, mask_inv, frame_f, mask_3ch, mask_inv_3ch);
+
+    // Perform blending: result = frame * mask + background * (1 - mask)
+    cv::Mat result_f;
+    try {
+        result_f = perform_blending(frame_f, bg_f, mask_3ch, mask_inv_3ch);
+    } catch (const cv::Exception& e) {
+        std::cout << "❌ OpenCV Exception in CompositeWithMask: " << e.what() << std::endl;
+        return;
+    }
+
+    // Convert back to uint8 and handle color space conversion
+    finalize_result(frame_bgr, result_f, convert_to_rgb);
+}
+
+// Helper function to prepare mask (extract single channel and clamp to [0,1])
+static cv::Mat prepare_mask(const cv::Mat& mask_f32) {
     // Ensure mask is single-channel
     cv::Mat mask_single;
     if (mask_f32.channels() > 1) {
@@ -35,9 +82,16 @@ void CompositeWithMask(cv::Mat& frame_bgr, const cv::Mat& background_bgr,
         mask_single = mask_f32;
     }
 
-    // Ensure all inputs have the same size
-    cv::Size target_size = frame_bgr.size();
-    cv::Mat bg_resized, mask_resized;
+    // Ensure mask is in [0,1] range
+    cv::Mat mask_clamped;
+    cv::max(mask_single, 0.0f, mask_clamped);
+    cv::min(mask_clamped, 1.0f, mask_clamped);
+    return mask_clamped;
+}
+
+// Helper function to resize inputs to match target size
+static void resize_inputs(const cv::Size& target_size, const cv::Mat& background_bgr,
+                         const cv::Mat& mask_single, cv::Mat& bg_resized, cv::Mat& mask_resized) {
     if (background_bgr.size() != target_size) {
         cv::resize(background_bgr, bg_resized, target_size, 0, 0, cv::INTER_LINEAR);
     } else {
@@ -49,46 +103,41 @@ void CompositeWithMask(cv::Mat& frame_bgr, const cv::Mat& background_bgr,
     } else {
         mask_resized = mask_single;
     }
+}
 
-    // Convert to float for blending
-    cv::Mat frame_f, bg_f;
+// Helper function to convert inputs to float for blending
+static void prepare_for_blending(const cv::Mat& frame_bgr, const cv::Mat& bg_resized,
+                                cv::Mat& frame_f, cv::Mat& bg_f) {
     frame_bgr.convertTo(frame_f, CV_32F, 1.0/255.0);
     bg_resized.convertTo(bg_f, CV_32F, 1.0/255.0);
+}
 
-    // Ensure mask is in [0,1] range
-    cv::Mat mask_clamped;
-    cv::max(mask_resized, 0.0f, mask_clamped);
-    cv::min(mask_clamped, 1.0f, mask_clamped);
-
-    // Create inverted mask for background
-    cv::Mat mask_inv;
-    cv::subtract(1.0f, mask_clamped, mask_inv);
-
-    // Blend: result = frame * mask + background * (1 - mask)
-    cv::Mat result_f;
-    try {
-        // Broadcast mask to 3 channels if needed for proper multiplication with BGR images
-        cv::Mat mask_3ch, mask_inv_3ch;
-        if (mask_clamped.channels() == 1 && frame_f.channels() == 3) {
-            std::vector<cv::Mat> mask_channels(3, mask_clamped);
-            cv::merge(mask_channels, mask_3ch);
-            std::vector<cv::Mat> mask_inv_channels(3, mask_inv);
-            cv::merge(mask_inv_channels, mask_inv_3ch);
-        } else {
-            mask_3ch = mask_clamped;
-            mask_inv_3ch = mask_inv;
-        }
-        
-        cv::Mat frame_masked, bg_masked;
-        cv::multiply(frame_f, mask_3ch, frame_masked);
-        cv::multiply(bg_f, mask_inv_3ch, bg_masked);
-        cv::add(frame_masked, bg_masked, result_f);
-    } catch (const cv::Exception& e) {
-        std::cout << "❌ OpenCV Exception in CompositeWithMask: " << e.what() << std::endl;
-        // Fallback: return original frame
-        return;
+// Helper function to broadcast mask channels for proper multiplication with BGR images
+static void broadcast_mask_channels(const cv::Mat& mask_clamped, const cv::Mat& mask_inv,
+                                   const cv::Mat& frame_f, cv::Mat& mask_3ch, cv::Mat& mask_inv_3ch) {
+    if (mask_clamped.channels() == 1 && frame_f.channels() == 3) {
+        std::vector<cv::Mat> mask_channels(3, mask_clamped);
+        cv::merge(mask_channels, mask_3ch);
+        std::vector<cv::Mat> mask_inv_channels(3, mask_inv);
+        cv::merge(mask_inv_channels, mask_inv_3ch);
+    } else {
+        mask_3ch = mask_clamped;
+        mask_inv_3ch = mask_inv;
     }
+}
 
+// Helper function to perform the blending operation
+static cv::Mat perform_blending(const cv::Mat& frame_f, const cv::Mat& bg_f,
+                               const cv::Mat& mask_3ch, const cv::Mat& mask_inv_3ch) {
+    cv::Mat frame_masked, bg_masked, result_f;
+    cv::multiply(frame_f, mask_3ch, frame_masked);
+    cv::multiply(bg_f, mask_inv_3ch, bg_masked);
+    cv::add(frame_masked, bg_masked, result_f);
+    return result_f;
+}
+
+// Helper function to finalize result (convert back to uint8 and handle color space)
+static void finalize_result(cv::Mat& frame_bgr, const cv::Mat& result_f, bool convert_to_rgb) {
     // Convert back to uint8
     result_f.convertTo(frame_bgr, CV_8U, 255.0);
 
