@@ -1,21 +1,15 @@
 #!/bin/bash
 # SegmeCam PipeWire to V4L2 Bridge Script
 # This script bridges SegmeCam's PipeWire output to a v4l2loopback device
-# for OBS Studio compatibility in Flatpak environments
 
-# STATUS: KNOWN ISSUE - PipeWire/GStreamer buffer incompatibility
-# The architectural approach is correct for Flatpak, but GStreamer cannot
-# properly handle PipeWire video buffers. This causes gst_buffer_peek_memory
-# errors that prevent video transmission.
+set -euo pipefail
 
-# RECOMMENDATION: Consider modifying SegmeCam to support dual output
-# (PipeWire + V4L2) for Flatpak compatibility, or wait for upstream fixes
-# in GStreamer PipeWire integration.
-
-set -e
-
-# Default device
-V4L2_DEVICE="/dev/video3"
+# Get video device number from argument or default to 30
+VIDEO_NR="${1:-30}"
+if ! [[ "$VIDEO_NR" =~ ^[0-9]+$ ]]; then
+  echo "Usage: $0 [video_nr]"; exit 1
+fi
+V4L2_DEVICE="/dev/video${VIDEO_NR}"
 
 # Check if v4l2loopback device exists
 if [ ! -c "$V4L2_DEVICE" ]; then
@@ -42,11 +36,12 @@ echo "The v4l2loopback device is detected by applications but video transmission
 echo "Press Ctrl+C to stop"
 
 # Bridge PipeWire output to v4l2loopback device
-# This pipeline has known issues with PipeWire buffer handling
-gst-launch-1.0 pipewiresrc target-object="SegmeCam Virtual Camera" always-copy=true do-timestamp=true ! \
-    identity check-imperfect-timestamp=true ! \
-    videoconvert ! \
-    video/x-raw,format=YUY2,width=640,height=480 ! \
-    v4l2sink device=$V4L2_DEVICE
+echo "Starting PipeWire → V4L2 bridge to $V4L2_DEVICE (press Ctrl+C to stop)"
+gst-launch-1.0 \
+  pipewiresrc target-object="SegmeCam Virtual Camera" always-copy=true do-timestamp=true ! \
+  identity check-imperfect-timestamp=true ! \
+  videoconvert ! \
+  video/x-raw,format=YUY2,width=640,height=480 ! \
+  v4l2sink device="$V4L2_DEVICE"
 
 echo "Bridge stopped."
