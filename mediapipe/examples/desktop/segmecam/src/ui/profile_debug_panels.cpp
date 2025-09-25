@@ -172,6 +172,12 @@ void StatusPanel::RenderSystemInfo() {
     } else {
         ImGui::Text("VCam: Inactive");
     }
+    
+    if (state_.pipewire_output_active) {
+        ImGui::TextColored(ImVec4(0, 1, 0, 1), "PipeWire: Active");
+    } else {
+        ImGui::Text("PipeWire: Inactive");
+    }
 }
 
 void StatusPanel::RenderGraphInfo() {

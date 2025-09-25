@@ -130,6 +130,9 @@ struct AppState {
   int ui_vcam_idx = 0;
   std::string virtual_camera_path = "/dev/video20"; // Default path
   
+  // PipeWire output status
+  bool pipewire_output_active = false;
+  
   // Profile management
   int ui_profile_idx = -1;
   char profile_name_buf[128] = {0};

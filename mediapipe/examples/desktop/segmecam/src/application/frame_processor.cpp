@@ -170,7 +170,6 @@ void FrameProcessor::handle_frame_output(
     cv::cvtColor(display_rgb, display_bgr, cv::COLOR_RGB2BGR);
 
     if (app_state.vcam.IsOpen()) {
-        std::cout << "VCam: About to write frame to vcam" << std::endl;
         app_state.vcam.WriteBGR(display_bgr);
     }
 

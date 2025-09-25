@@ -8,6 +8,7 @@
 #include "include/camera/cam_enum.h"
 #include "src/config/config_manager.h"
 #include "include/profile/profile_manager.h"
+#include "include/ui/ui_panel_base.h"
 
 namespace segmecam {
 
@@ -15,22 +16,13 @@ namespace segmecam {
 class EffectsManager;
 class ProfileManager;
 
-// Base class for all UI panels
-class UIPanel {
-public:
-    UIPanel(const std::string& name) : panel_name_(name) {}
-    virtual ~UIPanel() = default;
-    
-    virtual void Render() = 0;
-    
-    void SetVisible(bool visible) { visible_ = visible; }
-    bool IsVisible() const { return visible_; }
-    const std::string& GetName() const { return panel_name_; }
+} // namespace segmecam
 
-protected:
-    std::string panel_name_;
-    bool visible_ = true;
-};
+#include "include/ui/virtual_camera_panel.h"
+#include "include/ui/pipewire_output_panel.h"
+#include "include/ui/camera_controls_panel.h"
+
+namespace segmecam {
 
 // Camera selection and controls panel
 class CameraPanel : public UIPanel {
@@ -53,56 +45,12 @@ public:
     void ProcessDeferredPipeWireInitialization();
 
 private:
+    void SyncWithCameraState();
     void RenderCameraSelection();
     void RenderResolutionSettings();
-    void RenderVirtualCameraControls();
-    // Profile section rendering
-    void RenderProfileSection();
-    void RenderCameraControls();
-    
-    // Helper methods for resolution settings
     void RenderResolutionControls();
     void RenderFPSControls();
-    
-    // Helper methods for virtual camera controls
-    void RenderVirtualCameraActive();
-    void RenderVirtualCameraInactive();
-    void RenderVirtualCameraDeviceSelection();
-    void RenderVirtualCameraResolutionInfo();
-    void RenderVirtualCameraStartButton();
-    void RenderVirtualCameraHelp();
-    
-    // PipeWire output controls
-    void RenderPipeWireOutputSection();
-    void RenderPipeWireOutputActive();
-    void RenderPipeWireOutputInactive();
-    void RenderPipeWireOutputHelp();
-    
-    // Helper methods for camera controls
-    void GetControlRanges();
-    void RenderBasicControls();
-    void RenderGainExposureControls();
-    void RenderGainControls();
-    void RenderExposureControls();
-    void RenderBacklightControl();
-    void RenderAdditionalControls();
-    void RenderWhiteBalanceControls();
-    void RenderResetButton();
-    
-    // Helper methods for exposure auto control
-    void DisableAutoExposure();
-    void EnableAutoExposure(int current_mode);
-    
-    // Helper methods for V4L2 controls
-    void SliderCtrl(const char* label, CtrlRange& range, uint32_t control_id);
-    void CheckboxCtrl(const char* label, CtrlRange& range, uint32_t control_id);
-    void CheckboxExposureAuto(const char* label);
-    
-    // Sync UI state with camera settings
-    void SyncWithCameraState();
-    
-    // Virtual camera device management
-    void RefreshVirtualCameraDevices();
+    void RenderProfileSection();
     
     AppState& state_;
     CameraManager& camera_mgr_;
@@ -110,81 +58,37 @@ private:
     class ConfigManager* config_mgr_ = nullptr;
     ProfileManager profile_mgr_;
     
+    // Sub-panels for modular UI
+    VirtualCameraPanel virtual_camera_panel_;
+    PipeWireOutputPanel pipewire_panel_;
+    CameraControlsPanel camera_controls_panel_;
+    
     // UI state
     int ui_cam_idx_ = 0;
     int ui_res_idx_ = 0;
     int ui_fps_idx_ = 0;
-    int ui_vcam_idx_ = 0;
-    std::vector<int> ui_fps_opts_;
+    int ui_fps_actual_idx_ = 0;
+    bool show_resolution_warning_ = false;
+    bool show_fps_warning_ = false;
     
-    // PipeWire output UI state
-    bool pipewire_start_requested_ = false;
-    int pipewire_width_ = 640;
-    int pipewire_height_ = 480;
-    int pipewire_fps_ = 30;
-    
-    // String storage for combo boxes (to prevent memory corruption)
+    // Resolution and FPS display strings
     std::vector<std::string> res_strings_;
     std::vector<const char*> res_items_;
     std::vector<std::string> fps_strings_;
     std::vector<const char*> fps_items_;
     
-    // Virtual camera device enumeration
-    std::vector<LoopbackDesc> vcam_devices_;
-    std::vector<std::string> vcam_labels_;
-    std::vector<const char*> vcam_items_;
+    // Profile UI state
+    char profile_name_buf_[256] = {0};
+    bool show_set_default_ = false;
+    int ui_profile_idx_ = 0;
+    std::vector<std::string> profile_names_;
+    bool profile_loaded_ = false;
     
-    // Cached control ranges for camera controls
-    CtrlRange r_brightness_;
-    CtrlRange r_contrast_;
-    CtrlRange r_saturation_;
-    CtrlRange r_gain_;
-    CtrlRange r_sharpness_;
-    CtrlRange r_zoom_;
-    CtrlRange r_focus_;
-    CtrlRange r_autogain_;
-    CtrlRange r_autofocus_;
-    CtrlRange r_autoexposure_;
-    CtrlRange r_exposure_abs_;
-    CtrlRange r_awb_;
-    CtrlRange r_wb_temp_;
-    CtrlRange r_backlight_;
-    CtrlRange r_expo_dynfps_;
+    // PipeWire deferred initialization
+    bool pipewire_initialized_ = false;
 };
 
-// Background and compositing effects panel  
-class BackgroundPanel : public UIPanel {
-public:
-    BackgroundPanel(AppState& state);
-    ~BackgroundPanel() override = default;
-    
-    void Render() override;
-
-private:
-    void RenderBackgroundMode();
-    void RenderBlurControls();
-    void RenderImageControls();
-    void RenderImageHeader();
-    void RenderImagePathControls();
-    void LoadImageFromPath(const char* path);
-    void LoadImageFromClipboard();
-    void LoadImageFromPortal();
-    void ClearBackgroundImage();
-    void RenderImageDisplay();
-    void RenderImageInfo();
-    void RenderImageScaling();
-    void RenderImageOpacity();
-    void RenderImagePosition();
-    void RenderResetPositionButton();
-    void RenderImageTips();
-    void RenderSolidColorControls();
-    void RenderMaskControls();
-    
-    AppState& state_;
-    int scale_mode_ = 1;  // Background image scaling mode (0=Stretch, 1=Fit, 2=Fill, 3=Center, 4=Tile)
-};
-
-// Beauty and face effects panel
+// Beauty effects panel
 class BeautyPanel : public UIPanel {
 public:
     BeautyPanel(AppState& state);
@@ -194,14 +98,24 @@ public:
 
 private:
     void RenderPresets();
+    void RenderPerformanceControls();
     void RenderSkinSmoothing();
-    void RenderAdvancedSkinControls();
-    void RenderWrinkleControls();
     void RenderLipEffects();
     void RenderTeethWhitening();
-    void RenderPerformanceControls();
-    
-    // Helper methods for preset management
+    void RenderSkinSmoothingControls();
+    void RenderWrinkleControls();
+    void RenderLipControls();
+    void RenderTeethControls();
+    void RenderBeautyPresets();
+    void RenderAdvancedControls();
+    void RenderAdvancedSkinControls();
+    void RenderLipSliders();
+    void RenderLipColorPresets();
+    void ApplyLipColorPreset(const char* name, float r, float g, float b);
+    void RenderTeethSliders();
+    void RenderTeethPresets();
+    void ApplyTeethPreset(const char* name, float strength, float margin);
+    void RenderTeethTips();
     void ApplyBeautyPreset(int preset_index, const char* preset_name);
     BeautyState CreateBeautyStateFromAppState();
     void CopyBeautyFieldsToBeautyState(BeautyState& bs);
@@ -214,23 +128,77 @@ private:
     void CopyLipStateToAppState(const BeautyState& bs);
     void CopyTeethStateToAppState(const BeautyState& bs);
     
-    // Helper methods for lip effects
-    void RenderLipControls();
-    void RenderLipSliders();
-    void RenderLipColorPresets();
-    void ApplyLipColorPreset(const char* name, float r, float g, float b);
-    
-    // Helper methods for teeth whitening
-    void RenderTeethControls();
-    void RenderTeethSliders();
-    void RenderTeethPresets();
-    void ApplyTeethPreset(const char* name, float strength, float margin);
-    void RenderTeethTips();
-    
     AppState& state_;
+    
+    // UI state
+    int ui_preset_idx_ = 0;
+    bool show_advanced_ = false;
 };
 
-// Debug and status panels
+// Background effects panel
+class BackgroundPanel : public UIPanel {
+public:
+    BackgroundPanel(AppState& state);
+    ~BackgroundPanel() override = default;
+    
+    void Render() override;
+
+private:
+    void RenderMaskControls();
+    void RenderBackgroundMode();
+    void RenderBackgroundModeSelection();
+    void RenderBlurControls();
+    void RenderImageControls();
+    void RenderImageHeader();
+    void RenderImagePathControls();
+    void RenderImageDisplay();
+    void RenderImageTips();
+    void RenderSolidColorControls();
+    void LoadImageFromPath(const char* path);
+    void LoadImageFromClipboard();
+    void LoadImageFromPortal();
+    void ClearBackgroundImage();
+    void RenderImageInfo();
+    void RenderImageScaling();
+    void RenderImageOpacity();
+    void RenderImagePosition();
+    void RenderResetPositionButton();
+    
+    AppState& state_;
+    
+    // UI state
+    int ui_bg_mode_idx_ = 0;
+    char bg_image_path_[512] = {0};
+    int scale_mode_ = 0;
+};
+
+// Profile management panel
+class ProfilePanel : public UIPanel {
+public:
+    ProfilePanel(class ConfigManager* config_mgr);
+    ~ProfilePanel() override = default;
+    
+    void Render() override;
+    
+    // Update UI to show the currently loaded default profile
+    void UpdateDefaultProfileDisplay();
+
+private:
+    void RenderProfileManagement();
+    void RenderProfileList();
+    void RenderProfileActions();
+    
+    class ConfigManager* config_mgr_;
+    
+    // UI state
+    char profile_name_buf_[256] = {0};
+    bool show_set_default_ = false;
+    int ui_profile_idx_ = 0;
+    std::vector<std::string> profile_names_;
+    bool profile_loaded_ = false;
+};
+
+// Debug panel for overlay controls and performance stats
 class DebugPanel : public UIPanel {
 public:
     DebugPanel(AppState& state);
@@ -241,18 +209,18 @@ public:
 private:
     void RenderOverlayControls();
     void RenderPerformanceStats();
+    void RenderAdvancedSettings();
     void RenderBasicStats();
     void RenderPerformanceOptimization();
     void RenderManualProcessingScale();
     void RenderAutoProcessingScale();
     void RenderAutoProcessingScaleDetails();
     void RenderPerformanceStatus();
-    void RenderAdvancedSettings();
     
     AppState& state_;
 };
 
-// Status information panel
+// Status panel for system information and status display
 class StatusPanel : public UIPanel {
 public:
     StatusPanel(AppState& state);
@@ -268,17 +236,6 @@ private:
     AppState& state_;
 };
 
-} // namespace segmecam
+// Status panel - temporarily disabled for compilation
 
-// Common UI utilities for profile management
-namespace segmecam {
-namespace ui_utils {
-
-// Common profile selection UI component
-// Returns true if a profile was loaded
-bool RenderProfileSelection(class ConfigManager* config_mgr, int& ui_profile_idx, 
-                           char* profile_name_buf, size_t buf_size,
-                           const std::string& input_label = "Name");
-
-} // namespace ui_utils
 } // namespace segmecam

@@ -15,7 +15,7 @@
 set -e
 
 # Default device
-V4L2_DEVICE="/dev/video2"
+V4L2_DEVICE="/dev/video3"
 
 # Check if v4l2loopback device exists
 if [ ! -c "$V4L2_DEVICE" ]; then

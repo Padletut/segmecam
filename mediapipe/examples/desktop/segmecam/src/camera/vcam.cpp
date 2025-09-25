@@ -47,7 +47,6 @@ bool VCam::WriteBGR(const cv::Mat& bgr) {
     std::cerr << "VCam: WriteBGR failed - size mismatch: " << bgr.cols << "x" << bgr.rows << " vs " << w_ << "x" << h_ << std::endl;
     return false;
   }
-  std::cout << "VCam: Writing frame " << bgr.cols << "x" << bgr.rows << " to v4l2 device" << std::endl;
   std::vector<uint8_t> yuyv; yuyv.resize((size_t)w_ * (size_t)h_ * 2u);
   BGRToYUY2(bgr, yuyv.data());
   ssize_t need = (ssize_t)yuyv.size();
@@ -56,7 +55,6 @@ bool VCam::WriteBGR(const cv::Mat& bgr) {
     std::cerr << "VCam: Write failed - wrote " << wr << " of " << need << " bytes: " << strerror(errno) << std::endl;
     return false;
   }
-  std::cout << "VCam: Successfully wrote " << wr << " bytes to v4l2 device" << std::endl;
   return true;
 }
 
