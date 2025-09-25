@@ -30,6 +30,15 @@ public:
      * @param app_state Application state to update
      */
     static void SyncStatusFromEffectsManager(const EffectsManager& effects_manager, AppState& app_state);
+
+private:
+    // Helper methods to reduce main sync method complexity
+    static void SyncBackgroundSettings(EffectsManager& effects_manager, const AppState& app_state);
+    static void SyncBeautySettings(EffectsManager& effects_manager, const AppState& app_state);
+    static void SyncWrinkleSettings(EffectsManager& effects_manager, const AppState& app_state);
+    static void SyncProcessingSettings(EffectsManager& effects_manager, const AppState& app_state);
+    static void SyncLipSettings(EffectsManager& effects_manager, const AppState& app_state);
+    static void SyncTeethSettings(EffectsManager& effects_manager, const AppState& app_state);
 };
 
 } // namespace segmecam
