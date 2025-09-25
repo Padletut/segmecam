@@ -156,7 +156,6 @@ bool ConvertBufferToBgr(const BufferInfo& buffer_info,
 void BGRToYUY2(const cv::Mat& bgr, uint8_t* yuy2_out) {
     const int W = bgr.cols, H = bgr.rows;
     const uint8_t* p = bgr.data; int stride = (int)bgr.step; uint8_t* o = yuy2_out;
-    auto clamp8 = [](int v) { return (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v); };
     for (int y=0; y<H; ++y) {
         const uint8_t* row = p + y * stride;
         for (int x=0; x<W; x+=2) {

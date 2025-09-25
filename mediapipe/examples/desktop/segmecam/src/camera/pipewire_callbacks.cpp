@@ -24,7 +24,6 @@ static pw_buffer* dequeue_and_validate_buffer(segmecam::PipeWireOutput* self);
 static cv::Mat get_frame_to_send(segmecam::PipeWireOutput* self, int process_count);
 static bool validate_frame_and_format(segmecam::PipeWireOutput* self, const cv::Mat& frame, pw_buffer* buffer, int process_count);
 static bool convert_frame_to_buffer(segmecam::PipeWireOutput* self, const cv::Mat& frame, pw_buffer* buffer, int process_count);
-static void set_buffer_metadata(pw_buffer* buffer, size_t copy_size, int stride);
 
 // Helper functions for validate_frame_and_format refactoring
 static bool check_format_negotiated(segmecam::PipeWireOutput* self, pw_buffer* buffer, int process_count);
@@ -306,27 +305,6 @@ static bool convert_frame_to_buffer(segmecam::PipeWireOutput* self, const cv::Ma
     default:
       std::cerr << "PipeWire process callback: unsupported negotiated format: " << format.format << std::endl;
       return false;
-  }
-}
-
-// Helper function to set buffer metadata
-static void set_buffer_metadata(pw_buffer* buffer, size_t copy_size, int stride) {
-  struct spa_buffer* spa_buf = buffer->buffer;
-
-  // Set SPA buffer metadata for GStreamer compatibility
-  spa_buf->datas[0].chunk->size = copy_size;
-  spa_buf->datas[0].chunk->stride = stride;
-  spa_buf->datas[0].chunk->flags = 0;
-  spa_buf->datas[0].chunk->offset = 0;
-
-  // Ensure all other data chunks are properly initialized (set to empty)
-  for (uint32_t i = 1; i < spa_buf->n_datas; ++i) {
-    if (spa_buf->datas[i].chunk) {
-      spa_buf->datas[i].chunk->size = 0;
-      spa_buf->datas[i].chunk->offset = 0;
-      spa_buf->datas[i].chunk->stride = 0;
-      spa_buf->datas[i].chunk->flags = 0;
-    }
   }
 }
 

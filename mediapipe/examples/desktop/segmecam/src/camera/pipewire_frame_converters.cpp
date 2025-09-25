@@ -120,58 +120,41 @@ bool convert_bgr_frame(const cv::Mat& frame, pw_buffer* buffer) {
   return true;
 }
 
-// Convert RGB frame
-bool convert_rgb_frame(const cv::Mat& frame, pw_buffer* buffer) {
+// Helper function to copy converted frame to PipeWire buffer
+static bool copy_converted_frame_to_buffer(const cv::Mat& converted, pw_buffer* buffer, const std::string& format_name) {
   struct spa_buffer* spa_buf = buffer->buffer;
-  cv::Mat converted;
-  cv::cvtColor(frame, converted, cv::COLOR_BGR2RGB);
   size_t copy_size = converted.total() * converted.elemSize();
   int stride = converted.cols * converted.elemSize();
 
   if (spa_buf->datas[0].maxsize < copy_size) {
-    std::cerr << "PipeWire buffer too small for RGB frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
+    std::cerr << "PipeWire buffer too small for " << format_name << " frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
     return false;
   }
 
   memcpy(spa_buf->datas[0].data, converted.data, copy_size);
   set_buffer_metadata(buffer, copy_size, stride);
   return true;
+}
+
+// Convert RGB frame
+bool convert_rgb_frame(const cv::Mat& frame, pw_buffer* buffer) {
+  cv::Mat converted;
+  cv::cvtColor(frame, converted, cv::COLOR_BGR2RGB);
+  return copy_converted_frame_to_buffer(converted, buffer, "RGB");
 }
 
 // Convert BGRx frame
 bool convert_bgrx_frame(const cv::Mat& frame, pw_buffer* buffer) {
-  struct spa_buffer* spa_buf = buffer->buffer;
   cv::Mat converted;
   cv::cvtColor(frame, converted, cv::COLOR_BGR2BGRA);
-  size_t copy_size = converted.total() * converted.elemSize();
-  int stride = converted.cols * converted.elemSize();
-
-  if (spa_buf->datas[0].maxsize < copy_size) {
-    std::cerr << "PipeWire buffer too small for BGRx frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
-    return false;
-  }
-
-  memcpy(spa_buf->datas[0].data, converted.data, copy_size);
-  set_buffer_metadata(buffer, copy_size, stride);
-  return true;
+  return copy_converted_frame_to_buffer(converted, buffer, "BGRx");
 }
 
 // Convert RGBx frame
 bool convert_rgbx_frame(const cv::Mat& frame, pw_buffer* buffer) {
-  struct spa_buffer* spa_buf = buffer->buffer;
   cv::Mat converted;
   cv::cvtColor(frame, converted, cv::COLOR_BGR2RGBA);
-  size_t copy_size = converted.total() * converted.elemSize();
-  int stride = converted.cols * converted.elemSize();
-
-  if (spa_buf->datas[0].maxsize < copy_size) {
-    std::cerr << "PipeWire buffer too small for RGBx frame: " << spa_buf->datas[0].maxsize << " < " << copy_size << std::endl;
-    return false;
-  }
-
-  memcpy(spa_buf->datas[0].data, converted.data, copy_size);
-  set_buffer_metadata(buffer, copy_size, stride);
-  return true;
+  return copy_converted_frame_to_buffer(converted, buffer, "RGBx");
 }
 
 } // namespace segmecam

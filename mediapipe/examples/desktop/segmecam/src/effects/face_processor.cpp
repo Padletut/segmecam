@@ -21,6 +21,16 @@ FaceRegions FaceProcessor::ExtractFaceRegionsFromLandmarks(const mediapipe::Norm
     return regions;
 }
 
+void FaceProcessor::DrawFaceMeshBase(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks,
+                                    const cv::Scalar& face_oval_color, const cv::Scalar& eye_color, const cv::Scalar& eyebrow_color) {
+    using Conn = mediapipe::tasks::vision::face_landmarker::FaceLandmarksConnections;
+    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksFaceOval, face_oval_color);
+    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksLeftEye, eye_color);
+    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksRightEye, eye_color);
+    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksLeftEyeBrow, eyebrow_color);
+    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksRightEyeBrow, eyebrow_color);
+}
+
 void FaceProcessor::DrawLandmarks(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks) {
     int W = frame_bgr.cols;
     int H = frame_bgr.rows;
@@ -39,24 +49,16 @@ void FaceProcessor::DrawLandmarks(cv::Mat& frame_bgr, const mediapipe::Normalize
     // Draw connections for different face parts
     using Conn = mediapipe::tasks::vision::face_landmarker::FaceLandmarksConnections;
     DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksLips, cv::Scalar(0, 128, 255));
-    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksFaceOval, cv::Scalar(0, 200, 255));
-    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksLeftEye, cv::Scalar(255, 200, 80));
-    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksRightEye, cv::Scalar(255, 200, 80));
-    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksLeftEyeBrow, cv::Scalar(180, 180, 255));
-    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksRightEyeBrow, cv::Scalar(180, 180, 255));
+    DrawFaceMeshBase(frame_bgr, landmarks, cv::Scalar(0, 200, 255), cv::Scalar(255, 200, 80), cv::Scalar(180, 180, 255));
 }
 
 void FaceProcessor::DrawMesh(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks, bool dense) {
     // Draw face mesh connections (face oval, eyes, eyebrows)
-    using Conn = mediapipe::tasks::vision::face_landmarker::FaceLandmarksConnections;
-    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksFaceOval, cv::Scalar(255, 200, 0));
-    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksLeftEye, cv::Scalar(80, 200, 255));
-    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksRightEye, cv::Scalar(80, 200, 255));
-    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksLeftEyeBrow, cv::Scalar(180, 180, 255));
-    DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksRightEyeBrow, cv::Scalar(180, 180, 255));
+    DrawFaceMeshBase(frame_bgr, landmarks, cv::Scalar(255, 200, 0), cv::Scalar(80, 200, 255), cv::Scalar(180, 180, 255));
     
     // Optional dense tessellation
     if (dense) {
+        using Conn = mediapipe::tasks::vision::face_landmarker::FaceLandmarksConnections;
         DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksTesselation, cv::Scalar(120, 120, 120));
     }
 }
@@ -103,33 +105,36 @@ cv::Rect FaceProcessor::CalculateProcessingROI(const FaceRegions& regions, const
     return roi;
 }
 
-void FaceProcessor::ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions,
-                                                   const mediapipe::NormalizedLandmarkList& landmarks,
-                                                   const BeautyState& beauty_state) {
-    // Create config with scale = 1.0 for full resolution
-    SkinSmoothingConfig config;
+void FaceProcessor::SetupSkinSmoothingConfig(SkinSmoothingConfig& config, const BeautyState& beauty_state, float scale) {
     config.amount = beauty_state.fx_skin_amount;
-    config.radius_px = beauty_state.fx_skin_radius;
+    config.radius_px = beauty_state.fx_skin_radius * scale;
     config.texture_thresh = beauty_state.fx_skin_tex;
-    config.edge_feather_px = beauty_state.fx_skin_edge;
+    config.edge_feather_px = beauty_state.fx_skin_edge * scale;
     config.expression.smile_boost = beauty_state.fx_skin_smile_boost;
     config.expression.squint_boost = beauty_state.fx_skin_squint_boost;
     config.expression.forehead_boost = beauty_state.fx_skin_forehead_boost;
-    config.expression.forehead_margin_px = 8.0f;
+    config.expression.forehead_margin_px = 8.0f * scale;
     config.wrinkle.mask_gain = beauty_state.fx_skin_wrinkle_gain;
     config.wrinkle.region_gates.suppress_lower_face = beauty_state.fx_wrinkle_suppress_lower;
     config.wrinkle.region_gates.lower_face_ratio = beauty_state.fx_wrinkle_lower_ratio;
     config.wrinkle.region_gates.ignore_glasses = beauty_state.fx_wrinkle_ignore_glasses;
-    config.wrinkle.region_gates.glasses_margin_px = beauty_state.fx_wrinkle_glasses_margin;
+    config.wrinkle.region_gates.glasses_margin_px = beauty_state.fx_wrinkle_glasses_margin * scale;
     config.wrinkle.keep_ratio = beauty_state.fx_wrinkle_keep_ratio;
-    config.wrinkle.line_min_px = beauty_state.fx_wrinkle_custom_scales ? beauty_state.fx_wrinkle_min_px : 1.5f;
-    config.wrinkle.line_max_px = beauty_state.fx_wrinkle_custom_scales ? beauty_state.fx_wrinkle_max_px : 3.0f;
+    config.wrinkle.line_min_px = beauty_state.fx_wrinkle_custom_scales ? beauty_state.fx_wrinkle_min_px * scale : 1.5f;
+    config.wrinkle.line_max_px = beauty_state.fx_wrinkle_custom_scales ? beauty_state.fx_wrinkle_max_px * scale : 3.0f;
     config.wrinkle_preview = beauty_state.fx_wrinkle_preview;
     config.baseline_boost = beauty_state.fx_wrinkle_baseline;
     config.wrinkle.use_skin_gate = beauty_state.fx_wrinkle_use_skin_gate;
     config.wrinkle.mask_gain = beauty_state.fx_wrinkle_mask_gain;
     config.neg_atten_cap = beauty_state.fx_wrinkle_neg_cap;
+}
 
+void FaceProcessor::ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions,
+                                                   const mediapipe::NormalizedLandmarkList& landmarks,
+                                                   const BeautyState& beauty_state) {
+    // Create config with scale = 1.0 for full resolution
+    SkinSmoothingConfig config;
+    SetupSkinSmoothingConfig(config, beauty_state, 1.0f);
     ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks);
 }
 
@@ -220,28 +225,7 @@ void FaceProcessor::ApplySkinSmoothingToScaledImage(cv::Mat& small, const FaceRe
                                                   const mediapipe::NormalizedLandmarkList& lms_roi,
                                                   const BeautyState& beauty_state, float scale) {
     SkinSmoothingConfig config;
-    config.amount = beauty_state.fx_skin_amount;
-    config.radius_px = beauty_state.fx_skin_radius * scale;
-    config.texture_thresh = beauty_state.fx_skin_tex;
-    config.edge_feather_px = beauty_state.fx_skin_edge * scale;
-    config.expression.smile_boost = beauty_state.fx_skin_smile_boost;
-    config.expression.squint_boost = beauty_state.fx_skin_squint_boost;
-    config.expression.forehead_boost = beauty_state.fx_skin_forehead_boost;
-    config.expression.forehead_margin_px = 8.0f * scale;
-    config.wrinkle.mask_gain = beauty_state.fx_skin_wrinkle_gain;
-    config.wrinkle.region_gates.suppress_lower_face = beauty_state.fx_wrinkle_suppress_lower;
-    config.wrinkle.region_gates.lower_face_ratio = beauty_state.fx_wrinkle_lower_ratio;
-    config.wrinkle.region_gates.ignore_glasses = beauty_state.fx_wrinkle_ignore_glasses;
-    config.wrinkle.region_gates.glasses_margin_px = beauty_state.fx_wrinkle_glasses_margin * scale;
-    config.wrinkle.keep_ratio = beauty_state.fx_wrinkle_keep_ratio;
-    config.wrinkle.line_min_px = beauty_state.fx_wrinkle_custom_scales ? beauty_state.fx_wrinkle_min_px * scale : 1.5f;
-    config.wrinkle.line_max_px = beauty_state.fx_wrinkle_custom_scales ? beauty_state.fx_wrinkle_max_px * scale : 3.0f;
-    config.wrinkle_preview = beauty_state.fx_wrinkle_preview;
-    config.baseline_boost = beauty_state.fx_wrinkle_baseline;
-    config.wrinkle.use_skin_gate = beauty_state.fx_wrinkle_use_skin_gate;
-    config.wrinkle.mask_gain = beauty_state.fx_wrinkle_mask_gain;
-    config.neg_atten_cap = beauty_state.fx_wrinkle_neg_cap;
-
+    SetupSkinSmoothingConfig(config, beauty_state, scale);
     ApplySkinSmoothingAdvBGR(small, fr_small, config, &lms_roi);
 }
 

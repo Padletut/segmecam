@@ -2,6 +2,7 @@
 #define FACE_PROCESSOR_H
 
 #include "include/effects/face_regions.h"
+#include "include/effects/advanced_skin_effects.h"
 #include "presets.h"
 #include "mediapipe/framework/formats/landmark.pb.h"
 #include <opencv2/core.hpp>
@@ -27,6 +28,9 @@ public:
                                              const BeautyState& beauty_state);
 
 private:
+    // Helper method to setup skin smoothing config with scaling
+    void SetupSkinSmoothingConfig(SkinSmoothingConfig& config, const BeautyState& beauty_state, float scale);
+
     // Helper methods for processing scale optimization
     cv::Rect CalculateProcessingROI(const FaceRegions& regions, const cv::Size& frame_size);
     void ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions,
@@ -50,6 +54,10 @@ private:
                                        const BeautyState& beauty_state);
     void ApplyDetailPreservation(cv::Mat& up, const cv::Mat& roi_bgr, const FaceRegions& fr_roi, float dp);
     cv::Mat CreateFaceMask(const FaceRegions& fr_roi, const cv::Size& size);
+
+    // Helper method for drawing common face mesh elements
+    void DrawFaceMeshBase(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks,
+                         const cv::Scalar& face_oval_color, const cv::Scalar& eye_color, const cv::Scalar& eyebrow_color);
 
     // Template helper for drawing connections
     template<size_t N>

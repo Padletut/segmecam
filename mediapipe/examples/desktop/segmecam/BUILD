@@ -58,6 +58,7 @@ cc_library( # type: ignore
     hdrs = ["include/camera/vcam.h"],
     includes = ["."],
     deps = [
+        ":gstreamer_buffer_utils",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
     ],
