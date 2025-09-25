@@ -14,6 +14,9 @@ namespace segmecam {
 // Clamp integer value to uint8_t range [0, 255]
 inline uint8_t clamp8(int v) { return (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v); }
 
+// Convert string to uppercase copy
+std::string ToUpperCopy(const std::string& value);
+
 // Convert GStreamer buffer to OpenCV BGR format
 bool ConvertBufferToBgr(const BufferInfo& buffer_info,
                         int width,

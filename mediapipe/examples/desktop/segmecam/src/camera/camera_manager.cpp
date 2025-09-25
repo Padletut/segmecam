@@ -21,14 +21,6 @@ namespace {
 constexpr unsigned int kXdpCameraFlagNone = 0;
 #include "camera/camera_manager.h"
 
-std::string ToUpperCopy(const std::string& value) {
-    std::string upper = value;
-    std::transform(upper.begin(), upper.end(), upper.begin(), [](unsigned char c) {
-        return static_cast<char>(std::toupper(c));
-    });
-    return upper;
-}
-
 // Enumerate PipeWire camera nodes using pw-cli
 // Implementation moved to camera_pipewire.cpp
 
