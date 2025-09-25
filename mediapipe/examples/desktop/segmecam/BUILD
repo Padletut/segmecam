@@ -75,9 +75,10 @@ cc_library( # type: ignore
         ":vcam",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
+        "//mediapipe/framework/port:opencv_imgcodecs",
     ],
     copts = ["-I/usr/include/opencv4"],
-    linkopts = ["-lopencv_core", "-lopencv_imgproc"],
+    linkopts = ["-lopencv_core", "-lopencv_imgproc", "-lopencv_imgcodecs"],
 )
 
 cc_library( # type: ignore

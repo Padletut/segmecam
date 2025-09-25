@@ -66,59 +66,119 @@ void CameraControls::ApplyDefaultControls(const std::string& cam_path, bool enab
 
 // Control setter methods
 bool CameraControls::SetBrightness(const std::string& cam_path, int value) {
-    return SetCtrl(cam_path, V4L2_CID_BRIGHTNESS, value);
+    if (SetCtrl(cam_path, V4L2_CID_BRIGHTNESS, value)) {
+        r_brightness_.val = value;
+        return true;
+    }
+    return false;
 }
 
 bool CameraControls::SetContrast(const std::string& cam_path, int value) {
-    return SetCtrl(cam_path, V4L2_CID_CONTRAST, value);
+    if (SetCtrl(cam_path, V4L2_CID_CONTRAST, value)) {
+        r_contrast_.val = value;
+        return true;
+    }
+    return false;
 }
 
 bool CameraControls::SetSaturation(const std::string& cam_path, int value) {
-    return SetCtrl(cam_path, V4L2_CID_SATURATION, value);
+    if (SetCtrl(cam_path, V4L2_CID_SATURATION, value)) {
+        r_saturation_.val = value;
+        return true;
+    }
+    return false;
 }
 
 bool CameraControls::SetGain(const std::string& cam_path, int value) {
-    return SetCtrl(cam_path, V4L2_CID_GAIN, value);
+    if (SetCtrl(cam_path, V4L2_CID_GAIN, value)) {
+        r_gain_.val = value;
+        return true;
+    }
+    return false;
 }
 
 bool CameraControls::SetSharpness(const std::string& cam_path, int value) {
-    return SetCtrl(cam_path, V4L2_CID_SHARPNESS, value);
+    if (SetCtrl(cam_path, V4L2_CID_SHARPNESS, value)) {
+        r_sharpness_.val = value;
+        return true;
+    }
+    return false;
 }
 
 bool CameraControls::SetZoom(const std::string& cam_path, int value) {
-    return SetCtrl(cam_path, V4L2_CID_ZOOM_ABSOLUTE, value);
+    if (SetCtrl(cam_path, V4L2_CID_ZOOM_ABSOLUTE, value)) {
+        r_zoom_.val = value;
+        return true;
+    }
+    return false;
 }
 
 bool CameraControls::SetFocus(const std::string& cam_path, int value) {
-    return SetCtrl(cam_path, V4L2_CID_FOCUS_ABSOLUTE, value);
+    if (SetCtrl(cam_path, V4L2_CID_FOCUS_ABSOLUTE, value)) {
+        r_focus_.val = value;
+        return true;
+    }
+    return false;
 }
 
 bool CameraControls::SetAutoGain(const std::string& cam_path, bool enabled) {
-    return SetCtrl(cam_path, V4L2_CID_AUTOGAIN, enabled ? 1 : 0);
+    int value = enabled ? 1 : 0;
+    if (SetCtrl(cam_path, V4L2_CID_AUTOGAIN, value)) {
+        r_autogain_.val = value;
+        return true;
+    }
+    return false;
 }
 
 bool CameraControls::SetAutoFocus(const std::string& cam_path, bool enabled) {
-    return SetCtrl(cam_path, V4L2_CID_FOCUS_AUTO, enabled ? 1 : 0);
+    int value = enabled ? 1 : 0;
+    if (SetCtrl(cam_path, V4L2_CID_FOCUS_AUTO, value)) {
+        r_autofocus_.val = value;
+        return true;
+    }
+    return false;
 }
 
 bool CameraControls::SetAutoExposure(const std::string& cam_path, bool enabled) {
-    return SetCtrl(cam_path, V4L2_CID_EXPOSURE_AUTO, enabled ? V4L2_EXPOSURE_AUTO : V4L2_EXPOSURE_MANUAL);
+    int value = enabled ? V4L2_EXPOSURE_AUTO : V4L2_EXPOSURE_MANUAL;
+    if (SetCtrl(cam_path, V4L2_CID_EXPOSURE_AUTO, value)) {
+        r_autoexposure_.val = value;
+        return true;
+    }
+    return false;
 }
 
 bool CameraControls::SetExposure(const std::string& cam_path, int value) {
-    return SetCtrl(cam_path, V4L2_CID_EXPOSURE_ABSOLUTE, value);
+    if (SetCtrl(cam_path, V4L2_CID_EXPOSURE_ABSOLUTE, value)) {
+        r_exposure_abs_.val = value;
+        return true;
+    }
+    return false;
 }
 
 bool CameraControls::SetWhiteBalance(const std::string& cam_path, bool auto_enabled) {
-    return SetCtrl(cam_path, V4L2_CID_AUTO_WHITE_BALANCE, auto_enabled ? 1 : 0);
+    int value = auto_enabled ? 1 : 0;
+    if (SetCtrl(cam_path, V4L2_CID_AUTO_WHITE_BALANCE, value)) {
+        r_awb_.val = value;
+        return true;
+    }
+    return false;
 }
 
 bool CameraControls::SetWhiteBalanceTemperature(const std::string& cam_path, int value) {
-    return SetCtrl(cam_path, V4L2_CID_WHITE_BALANCE_TEMPERATURE, value);
+    if (SetCtrl(cam_path, V4L2_CID_WHITE_BALANCE_TEMPERATURE, value)) {
+        r_wb_temp_.val = value;
+        return true;
+    }
+    return false;
 }
 
 bool CameraControls::SetBacklightCompensation(const std::string& cam_path, int value) {
-    return SetCtrl(cam_path, V4L2_CID_BACKLIGHT_COMPENSATION, value);
+    if (SetCtrl(cam_path, V4L2_CID_BACKLIGHT_COMPENSATION, value)) {
+        r_backlight_.val = value;
+        return true;
+    }
+    return false;
 }
 
 bool CameraControls::SetControl(const std::string& cam_path, uint32_t control_id, int value) {

@@ -186,10 +186,17 @@ bool CameraManager::SetCurrentCamera(int ui_cam_idx, int ui_res_idx, int ui_fps_
         state_.current_fps = ui_fps_opts_[state_.ui_fps_idx];
     }
     
-    // Refresh controls for new camera
+    // Reopen camera with new settings
+    bool was_opened = IsOpened();
+    if (was_opened) {
+        CloseCamera();
+    }
+    bool success = OpenCamera(cam.index, state_.current_width, state_.current_height, state_.current_fps);
+    
+    // Refresh controls for new camera (whether opened successfully or not)
     RefreshControls();
     
-    return true;
+    return success;
 }
 
 const std::vector<std::pair<int,int>>& CameraManager::GetCurrentResolutions() const {

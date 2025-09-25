@@ -24,14 +24,16 @@ bool InitializeManagerHelper(std::unique_ptr<T>& manager_ptr, const std::string&
 bool ManagerCoordination::SetupManagers(Managers& managers, segmecam::AppState& app_state) {
     std::cout << "Initializing essential managers..." << std::endl;
     
+    segmecam::ConfigData loaded_config;
+    
     // Initialize config manager
-    if (!InitializeConfigManager(managers, app_state)) {
+    if (!InitializeConfigManager(managers, app_state, loaded_config)) {
         std::cerr << "Error: Failed to initialize ConfigManager" << std::endl;
         return false;
     }
     
     // Initialize camera manager
-    if (!InitializeCameraManager(managers, app_state)) {
+    if (!InitializeCameraManager(managers, app_state, loaded_config)) {
         std::cerr << "Error: Failed to initialize CameraManager" << std::endl;
         return false;
     }
@@ -99,7 +101,7 @@ bool ManagerCoordination::ValidateManagers(const Managers& managers) {
     return true;
 }
 
-bool ManagerCoordination::InitializeConfigManager(Managers& managers, segmecam::AppState& app_state) {
+bool ManagerCoordination::InitializeConfigManager(Managers& managers, segmecam::AppState& app_state, segmecam::ConfigData& out_config_data) {
     try {
         // Create the ConfigManager instance
         if (!CreateConfigManager(managers)) {
@@ -107,7 +109,7 @@ bool ManagerCoordination::InitializeConfigManager(Managers& managers, segmecam::
         }
 
         // Load default profile if available
-        LoadDefaultProfile(managers, app_state);
+        out_config_data = LoadDefaultProfile(managers, app_state);
 
         return true;
     } catch (const std::exception& e) {
@@ -122,13 +124,14 @@ bool ManagerCoordination::CreateConfigManager(Managers& managers) {
     return true;
 }
 
-void ManagerCoordination::LoadDefaultProfile(Managers& managers, segmecam::AppState& app_state) {
+segmecam::ConfigData ManagerCoordination::LoadDefaultProfile(Managers& managers, segmecam::AppState& app_state) {
+    segmecam::ConfigData config_data;  // Return empty config if no profile loaded
+    
     // Try to get default profile and load it
     std::string default_profile;
     if (managers.config->GetDefaultProfile(default_profile) && !default_profile.empty()) {
         std::cout << "Loading default profile: " << default_profile << std::endl;
 
-        segmecam::ConfigData config_data;
         if (managers.config->LoadProfile(default_profile, config_data)) {
             // Apply settings from profile to app_state
             ApplyProfileSettingsToAppState(app_state, config_data);
@@ -136,10 +139,13 @@ void ManagerCoordination::LoadDefaultProfile(Managers& managers, segmecam::AppSt
             std::cout << "Default profile loaded successfully: " << default_profile << std::endl;
         } else {
             std::cout << "Failed to load default profile: " << default_profile << std::endl;
+            config_data = segmecam::ConfigData{};  // Reset to defaults
         }
     } else {
         std::cout << "No default profile found" << std::endl;
     }
+    
+    return config_data;
 }
 
 void ManagerCoordination::ApplyProfileSettingsToAppState(segmecam::AppState& app_state, const segmecam::ConfigData& config_data) {
@@ -150,7 +156,7 @@ void ManagerCoordination::ApplyProfileSettingsToAppState(segmecam::AppState& app
     ApplyCameraSettingsFromProfile(app_state, config_data);
 }
 
-bool ManagerCoordination::InitializeCameraManager(Managers& managers, segmecam::AppState& app_state) {
+bool ManagerCoordination::InitializeCameraManager(Managers& managers, segmecam::AppState& app_state, const segmecam::ConfigData& config_data) {
     if (!InitializeManagerHelper(managers.camera, "CameraManager")) {
         return false;
     }
@@ -181,6 +187,9 @@ bool ManagerCoordination::InitializeCameraManager(Managers& managers, segmecam::
             std::cerr << "CameraManager initialization failed with code: " << result << std::endl;
             return false;
         }
+        
+        // Apply camera controls from loaded profile
+        ApplyCameraControlsFromProfile(managers, config_data);
         
         std::cout << "CameraManager initialized successfully" << std::endl;
         return true;
@@ -238,7 +247,15 @@ void ManagerCoordination::LoadDefaultProfileBackgroundImage(Managers& managers, 
     // Load background image if path is provided and background mode is image
     if (!config_data.background.bg_path.empty() && config_data.background.bg_mode == 2) { // 2 = background image mode
         std::cout << "Loading default profile background image: " << config_data.background.bg_path << std::endl;
-        managers.effects->SetBackgroundImageFromPath(config_data.background.bg_path);
+        
+        // Load the image using shared function
+        if (app_state.LoadBackgroundImageFromPath(config_data.background.bg_path)) {
+            // Set in effects manager
+            managers.effects->SetBackgroundImage(app_state.bg_image);
+            
+            // Sync the updated background settings to the effects manager
+            segmecam::ApplicationRun::SyncSettingsToEffectsManager(*managers.effects, app_state);
+        }
     } else {
         std::cout << "Default profile has no background image to load (mode: " << config_data.background.bg_mode << ", path: '" << config_data.background.bg_path << "')" << std::endl;
     }
@@ -331,4 +348,47 @@ void ManagerCoordination::ApplyCameraSettingsFromProfile(segmecam::AppState& app
     if (config_data.camera.fps_value > 0) {
         app_state.camera_fps = config_data.camera.fps_value;
     }
+}
+
+void ManagerCoordination::ApplyCameraControlsFromProfile(Managers& managers, const segmecam::ConfigData& config_data) {
+    // Apply V4L2 camera controls from profile to camera manager
+    if (!managers.camera) return;
+    
+    // Only apply controls that are set (not -1)
+    if (config_data.camera_controls.brightness >= 0) {
+        managers.camera->SetBrightness(config_data.camera_controls.brightness);
+    }
+    if (config_data.camera_controls.contrast >= 0) {
+        managers.camera->SetContrast(config_data.camera_controls.contrast);
+    }
+    if (config_data.camera_controls.saturation >= 0) {
+        managers.camera->SetSaturation(config_data.camera_controls.saturation);
+    }
+    if (config_data.camera_controls.gain >= 0) {
+        managers.camera->SetGain(config_data.camera_controls.gain);
+    }
+    if (config_data.camera_controls.sharpness >= 0) {
+        managers.camera->SetSharpness(config_data.camera_controls.sharpness);
+    }
+    if (config_data.camera_controls.zoom >= 0) {
+        managers.camera->SetZoom(config_data.camera_controls.zoom);
+    }
+    if (config_data.camera_controls.focus >= 0) {
+        managers.camera->SetFocus(config_data.camera_controls.focus);
+    }
+    if (config_data.camera_controls.exposure >= 0) {
+        managers.camera->SetExposure(config_data.camera_controls.exposure);
+    }
+    if (config_data.camera_controls.white_balance_temperature >= 0) {
+        managers.camera->SetWhiteBalanceTemperature(config_data.camera_controls.white_balance_temperature);
+    }
+    if (config_data.camera_controls.backlight_compensation >= 0) {
+        managers.camera->SetBacklightCompensation(config_data.camera_controls.backlight_compensation);
+    }
+    
+    // Apply boolean controls
+    managers.camera->SetAutoGain(config_data.camera_controls.auto_gain);
+    managers.camera->SetAutoFocus(config_data.camera_controls.auto_focus);
+    managers.camera->SetAutoExposure(config_data.camera_controls.auto_exposure);
+    managers.camera->SetWhiteBalance(config_data.camera_controls.auto_white_balance);
 }

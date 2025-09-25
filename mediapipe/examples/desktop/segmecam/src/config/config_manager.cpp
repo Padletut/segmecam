@@ -243,6 +243,23 @@ void ConfigManager::writeCameraSettings(cv::FileStorage& fs, const ConfigData& c
     fs << "ui_fps_idx" << config.camera.ui_fps_idx;
 }
 
+void ConfigManager::writeCameraControlsSettings(cv::FileStorage& fs, const ConfigData& config) const {
+    fs << "brightness" << config.camera_controls.brightness;
+    fs << "contrast" << config.camera_controls.contrast;
+    fs << "saturation" << config.camera_controls.saturation;
+    fs << "gain" << config.camera_controls.gain;
+    fs << "sharpness" << config.camera_controls.sharpness;
+    fs << "zoom" << config.camera_controls.zoom;
+    fs << "focus" << config.camera_controls.focus;
+    fs << "auto_gain" << (int)config.camera_controls.auto_gain;
+    fs << "auto_focus" << (int)config.camera_controls.auto_focus;
+    fs << "auto_exposure" << (int)config.camera_controls.auto_exposure;
+    fs << "exposure" << config.camera_controls.exposure;
+    fs << "auto_white_balance" << (int)config.camera_controls.auto_white_balance;
+    fs << "white_balance_temperature" << config.camera_controls.white_balance_temperature;
+    fs << "backlight_compensation" << config.camera_controls.backlight_compensation;
+}
+
 void ConfigManager::writeDisplaySettings(cv::FileStorage& fs, const ConfigData& config) const {
     fs << "vsync_on" << (int)config.display.vsync_on;
     fs << "show_mask" << (int)config.display.show_mask;
@@ -317,6 +334,7 @@ void ConfigManager::writePerformanceSettings(cv::FileStorage& fs, const ConfigDa
 bool ConfigManager::WriteConfigToStorage(cv::FileStorage& fs, const ConfigData& config) const {
     try {
         writeCameraSettings(fs, config);
+        writeCameraControlsSettings(fs, config);
         writeDisplaySettings(fs, config);
         writeBackgroundSettings(fs, config);
         writeLandmarkSettings(fs, config);
@@ -339,6 +357,7 @@ bool ConfigManager::ReadConfigFromStorage(cv::FileStorage& fs, ConfigData& confi
         cv::FileNode root = fs.root();
 
         readCameraSettings(root, config);
+        readCameraControlsSettings(root, config);
         readDisplaySettings(root, config);
         readBackgroundSettings(root, config);
         readLandmarkSettings(root, config);
@@ -363,6 +382,23 @@ void ConfigManager::readCameraSettings(const cv::FileNode& root, ConfigData& con
     config.camera.ui_cam_idx = ReadInt(root["ui_cam_idx"], -1);
     config.camera.ui_res_idx = ReadInt(root["ui_res_idx"], -1);
     config.camera.ui_fps_idx = ReadInt(root["ui_fps_idx"], -1);
+}
+
+void ConfigManager::readCameraControlsSettings(const cv::FileNode& root, ConfigData& config) const {
+    config.camera_controls.brightness = ReadInt(root["brightness"], -1);
+    config.camera_controls.contrast = ReadInt(root["contrast"], -1);
+    config.camera_controls.saturation = ReadInt(root["saturation"], -1);
+    config.camera_controls.gain = ReadInt(root["gain"], -1);
+    config.camera_controls.sharpness = ReadInt(root["sharpness"], -1);
+    config.camera_controls.zoom = ReadInt(root["zoom"], -1);
+    config.camera_controls.focus = ReadInt(root["focus"], -1);
+    config.camera_controls.auto_gain = ReadInt(root["auto_gain"], 0) != 0;
+    config.camera_controls.auto_focus = ReadInt(root["auto_focus"], 1) != 0;  // Default to true
+    config.camera_controls.auto_exposure = ReadInt(root["auto_exposure"], 1) != 0;  // Default to true
+    config.camera_controls.exposure = ReadInt(root["exposure"], -1);
+    config.camera_controls.auto_white_balance = ReadInt(root["auto_white_balance"], 1) != 0;  // Default to true
+    config.camera_controls.white_balance_temperature = ReadInt(root["white_balance_temperature"], -1);
+    config.camera_controls.backlight_compensation = ReadInt(root["backlight_compensation"], -1);
 }
 
 void ConfigManager::readDisplaySettings(const cv::FileNode& root, ConfigData& config) const {

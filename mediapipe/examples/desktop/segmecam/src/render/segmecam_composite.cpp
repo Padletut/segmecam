@@ -42,52 +42,84 @@ cv::Mat PerformCompositingWithUpscale(const cv::Mat& small_frame, const cv::Mat&
   return final_comp;
 }
 
-cv::Mat DecodeMaskToU8(const mediapipe::ImageFrame& mask, bool* logged_once) {
-  const int ch = mask.NumberOfChannels();
-  const int bd = mask.ByteDepth();
+// Helper function to decode single channel uint8 mask
+cv::Mat DecodeSingleChannelU8(const mediapipe::ImageFrame& mask) {
+  cv::Mat m(mask.Height(), mask.Width(), CV_8UC1,
+            const_cast<uint8_t*>(mask.PixelData()), mask.WidthStep());
+  return m.clone();
+}
+
+// Helper function to decode single channel float mask
+cv::Mat DecodeSingleChannelFloat(const mediapipe::ImageFrame& mask) {
+  cv::Mat mf(mask.Height(), mask.Width(), CV_32FC1,
+             const_cast<uint8_t*>(mask.PixelData()), mask.WidthStep());
   cv::Mat out;
-  if (ch == 1 && bd == 1) {
-    cv::Mat m(mask.Height(), mask.Width(), CV_8UC1,
-              const_cast<uint8_t*>(mask.PixelData()), mask.WidthStep());
-    out = m.clone();
-  } else if (ch == 1 && bd == 4) {
-    cv::Mat mf(mask.Height(), mask.Width(), CV_32FC1,
+  mf.convertTo(out, CV_8UC1, 255.0);
+  return out;
+}
+
+// Helper function to find best RGBA channel for mask data
+int FindBestRGBAChannel(const std::vector<cv::Mat>& channels) {
+  cv::Scalar mb = cv::mean(channels[0]);
+  cv::Scalar mg = cv::mean(channels[1]);
+  cv::Scalar mr = cv::mean(channels[2]);
+  cv::Scalar ma = cv::mean(channels[3]);
+  
+  // Find the channel with the highest mean value (most likely to contain segmentation data)
+  // Prefer non-alpha channels over alpha channel to avoid blue tint issues
+  int best = 0;
+  double bestv = mb[0];
+  if (mg[0] > bestv) { best = 1; bestv = mg[0]; }
+  if (mr[0] > bestv) { best = 2; bestv = mr[0]; }
+  // Only use alpha if it's significantly better than color channels
+  if (ma[0] > bestv + 10.0) { best = 3; bestv = ma[0]; }
+  return best;
+}
+
+// Helper function to decode RGBA mask channels
+cv::Mat DecodeRGBAChannels(const mediapipe::ImageFrame& mask, bool* logged_once) {
+  cv::Mat rgba(mask.Height(), mask.Width(), CV_8UC4,
                const_cast<uint8_t*>(mask.PixelData()), mask.WidthStep());
-    mf.convertTo(out, CV_8UC1, 255.0);
-  } else if (ch == 4 && bd == 1) {
-    cv::Mat rgba(mask.Height(), mask.Width(), CV_8UC4,
-                 const_cast<uint8_t*>(mask.PixelData()), mask.WidthStep());
-    std::vector<cv::Mat> chm; cv::split(rgba, chm);
+  std::vector<cv::Mat> chm;
+  cv::split(rgba, chm);
+  
+  int best = g_rgba_mask_channel;
+  if (best < 0) {
+    best = FindBestRGBAChannel(chm);
+    g_rgba_mask_channel = best;
+  }
+  
+  cv::Mat out = chm[best].clone();
+  
+  if (logged_once && !*logged_once) {
     cv::Scalar mb = cv::mean(chm[0]);
     cv::Scalar mg = cv::mean(chm[1]);
     cv::Scalar mr = cv::mean(chm[2]);
     cv::Scalar ma = cv::mean(chm[3]);
-    int best = g_rgba_mask_channel;
-    if (best < 0) {
-      // Find the channel with the highest mean value (most likely to contain segmentation data)
-      // Prefer non-alpha channels over alpha channel to avoid blue tint issues
-      best = 0; double bestv = mb[0];
-      if (mg[0] > bestv) { best=1; bestv=mg[0]; }
-      if (mr[0] > bestv) { best=2; bestv=mr[0]; }
-      // Only use alpha if it's significantly better than color channels
-      if (ma[0] > bestv + 10.0) { best=3; bestv=ma[0]; }
-      g_rgba_mask_channel = best;
-    }
-    out = chm[best].clone();
-    if (logged_once && !*logged_once) {
-      std::cout << "Mask channels=4 byteDepth=1 means[B,G,R,A]="
-                << mb[0] << "," << mg[0] << "," << mr[0] << "," << ma[0]
-                << " chosen=" << (g_rgba_mask_channel==0?"B":g_rgba_mask_channel==1?"G":g_rgba_mask_channel==2?"R":"A")
-                << std::endl;
-      *logged_once = true;
-    }
-  } else {
-    // Fallback treat as float
-    cv::Mat mf(mask.Height(), mask.Width(), CV_32FC1,
-               const_cast<uint8_t*>(mask.PixelData()), mask.WidthStep());
-    mf.convertTo(out, CV_8UC1, 255.0);
+    std::cout << "Mask channels=4 byteDepth=1 means[B,G,R,A]="
+              << mb[0] << "," << mg[0] << "," << mr[0] << "," << ma[0]
+              << " chosen=" << (g_rgba_mask_channel==0?"B":g_rgba_mask_channel==1?"G":g_rgba_mask_channel==2?"R":"A")
+              << std::endl;
+    *logged_once = true;
   }
+  
   return out;
+}
+
+cv::Mat DecodeMaskToU8(const mediapipe::ImageFrame& mask, bool* logged_once) {
+  const int ch = mask.NumberOfChannels();
+  const int bd = mask.ByteDepth();
+  
+  if (ch == 1 && bd == 1) {
+    return DecodeSingleChannelU8(mask);
+  } else if (ch == 1 && bd == 4) {
+    return DecodeSingleChannelFloat(mask);
+  } else if (ch == 4 && bd == 1) {
+    return DecodeRGBAChannels(mask, logged_once);
+  } else {
+    // Fallback: treat as float
+    return DecodeSingleChannelFloat(mask);
+  }
 }
 
 cv::Mat ResizeMaskToFrame(const cv::Mat& mask_u8, const cv::Size& frame_size) {
@@ -152,11 +184,7 @@ cv::Mat CompositeBlurBackgroundBGR_Accel(const cv::Mat& frame_bgr,
                                          bool use_ocl,
                                          float scale) {
   scale = std::clamp(scale, 0.4f, 1.0f);
-  
-  // Debug: Check mask properties
-  std::cout << "🔍 COMPOSITE DEBUG - Frame: " << frame_bgr.cols << "x" << frame_bgr.rows << " type:" << frame_bgr.type() 
-            << " Mask: " << mask_u8.cols << "x" << mask_u8.rows << " type:" << mask_u8.type() << std::endl;
-  
+    
   // Force CPU path to test
   use_ocl = false;
   
@@ -222,6 +250,125 @@ cv::Mat CompositeBlurBackgroundBGR_Accel(const cv::Mat& frame_bgr,
   return comp_bgr;
 }
 
+// Helper functions to reduce complexity in composite functions
+
+// Handle scale optimization for compositing
+struct ScaleOptimizationResult {
+  cv::Mat small_frame;
+  cv::Mat small_mask;
+  cv::Mat small_bg;
+  bool needs_upscale;
+};
+
+ScaleOptimizationResult ApplyScaleOptimization(const cv::Mat& frame_bgr,
+                                               const cv::Mat& mask_u8,
+                                               const cv::Mat& bg,
+                                               float scale) {
+  ScaleOptimizationResult result;
+  result.needs_upscale = std::abs(scale - 1.0f) >= 1e-3f;
+
+  if (!result.needs_upscale) {
+    result.small_frame = frame_bgr;
+    result.small_mask = mask_u8;
+    result.small_bg = bg;
+  } else {
+    cv::resize(frame_bgr, result.small_frame, cv::Size(), scale, scale,
+               (scale >= 0.85f) ? cv::INTER_LINEAR : cv::INTER_AREA);
+    cv::resize(mask_u8, result.small_mask, result.small_frame.size(), 0, 0, cv::INTER_LINEAR);
+    cv::resize(bg, result.small_bg, result.small_frame.size(), 0, 0, cv::INTER_LINEAR);
+  }
+
+  return result;
+}
+
+// CPU path for blur background compositing
+cv::Mat CompositeBlurBackgroundCPU(const cv::Mat& frame_bgr,
+                                   const cv::Mat& mask_u8,
+                                   int blur_strength,
+                                   float feather_px,
+                                   const cv::Mat& blurred_bg) {
+  // Normalized blend (same as baseline)
+  cv::Mat frame_f, blurred_f;
+  frame_bgr.convertTo(frame_f, CV_32FC3, 1.0/255.0);
+  blurred_bg.convertTo(blurred_f, CV_32FC3, 1.0/255.0);
+  cv::Mat mask_f;
+  mask_u8.convertTo(mask_f, CV_32FC1, 1.0/255.0);
+
+  if (feather_px > 0.5f) {
+    int fks = (int)std::max(1.0f, feather_px) * 2 + 1;
+    cv::GaussianBlur(mask_f, mask_f, cv::Size(fks,fks), 0);
+  }
+
+  std::vector<cv::Mat> fch(3), bch(3), out(3);
+  cv::split(frame_f, fch);
+  cv::split(blurred_f, bch);
+  for (int i=0;i<3;++i) {
+    out[i] = fch[i].mul(mask_f) + bch[i].mul(1.0f - mask_f);
+  }
+
+  cv::Mat comp_f;
+  cv::merge(out, comp_f);
+  cv::Mat comp_u8;
+  comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
+  return comp_u8;
+}
+
+// OpenCL path for blur background compositing
+cv::Mat CompositeBlurBackgroundOpenCL(const cv::Mat& frame_bgr,
+                                      const cv::Mat& mask_u8,
+                                      float feather_px,
+                                      const cv::Mat& blurred_bg) {
+  cv::UMat frame_u, blurred_u, mask_u;
+  frame_bgr.copyTo(frame_u);
+  blurred_bg.copyTo(blurred_u);
+  mask_u8.copyTo(mask_u);
+
+  cv::UMat frame_f, blurred_f, mask_f;
+  frame_u.convertTo(frame_f, CV_32FC3, 1.0/255.0);
+  blurred_u.convertTo(blurred_f, CV_32FC3, 1.0/255.0);
+  mask_u.convertTo(mask_f, CV_32FC1, 1.0/255.0);
+
+  if (feather_px > 0.5f) {
+    int fks = (int)std::max(1.0f, feather_px) * 2 + 1;
+    cv::GaussianBlur(mask_f, mask_f, cv::Size(fks,fks), 0);
+  }
+
+  std::vector<cv::UMat> ff(3), bf(3), out(3);
+  cv::split(frame_f, ff);
+  cv::split(blurred_f, bf);
+  cv::UMat one(mask_f.size(), mask_f.type());
+  one.setTo(1.0f);
+  cv::UMat inv;
+  cv::subtract(one, mask_f, inv);
+
+  for (int i=0;i<3;++i) {
+    cv::UMat a,b;
+    cv::multiply(ff[i], mask_f, a);
+    cv::multiply(bf[i], inv, b);
+    cv::add(a,b,out[i]);
+  }
+
+  cv::UMat comp_f;
+  cv::merge(out, comp_f);
+  cv::UMat comp_u8;
+  comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
+  cv::Mat comp_bgr;
+  comp_u8.copyTo(comp_bgr);
+  return comp_bgr;
+}
+
+// Debug output for blur composite
+void DebugBlurCompositeOutput(const cv::Mat& comp_u8, const cv::Mat& rgb) {
+  static int blur_debug_count = 0;
+  blur_debug_count++;
+  if (blur_debug_count <= 2 && !comp_u8.empty() && !rgb.empty()) {
+    cv::Vec3b bgr_pixel = comp_u8.at<cv::Vec3b>(comp_u8.rows/2, comp_u8.cols/2);
+    cv::Vec3b rgb_pixel = rgb.at<cv::Vec3b>(rgb.rows/2, rgb.cols/2);
+    std::cout << "🔍 BLUR COMPOSITE " << blur_debug_count << " - BGR result: ["
+              << (int)bgr_pixel[0] << "," << (int)bgr_pixel[1] << "," << (int)bgr_pixel[2]
+              << "] -> RGB output: [" << (int)rgb_pixel[0] << "," << (int)rgb_pixel[1] << "," << (int)rgb_pixel[2] << "]" << std::endl;
+  }
+}
 
 cv::Mat CompositeImageBackgroundBGR(const cv::Mat& frame_bgr,
                                     const cv::Mat& mask_u8,

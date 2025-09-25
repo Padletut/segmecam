@@ -61,12 +61,14 @@ private:
     bool WriteConfigToStorage(cv::FileStorage& fs, const ConfigData& config) const;
     bool ReadConfigFromStorage(cv::FileStorage& fs, ConfigData& config) const;
     void writeCameraSettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void writeCameraControlsSettings(cv::FileStorage& fs, const ConfigData& config) const;
     void writeDisplaySettings(cv::FileStorage& fs, const ConfigData& config) const;
     void writeBackgroundSettings(cv::FileStorage& fs, const ConfigData& config) const;
     void writeLandmarkSettings(cv::FileStorage& fs, const ConfigData& config) const;
     void writeBeautyEffectsSettings(cv::FileStorage& fs, const ConfigData& config) const;
     void writePerformanceSettings(cv::FileStorage& fs, const ConfigData& config) const;
     void readCameraSettings(const cv::FileNode& root, ConfigData& config) const;
+    void readCameraControlsSettings(const cv::FileNode& root, ConfigData& config) const;
     void readDisplaySettings(const cv::FileNode& root, ConfigData& config) const;
     void readBackgroundSettings(const cv::FileNode& root, ConfigData& config) const;
     void readLandmarkSettings(const cv::FileNode& root, ConfigData& config) const;
@@ -110,6 +112,24 @@ struct ConfigData {
         int ui_res_idx = -1;
         int ui_fps_idx = -1;
     } camera;
+    
+    // Camera V4L2 controls
+    struct CameraControlsConfig {
+        int brightness = -1;  // -1 means not set/use camera default
+        int contrast = -1;
+        int saturation = -1;
+        int gain = -1;
+        int sharpness = -1;
+        int zoom = -1;
+        int focus = -1;
+        bool auto_gain = false;
+        bool auto_focus = true;  // Default to auto focus enabled
+        bool auto_exposure = true;  // Default to auto exposure enabled
+        int exposure = -1;
+        bool auto_white_balance = true;  // Default to auto WB enabled
+        int white_balance_temperature = -1;
+        int backlight_compensation = -1;
+    } camera_controls;
     
     // Display settings
     struct DisplayConfig {

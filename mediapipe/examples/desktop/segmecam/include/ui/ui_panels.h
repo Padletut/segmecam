@@ -253,45 +253,7 @@ private:
     AppState& state_;
 };
 
-// Profile management panel
-class ProfilePanel : public UIPanel {
-public:
-    ProfilePanel(AppState& state, CameraManager& camera_mgr);
-    ~ProfilePanel() override = default;
-    
-    void Render() override;
-    
-    // Set config manager for profile persistence
-    void SetConfigManager(ConfigManager* config_mgr) { config_mgr_ = config_mgr; }
-
-private:
-    void RenderProfileSelection();
-    void RenderProfileActions();
-    void HandleProfileLoad();
-    void HandleProfileSave();
-    void UpdateProfileIndexAfterSave();
-    
-    void RenderProfileList();
-    void RenderProfileCreation();
-    void RenderProfileActionButtons();
-    void LoadProfileIntoState(const std::string& profile_name);
-    bool SaveStateToProfile(const std::string& profile_name);
-    
-    AppState& state_;
-    CameraManager& camera_mgr_;
-    ConfigManager* config_mgr_ = nullptr;
-    
-    // UI state
-    char profile_name_buf_[128] = {0};
-    int ui_profile_idx_ = -1;
-    std::vector<std::string> profile_names_;
-    
-    // Status tracking
-    std::string last_loaded_profile_;
-    bool profile_list_dirty_ = true;
-};
-
-// Debug and overlay panel
+// Debug and status panels
 class DebugPanel : public UIPanel {
 public:
     DebugPanel(AppState& state);
@@ -301,7 +263,6 @@ public:
 
 private:
     void RenderOverlayControls();
-    void RenderDebugVisualization();
     void RenderPerformanceStats();
     void RenderBasicStats();
     void RenderPerformanceOptimization();
@@ -314,7 +275,7 @@ private:
     AppState& state_;
 };
 
-// Status and information panel
+// Status information panel
 class StatusPanel : public UIPanel {
 public:
     StatusPanel(AppState& state);

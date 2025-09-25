@@ -10,6 +10,8 @@
 #include <cstring>
 #include <cstdlib>
 #include <filesystem>
+#include <unordered_map>
+#include <functional>
 
 #ifdef __linux__
 #include <linux/videodev2.h>
@@ -467,27 +469,64 @@ void CameraPanel::RenderResetButton() {
 
 void CameraPanel::SliderCtrl(const char* label, CtrlRange& range, uint32_t control_id) {
     if (!range.available) return;
-    
+
     int v = range.val;
     int minv = range.min;
     int maxv = range.max;
     int step = std::max(1, range.step);
-    
+
     if (ImGui::SliderInt(label, &v, minv, maxv)) {
         // round to step
         int rs = minv + ((v - minv) / step) * step;
         range.val = rs;
-        camera_mgr_.SetControl(control_id, range.val);
+
+        // Use lookup table to call appropriate setter
+        static const std::unordered_map<uint32_t, std::function<void(CameraManager&, int)>> setters = {
+            {V4L2_CID_BRIGHTNESS, [](CameraManager& mgr, int val) { mgr.SetBrightness(val); }},
+            {V4L2_CID_CONTRAST, [](CameraManager& mgr, int val) { mgr.SetContrast(val); }},
+            {V4L2_CID_SATURATION, [](CameraManager& mgr, int val) { mgr.SetSaturation(val); }},
+            {V4L2_CID_GAIN, [](CameraManager& mgr, int val) { mgr.SetGain(val); }},
+            {V4L2_CID_SHARPNESS, [](CameraManager& mgr, int val) { mgr.SetSharpness(val); }},
+            {V4L2_CID_ZOOM_ABSOLUTE, [](CameraManager& mgr, int val) { mgr.SetZoom(val); }},
+            {V4L2_CID_FOCUS_ABSOLUTE, [](CameraManager& mgr, int val) { mgr.SetFocus(val); }},
+            {V4L2_CID_EXPOSURE_ABSOLUTE, [](CameraManager& mgr, int val) { mgr.SetExposure(val); }},
+            {V4L2_CID_WHITE_BALANCE_TEMPERATURE, [](CameraManager& mgr, int val) { mgr.SetWhiteBalanceTemperature(val); }},
+            {V4L2_CID_BACKLIGHT_COMPENSATION, [](CameraManager& mgr, int val) { mgr.SetBacklightCompensation(val); }}
+        };
+
+        auto it = setters.find(control_id);
+        if (it != setters.end()) {
+            it->second(camera_mgr_, range.val);
+        } else {
+            camera_mgr_.SetControl(control_id, range.val);
+        }
     }
 }
 
 void CameraPanel::CheckboxCtrl(const char* label, CtrlRange& range, uint32_t control_id) {
     if (!range.available) return;
-    
+
     bool v = (range.val != 0);
     if (ImGui::Checkbox(label, &v)) {
         range.val = v ? 1 : 0;
-        camera_mgr_.SetControl(control_id, range.val);
+
+        // Use lookup table for boolean controls
+        static const std::unordered_map<uint32_t, std::function<void(CameraManager&, bool)>> bool_setters = {
+            {V4L2_CID_AUTOGAIN, [](CameraManager& mgr, bool val) { mgr.SetAutoGain(val); }},
+            {V4L2_CID_FOCUS_AUTO, [](CameraManager& mgr, bool val) { mgr.SetAutoFocus(val); }},
+            {V4L2_CID_AUTO_WHITE_BALANCE, [](CameraManager& mgr, bool val) { mgr.SetWhiteBalance(val); }}
+        };
+
+        auto it = bool_setters.find(control_id);
+        if (it != bool_setters.end()) {
+            it->second(camera_mgr_, v);
+        } else if (control_id == V4L2_CID_BACKLIGHT_COMPENSATION &&
+                   range.min == 0 && range.max == 1 && range.step == 1) {
+            // Special case: backlight can be either checkbox or slider
+            camera_mgr_.SetBacklightCompensation(range.val);
+        } else {
+            camera_mgr_.SetControl(control_id, range.val);
+        }
     }
 }
 

@@ -55,14 +55,14 @@ public:
     static void LoadDefaultProfileBackgroundImage(Managers& managers, segmecam::AppState& app_state);
     
 private:
-    static bool InitializeConfigManager(Managers& managers, segmecam::AppState& app_state);
-    static bool InitializeCameraManager(Managers& managers, segmecam::AppState& app_state);
+    static bool InitializeConfigManager(Managers& managers, segmecam::AppState& app_state, segmecam::ConfigData& out_config_data);
+    static bool InitializeCameraManager(Managers& managers, segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
     static bool InitializeEffectsManager(Managers& managers, segmecam::AppState& app_state);
     static bool InitializeUIManager(Managers& managers, segmecam::AppState& app_state);
     
     // Helper methods for ConfigManager initialization to reduce complexity
     static bool CreateConfigManager(Managers& managers);
-    static void LoadDefaultProfile(Managers& managers, segmecam::AppState& app_state);
+    static segmecam::ConfigData LoadDefaultProfile(Managers& managers, segmecam::AppState& app_state);
     static void ApplyProfileSettingsToAppState(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
     
     // Helper methods for profile loading to reduce complexity
@@ -71,6 +71,7 @@ private:
     static void ApplyBeautySettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
     static void ApplyPerformanceSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
     static void ApplyCameraSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
+    static void ApplyCameraControlsFromProfile(Managers& managers, const segmecam::ConfigData& config_data);
 };
 
 #endif // MANAGER_COORDINATION_H

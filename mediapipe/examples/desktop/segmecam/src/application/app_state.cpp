@@ -1,6 +1,8 @@
 #include "include/application/app_state.h"
 #include "mediapipe/framework/port/opencv_core_inc.h"
 #include "mediapipe/framework/port/opencv_imgproc_inc.h"
+#include "mediapipe/framework/port/opencv_imgcodecs_inc.h"
+#include <iostream>
 
 namespace segmecam {
 
@@ -65,6 +67,9 @@ void AppState::LoadBackgroundSettings(const cv::FileNode& root) {
     std::string bg_path_str; 
     root["bg_path"] >> bg_path_str;
     std::snprintf(bg_path_buf, sizeof(bg_path_buf), "%s", bg_path_str.c_str());
+    
+    // Load the actual image from the path using shared function
+    LoadBackgroundImageFromPath(bg_path_str);
   }
 }
 
@@ -147,6 +152,23 @@ int AppState::ReadInt(const cv::FileNode& n, int def) const {
 
 float AppState::ReadFloat(const cv::FileNode& n, float def) const {
   return n.empty() ? def : (float)n;
+}
+
+bool AppState::LoadBackgroundImageFromPath(const std::string& path) {
+  if (path.empty()) return false;
+  
+  cv::Mat img = cv::imread(path, cv::IMREAD_COLOR);
+  if (!img.empty()) {
+    bg_image = img;
+    bg_mode = 2; // Set to image mode when image loads successfully
+    std::snprintf(bg_path_buf, sizeof(bg_path_buf), "%s", path.c_str());
+    std::cout << "Loaded background image: " << path 
+              << " (" << img.cols << "x" << img.rows << ")" << std::endl;
+    return true;
+  } else {
+    std::cerr << "Failed to load background image: " << path << std::endl;
+    return false;
+  }
 }
 
 } // namespace segmecam

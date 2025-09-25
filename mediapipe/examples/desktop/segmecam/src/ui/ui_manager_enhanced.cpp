@@ -132,9 +132,6 @@ void UIManager::InitializePanels(AppState& state, CameraManager& camera_mgr, Eff
     RegisterPanel(std::make_unique<BackgroundPanel>(state));
     RegisterPanel(std::make_unique<BeautyPanel>(state));
     
-    // Note: Profile functionality moved to Camera Panel to be after Virtual Webcam section
-    // ProfilePanel removed to avoid duplication
-    
     RegisterPanel(std::make_unique<DebugPanel>(state));
     RegisterPanel(std::make_unique<StatusPanel>(state));
 }

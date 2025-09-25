@@ -41,7 +41,7 @@ struct AppState {
   bool vcam_auto_start = false;
   
   // Background mode: 0=None, 1=Blur, 2=Image, 3=Solid Color
-  int bg_mode = 1; // Default to Blur mode to show segmentation effects
+  int bg_mode = 0; // Default to no background effect
   cv::Mat bg_image; // background image (BGR)
   char bg_path_buf[512] = {0};
   float solid_color[3] = {0.0f, 0.0f, 0.0f}; // RGB 0..1
@@ -68,13 +68,13 @@ struct AppState {
   float fx_skin_smile_boost = 0.6f;
   float fx_skin_squint_boost = 0.5f;
   float fx_skin_forehead_boost = 0.8f;
-  float fx_skin_wrinkle_gain = 1.0f;
-  bool fx_wrinkle_suppress_lower = true;
+  float fx_skin_wrinkle_gain = 0.3f;
+  bool fx_wrinkle_suppress_lower = false;
   float fx_wrinkle_lower_ratio = 0.45f;
-  bool fx_wrinkle_ignore_glasses = true;
+  bool fx_wrinkle_ignore_glasses = false;
   float fx_wrinkle_glasses_margin = 12.0f;
   float fx_wrinkle_keep_ratio = 0.35f;
-  bool fx_wrinkle_custom_scales = true;
+  bool fx_wrinkle_custom_scales = false;
   float fx_wrinkle_min_px = 2.0f;
   float fx_wrinkle_max_px = 8.0f;
   bool fx_wrinkle_preview = false;
@@ -148,6 +148,9 @@ struct AppState {
   void LoadWrinkleSettings(const cv::FileNode& root);
   void LoadLipEffectSettings(const cv::FileNode& root);
   void LoadTeethSettings(const cv::FileNode& root);
+  
+  // Shared background image loading function
+  bool LoadBackgroundImageFromPath(const std::string& path);
   
 private:
   int ReadInt(const cv::FileNode& n, int def) const;
