@@ -369,8 +369,16 @@ config_setting(
 # PipeWire Output Library (Flatpak Video Output)
 cc_library( # type: ignore
     name = "pipewire_output",
-    srcs = ["src/camera/pipewire_output.cpp"],
-    hdrs = ["include/camera/pipewire_output.h"],
+    srcs = [
+        "src/camera/pipewire_output.cpp",
+        "src/camera/pipewire_frame_converters.cpp",
+        "src/camera/pipewire_callbacks.cpp",
+    ],
+    hdrs = [
+        "include/camera/pipewire_output.h",
+        "include/camera/pipewire_frame_converters.h",
+        "include/camera/pipewire_callbacks.h",
+    ],
     includes = [".", "include"],
     deps = [
         ":gstreamer_buffer_utils",
