@@ -146,3 +146,4 @@ codacy-fixes.patch
 .codacy/results.sarif
 .continue/mcpServers/new-mcp-server.yaml
 profile_debug_panels_backup.cpp
+mediapipe/examples/desktop/segmecam/src/camera/pipewire_output.backup.cpp

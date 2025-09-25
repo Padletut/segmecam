@@ -1,9 +1,34 @@
----
 engines:
   # Disable tools that aren't configured
   eslint: false
   trivy: false
+  pylint: false
   
   # Enable only Lizard for complexity analysis
   lizard:
     enabled: true
+
+  # Enable Cppcheck for C++ code analysis
+  cppcheck:
+    enabled: true
+    options:
+      - --enable=all
+      - --inconclusive
+      - --std=c++11
+      - --language=c++
+      - --suppress=missingIncludeSystem
+
+  # Exclude specific files or directories from analysis
+  exclude:
+    - 'third_party/**'
+    - 'build/**'
+    - 'build-dir-final/**'
+    - 'bazel-**/**'
+    - 'dist/**'
+    - 'docs/**'
+    - '*.md'
+    - '*.txt'
+    - '*.yml'
+    - '*.yaml'
+    - '*.json'
+    - '*.xml'
