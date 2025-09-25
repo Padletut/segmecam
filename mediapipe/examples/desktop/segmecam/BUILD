@@ -420,6 +420,25 @@ cc_library( # pyright: ignore[reportUndefinedVariable]
     ],
 )
 
+# Profile Management System
+cc_library( # type: ignore
+    name = "profile_manager",
+    srcs = ["src/ui/profile_panel.cpp"],
+    hdrs = ["include/profile/profile_manager.h"],
+    includes = [".", "include", "src/ui"],
+    deps = [
+        ":app_state",
+        ":camera_manager", 
+        ":effects_manager",
+        "//mediapipe/examples/desktop/segmecam/src/config:config_manager",
+        "//mediapipe/framework/port:opencv_core",
+        "//third_party/imgui:imgui",
+    ],
+    copts = [
+        "-I/usr/include/pipewire-0.3",
+    ],
+)
+
 # UI Management System (Phase 6 Refactoring)
 cc_library( # type: ignore
     name = "ui_panels",
@@ -440,6 +459,7 @@ cc_library( # type: ignore
         ":camera_manager",
         ":effects_manager",
         ":presets",
+        ":profile_manager",
         ":segmecam_face_effects",  # for cam_enum.h
         ":vcam",
         ":portal_utils",

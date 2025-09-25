@@ -7,8 +7,13 @@
 #include "include/camera/camera_manager.h"
 #include "include/camera/cam_enum.h"
 #include "src/config/config_manager.h"
+#include "include/profile/profile_manager.h"
 
 namespace segmecam {
+
+// Forward declarations
+class EffectsManager;
+class ProfileManager;
 
 // Base class for all UI panels
 class UIPanel {
@@ -36,7 +41,10 @@ public:
     void Render() override;
     
     // Set config manager for profile functionality
-    void SetConfigManager(class ConfigManager* config_mgr) { config_mgr_ = config_mgr; }
+    void SetConfigManager(class ConfigManager* config_mgr) { 
+        config_mgr_ = config_mgr;
+        profile_mgr_.SetConfigManager(config_mgr);
+    }
     
     // Update UI to show the currently loaded default profile
     void UpdateDefaultProfileDisplay();
@@ -50,9 +58,6 @@ private:
     void RenderVirtualCameraControls();
     // Profile section rendering
     void RenderProfileSection();
-    void RenderProfileHeader();
-    void HandleProfileSelection();
-    void ProcessProfileLoadRequest();
     void RenderCameraControls();
     
     // Helper methods for resolution settings
@@ -103,6 +108,7 @@ private:
     CameraManager& camera_mgr_;
     class EffectsManager& effects_mgr_;
     class ConfigManager* config_mgr_ = nullptr;
+    ProfileManager profile_mgr_;
     
     // UI state
     int ui_cam_idx_ = 0;
@@ -111,40 +117,11 @@ private:
     int ui_vcam_idx_ = 0;
     std::vector<int> ui_fps_opts_;
     
-    // Profile management UI state  
-    int ui_profile_idx_ = -1;
-    char profile_name_buf_[128] = {0};
-    
     // PipeWire output UI state
     bool pipewire_start_requested_ = false;
     int pipewire_width_ = 640;
     int pipewire_height_ = 480;
     int pipewire_fps_ = 30;
-    
-    // Profile helper methods
-    void LoadProfileIntoState(const std::string& profile_name);
-    bool ValidateProfileLoad(const std::string& profile_name);
-    void LoadCameraSettings(const ConfigData& config);
-    void LoadCameraSelection(const ConfigData& config, bool in_flatpak);
-    void LoadResolutionSettings(const ConfigData& config, bool in_flatpak);
-    void LoadDisplaySettings(const ConfigData& config);
-    void LoadBackgroundSettings(const ConfigData& config);
-    void LoadLandmarkSettings(const ConfigData& config);
-    void LoadBeautySettings(const ConfigData& config);
-    void LoadPerformanceSettings(const ConfigData& config);
-    bool SaveStateToProfile(const std::string& profile_name);
-    bool ValidateProfileSave(const std::string& profile_name);
-    void SaveCameraSettings(ConfigData& config);
-    void SaveDisplaySettings(ConfigData& config);
-    void SaveBackgroundSettings(ConfigData& config);
-    void SaveLandmarkSettings(ConfigData& config);
-    void SaveBeautySettings(ConfigData& config);
-    void SaveBasicBeautySettings(ConfigData& config);
-    void SaveWrinkleSettings(ConfigData& config);
-    void SaveLipSettings(ConfigData& config);
-    void SaveTeethSettings(ConfigData& config);
-    void SavePerformanceSettings(ConfigData& config);
-    bool SaveProfileToManager(const std::string& profile_name, const ConfigData& config);
     
     // String storage for combo boxes (to prevent memory corruption)
     std::vector<std::string> res_strings_;
