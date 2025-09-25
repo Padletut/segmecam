@@ -99,7 +99,12 @@ __pycache__/
 
 # Build artifacts
 build/
+build-dir-final/
 dist/
+bazel-segmecam-*/
+bazel-bin/
+bazel-out/
+bazel-testlogs/
 
 # Cache directories
 .cache/

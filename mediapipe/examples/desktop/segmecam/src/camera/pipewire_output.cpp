@@ -367,31 +367,19 @@ static void on_stream_process(void* data) {
               std::cerr << "[YUY2] Frame step != cols*3! step=" << frame_to_send.step << ", cols*3=" << (frame_to_send.cols*3) << std::endl;
             }
           }
-          // Option: fill with solid gray for test
-          bool test_gray = false; // set to true to force gray pattern
-          if (test_gray) {
+          // Zero output buffer for debug
+          memset(spa_buf->datas[0].data, 0x80, copy_size);
+          // Only convert if frame is valid
+          if (frame_to_send.type() == CV_8UC3 && frame_to_send.isContinuous() && frame_to_send.cols % 2 == 0) {
+            segmecam::BGRToYUY2(frame_to_send, static_cast<uint8_t*>(spa_buf->datas[0].data));
+          } else {
+            // Fill with gray YUY2 pattern for debug
             uint8_t* yuy2 = static_cast<uint8_t*>(spa_buf->datas[0].data);
             for (int i = 0; i < copy_size; i += 4) {
               yuy2[i+0] = 128; // Y0
               yuy2[i+1] = 128; // U
               yuy2[i+2] = 128; // Y1
               yuy2[i+3] = 128; // V
-            }
-          } else {
-            // Zero output buffer for debug
-            memset(spa_buf->datas[0].data, 0x80, copy_size);
-            // Only convert if frame is valid
-            if (frame_to_send.type() == CV_8UC3 && frame_to_send.isContinuous() && frame_to_send.cols % 2 == 0) {
-              segmecam::BGRToYUY2(frame_to_send, static_cast<uint8_t*>(spa_buf->datas[0].data));
-            } else {
-              // Fill with gray YUY2 pattern for debug
-              uint8_t* yuy2 = static_cast<uint8_t*>(spa_buf->datas[0].data);
-              for (int i = 0; i < copy_size; i += 4) {
-                yuy2[i+0] = 128; // Y0
-                yuy2[i+1] = 128; // U
-                yuy2[i+2] = 128; // Y1
-                yuy2[i+3] = 128; // V
-              }
             }
           }
           // Print first 16 bytes for debug
