@@ -628,6 +628,43 @@ bool PipeWireOutput::SendFrame(const cv::Mat& frame) {
 
 bool PipeWireOutput::CreatePipeWireStream() {
   // Create properties for the stream - these are crucial for OBS discovery
+  pw_properties* props = CreateStreamProperties();
+  if (!props) {
+    return false;
+  }
+
+  // Initialize thread loop
+  if (!InitializeThreadLoop()) {
+    pw_properties_free(props);
+    return false;
+  }
+
+  // Create context and connect to core
+  if (!CreateContextAndCore()) {
+    pw_properties_free(props);
+    return false;
+  }
+
+  // Create and setup stream
+  if (!CreateAndSetupStream(props)) {
+    return false;
+  }
+
+  // Build format parameters
+  const spa_pod* params[7];
+  int param_count = BuildFormatParameters(params, 7);
+
+  // Connect and start stream
+  if (!ConnectAndStartStream(params, param_count)) {
+    return false;
+  }
+
+  std::cout << "PipeWire stream created and connected" << std::endl;
+  return true;
+}
+
+pw_properties* PipeWireOutput::CreateStreamProperties() {
+  // Create properties for the stream - these are crucial for OBS discovery
   pw_properties* props = pw_properties_new(
       PW_KEY_MEDIA_TYPE, "Video",
       PW_KEY_MEDIA_CATEGORY, "Capture",
@@ -635,8 +672,6 @@ bool PipeWireOutput::CreatePipeWireStream() {
       PW_KEY_MEDIA_CLASS, "Video/Source",
       PW_KEY_NODE_NAME, stream_name_.c_str(),
       PW_KEY_NODE_DESCRIPTION, stream_name_.c_str(),
-      PW_KEY_DEVICE_NAME, stream_name_.c_str(),
-      PW_KEY_DEVICE_DESCRIPTION, stream_name_.c_str(),
       PW_KEY_NODE_NICK, stream_name_.c_str(),
       PW_KEY_APP_NAME, "SegmeCam",
       PW_KEY_APP_ID, "org.segmecam.SegmeCam",
@@ -646,7 +681,7 @@ bool PipeWireOutput::CreatePipeWireStream() {
 
   if (!props) {
     std::cerr << "Failed to create PipeWire properties" << std::endl;
-    return false;
+    return nullptr;
   }
 
   // Debug: Print properties
@@ -658,11 +693,14 @@ bool PipeWireOutput::CreatePipeWireStream() {
     std::cout << "  " << key << " = " << (value ? value : "(null)") << std::endl;
   }
 
+  return props;
+}
+
+bool PipeWireOutput::InitializeThreadLoop() {
   // Create PipeWire thread loop FIRST (following OBS pattern)
   thread_loop_ = pw_thread_loop_new("segmecam-pw", nullptr);
   if (!thread_loop_) {
     std::cerr << "Failed to create PipeWire thread loop" << std::endl;
-    pw_properties_free(props);
     return false;
   }
 
@@ -671,11 +709,13 @@ bool PipeWireOutput::CreatePipeWireStream() {
   int start_result = pw_thread_loop_start(thread_loop_);
   if (start_result < 0) {
     std::cerr << "Failed to start PipeWire thread loop: " << strerror(-start_result) << std::endl;
-    pw_properties_free(props);
     return false;
   }
   std::cout << "PipeWire thread loop started successfully" << std::endl;
+  return true;
+}
 
+bool PipeWireOutput::CreateContextAndCore() {
   // LOCK the thread loop for all PipeWire operations (critical!)
   pw_thread_loop_lock(thread_loop_);
 
@@ -688,7 +728,6 @@ bool PipeWireOutput::CreatePipeWireStream() {
   if (!context_) {
     std::cerr << "Failed to create PipeWire context" << std::endl;
     pw_thread_loop_unlock(thread_loop_);
-    pw_properties_free(props);
     return false;
   }
   std::cout << "PipeWire context created successfully" << std::endl;
@@ -698,17 +737,18 @@ bool PipeWireOutput::CreatePipeWireStream() {
   if (!core_) {
     std::cerr << "Failed to connect to PipeWire core" << std::endl;
     pw_thread_loop_unlock(thread_loop_);
-    pw_properties_free(props);
     return false;
   }
   std::cout << "PipeWire core connected successfully" << std::endl;
+  return true;
+}
 
+bool PipeWireOutput::CreateAndSetupStream(pw_properties* props) {
   // Create PipeWire stream WITHIN the locked thread loop
   stream_ = pw_stream_new(core_, stream_name_.c_str(), props);
   if (!stream_) {
     std::cerr << "Failed to create PipeWire stream" << std::endl;
     pw_thread_loop_unlock(thread_loop_);
-    pw_properties_free(props);
     return false;
   }
   std::cout << "PipeWire stream created successfully" << std::endl;
@@ -733,8 +773,10 @@ bool PipeWireOutput::CreatePipeWireStream() {
 
   pw_stream_add_listener(stream_, &stream_listener_, &stream_events_, events_);
   std::cout << "PipeWire stream event listeners added" << std::endl;
+  return true;
+}
 
-
+int PipeWireOutput::BuildFormatParameters(const spa_pod** params, int max_params) {
   // Build format parameters for the video stream (advertise multiple formats)
   std::cout << "Building PipeWire format parameters (multi-format)..." << std::endl;
   uint8_t buffer[4096];
@@ -746,9 +788,7 @@ bool PipeWireOutput::CreatePipeWireStream() {
   video_format.framerate.num = fps_;
   video_format.framerate.denom = 1;
 
-
   // List of formats to advertise (add YUY2 and UYVY for v4l2sink compatibility)
-  const spa_pod* params[7];
   int param_count = 0;
 
   // BGR
@@ -782,6 +822,10 @@ bool PipeWireOutput::CreatePipeWireStream() {
       SPA_PARAM_BUFFERS_align,   SPA_POD_Int(16)));
   params[param_count++] = buffer_param;
 
+  return param_count;
+}
+
+bool PipeWireOutput::ConnectAndStartStream(const spa_pod** params, int param_count) {
   std::cout << "Connecting PipeWire stream with format and buffer parameters..." << std::endl;
   int result = pw_stream_connect(
       stream_, PW_DIRECTION_OUTPUT, PW_ID_ANY,
@@ -813,8 +857,6 @@ bool PipeWireOutput::CreatePipeWireStream() {
   // Don't wait for stabilization - let it happen asynchronously
   // The state callbacks will handle when the stream is ready
   std::cout << "PipeWire stream initialization complete - will stabilize asynchronously" << std::endl;
-
-  std::cout << "PipeWire stream created and connected" << std::endl;
   return true;
 }
 

@@ -136,6 +136,47 @@ public:
 
 private:
   /**
+   * @brief Create PipeWire stream properties
+   * @return Properties object or nullptr on failure
+   */
+  pw_properties* CreateStreamProperties();
+
+  /**
+   * @brief Initialize and start the PipeWire thread loop
+   * @return true if successful
+   */
+  bool InitializeThreadLoop();
+
+  /**
+   * @brief Create PipeWire context and connect to core
+   * @return true if successful
+   */
+  bool CreateContextAndCore();
+
+  /**
+   * @brief Create and setup PipeWire stream with event listeners
+   * @param props Stream properties
+   * @return true if successful
+   */
+  bool CreateAndSetupStream(pw_properties* props);
+
+  /**
+   * @brief Build format and buffer parameters for the stream
+   * @param params Array to store parameters
+   * @param max_params Maximum number of parameters
+   * @return Number of parameters created
+   */
+  int BuildFormatParameters(const spa_pod** params, int max_params);
+
+  /**
+   * @brief Connect and start the PipeWire stream
+   * @param params Format parameters
+   * @param param_count Number of parameters
+   * @return true if successful
+   */
+  bool ConnectAndStartStream(const spa_pod** params, int param_count);
+
+  /**
    * @brief Create the PipeWire stream and connect to core
    * @return true if stream creation successful
    */
