@@ -129,6 +129,39 @@ public:
         const cv::Mat& display_rgb);
 
     /**
+     * Handle auto-selection of virtual camera
+     * @param camera_mgr Camera manager instance
+     * @param app_state Application state
+     * @param display_rgb RGB frame to output
+     */
+    static void handle_auto_vcam_selection(
+        CameraManager& camera_mgr,
+        AppState& app_state,
+        const cv::Mat& display_rgb);
+
+    /**
+     * Handle virtual camera resize if needed
+     * @param camera_mgr Camera manager instance
+     * @param app_state Application state
+     * @param display_rgb RGB frame to output
+     */
+    static void handle_vcam_resize(
+        CameraManager& camera_mgr,
+        AppState& app_state,
+        const cv::Mat& display_rgb);
+
+    /**
+     * Handle frame output to virtual camera and PipeWire
+     * @param camera_mgr Camera manager instance
+     * @param app_state Application state
+     * @param display_rgb RGB frame to output
+     */
+    static void handle_frame_output(
+        CameraManager& camera_mgr,
+        AppState& app_state,
+        const cv::Mat& display_rgb);
+
+    /**
      * Handle dropped files (background images)
      * @param ui_manager UI manager instance
      * @param app_state Application state
