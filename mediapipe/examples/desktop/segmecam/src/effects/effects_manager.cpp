@@ -39,8 +39,8 @@ SkinSmoothingConfig EffectsManager::CreateSkinSmoothingConfig(float scale) const
     config.expression.smile_boost = beauty_state_.fx_skin_smile_boost;
     config.expression.squint_boost = beauty_state_.fx_skin_squint_boost;
     config.expression.forehead_boost = beauty_state_.fx_skin_forehead_boost;
-    config.expression.forehead_margin_px = 8.0f * scale;
-    config.wrinkle.mask_gain = beauty_state_.fx_skin_wrinkle_gain;
+    config.expression.forehead_margin_px = 10.0f * scale;
+    config.boost_gain = beauty_state_.fx_skin_wrinkle_gain;
     config.wrinkle.region_gates.suppress_lower_face = beauty_state_.fx_wrinkle_suppress_lower;
     config.wrinkle.region_gates.lower_face_ratio = beauty_state_.fx_wrinkle_lower_ratio;
     config.wrinkle.region_gates.ignore_glasses = beauty_state_.fx_wrinkle_ignore_glasses;
@@ -53,6 +53,7 @@ SkinSmoothingConfig EffectsManager::CreateSkinSmoothingConfig(float scale) const
     config.wrinkle.use_skin_gate = beauty_state_.fx_wrinkle_use_skin_gate;
     config.wrinkle.mask_gain = beauty_state_.fx_wrinkle_mask_gain;
     config.neg_atten_cap = beauty_state_.fx_wrinkle_neg_cap;
+    // boost_gain is now properly set above from fx_skin_wrinkle_gain
     return config;
 }
 

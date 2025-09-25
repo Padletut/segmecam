@@ -49,7 +49,9 @@ void ApplicationSync::SyncBeautySettings(EffectsManager& effects_manager, const 
     effects_manager.SetSkinSmoothingEnabled(app_state.fx_skin);
     effects_manager.SetSkinSmoothingStrength(app_state.fx_skin_strength);
     effects_manager.SetSkinSmoothingAdvanced(app_state.fx_skin_adv);
-    effects_manager.SetSkinSmoothingAmount(app_state.fx_skin_amount);
+    // In simple mode, use strength as amount; in advanced mode, use amount directly
+    float effective_amount = app_state.fx_skin_adv ? app_state.fx_skin_amount : app_state.fx_skin_strength;
+    effects_manager.SetSkinSmoothingAmount(effective_amount);
     effects_manager.SetSkinSmoothingRadius(app_state.fx_skin_radius);
     effects_manager.SetSkinTexturePreservation(app_state.fx_skin_tex);
     effects_manager.SetSkinEdgeFeather(app_state.fx_skin_edge);

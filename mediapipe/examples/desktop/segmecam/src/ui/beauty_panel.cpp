@@ -284,7 +284,8 @@ void BeautyPanel::CopyBeautyFieldsToBeautyState(BeautyState& bs) {
     // Basic skin settings
     bs.fx_skin = state_.fx_skin;
     bs.fx_skin_adv = state_.fx_skin_adv;
-    bs.fx_skin_amount = state_.fx_skin_amount;
+    // In simple mode, use fx_skin_strength; in advanced mode, use fx_skin_amount
+    bs.fx_skin_amount = state_.fx_skin_adv ? state_.fx_skin_amount : state_.fx_skin_strength;
     bs.fx_skin_radius = state_.fx_skin_radius;
     bs.fx_skin_tex = state_.fx_skin_tex;
     bs.fx_skin_edge = state_.fx_skin_edge;
@@ -354,7 +355,12 @@ void BeautyPanel::CopyBeautyStateFieldsToAppState(const BeautyState& bs) {
     // Basic skin settings
     state_.fx_skin = bs.fx_skin;
     state_.fx_skin_adv = bs.fx_skin_adv;
-    state_.fx_skin_amount = bs.fx_skin_amount;
+    // In simple mode, sync to fx_skin_strength; in advanced mode, sync to fx_skin_amount
+    if (state_.fx_skin_adv) {
+        state_.fx_skin_amount = bs.fx_skin_amount;
+    } else {
+        state_.fx_skin_strength = bs.fx_skin_amount;
+    }
     state_.fx_skin_radius = bs.fx_skin_radius;
     state_.fx_skin_tex = bs.fx_skin_tex;
     state_.fx_skin_edge = bs.fx_skin_edge;

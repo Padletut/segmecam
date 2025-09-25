@@ -129,15 +129,18 @@ public:
     // Skin smoothing controls
     void SetSkinSmoothingEnabled(bool enabled) {
         effects_config_->SetSkinSmoothingEnabled(enabled);
+        beauty_state_.fx_skin = enabled;
     }
     void SetSkinSmoothingStrength(float strength) {
         effects_config_->SetSkinSmoothingStrength(strength);
     }
     void SetSkinSmoothingAdvanced(bool advanced) {
         effects_config_->SetSkinSmoothingAdvanced(advanced);
+        beauty_state_.fx_skin_adv = advanced;
     }
     void SetSkinSmoothingAmount(float amount) {
         effects_config_->SetSkinSmoothingAmount(amount);
+        beauty_state_.fx_skin_amount = amount;
     }
     void SetSkinSmoothingRadius(float radius_px) {
         effects_config_->SetSkinSmoothingRadius(radius_px);
@@ -203,6 +206,7 @@ public:
     }
     void SetWrinklePreview(bool enabled) {
         effects_config_->SetWrinklePreview(enabled);
+        beauty_state_.fx_wrinkle_preview = enabled;
     }
     
     // Advanced processing controls

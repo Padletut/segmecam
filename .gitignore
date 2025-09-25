@@ -115,6 +115,7 @@ bazel-testlogs/
 *.orig
 *.rej
 *_old.cpp
+*.old
 *_backup.*
 mediapipe/examples/desktop/segmecam/src/ui/profile_debug_panels_backup.cpp
 
