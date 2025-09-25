@@ -353,39 +353,29 @@ void ManagerCoordination::ApplyCameraSettingsFromProfile(segmecam::AppState& app
 void ManagerCoordination::ApplyCameraControlsFromProfile(Managers& managers, const segmecam::ConfigData& config_data) {
     // Apply V4L2 camera controls from profile to camera manager
     if (!managers.camera) return;
-    
-    // Only apply controls that are set (not -1)
-    if (config_data.camera_controls.brightness >= 0) {
-        managers.camera->SetBrightness(config_data.camera_controls.brightness);
-    }
-    if (config_data.camera_controls.contrast >= 0) {
-        managers.camera->SetContrast(config_data.camera_controls.contrast);
-    }
-    if (config_data.camera_controls.saturation >= 0) {
-        managers.camera->SetSaturation(config_data.camera_controls.saturation);
-    }
-    if (config_data.camera_controls.gain >= 0) {
-        managers.camera->SetGain(config_data.camera_controls.gain);
-    }
-    if (config_data.camera_controls.sharpness >= 0) {
-        managers.camera->SetSharpness(config_data.camera_controls.sharpness);
-    }
-    if (config_data.camera_controls.zoom >= 0) {
-        managers.camera->SetZoom(config_data.camera_controls.zoom);
-    }
-    if (config_data.camera_controls.focus >= 0) {
-        managers.camera->SetFocus(config_data.camera_controls.focus);
-    }
-    if (config_data.camera_controls.exposure >= 0) {
-        managers.camera->SetExposure(config_data.camera_controls.exposure);
-    }
-    if (config_data.camera_controls.white_balance_temperature >= 0) {
-        managers.camera->SetWhiteBalanceTemperature(config_data.camera_controls.white_balance_temperature);
-    }
-    if (config_data.camera_controls.backlight_compensation >= 0) {
-        managers.camera->SetBacklightCompensation(config_data.camera_controls.backlight_compensation);
-    }
-    
+
+    // Apply numeric controls that are set (not -1) using helper to reduce complexity
+    ApplyCameraControlIfValid(config_data.camera_controls.brightness,
+        [&managers](int value) { managers.camera->SetBrightness(value); });
+    ApplyCameraControlIfValid(config_data.camera_controls.contrast,
+        [&managers](int value) { managers.camera->SetContrast(value); });
+    ApplyCameraControlIfValid(config_data.camera_controls.saturation,
+        [&managers](int value) { managers.camera->SetSaturation(value); });
+    ApplyCameraControlIfValid(config_data.camera_controls.gain,
+        [&managers](int value) { managers.camera->SetGain(value); });
+    ApplyCameraControlIfValid(config_data.camera_controls.sharpness,
+        [&managers](int value) { managers.camera->SetSharpness(value); });
+    ApplyCameraControlIfValid(config_data.camera_controls.zoom,
+        [&managers](int value) { managers.camera->SetZoom(value); });
+    ApplyCameraControlIfValid(config_data.camera_controls.focus,
+        [&managers](int value) { managers.camera->SetFocus(value); });
+    ApplyCameraControlIfValid(config_data.camera_controls.exposure,
+        [&managers](int value) { managers.camera->SetExposure(value); });
+    ApplyCameraControlIfValid(config_data.camera_controls.white_balance_temperature,
+        [&managers](int value) { managers.camera->SetWhiteBalanceTemperature(value); });
+    ApplyCameraControlIfValid(config_data.camera_controls.backlight_compensation,
+        [&managers](int value) { managers.camera->SetBacklightCompensation(value); });
+
     // Apply boolean controls
     managers.camera->SetAutoGain(config_data.camera_controls.auto_gain);
     managers.camera->SetAutoFocus(config_data.camera_controls.auto_focus);

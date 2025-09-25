@@ -72,6 +72,14 @@ private:
     static void ApplyPerformanceSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
     static void ApplyCameraSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
     static void ApplyCameraControlsFromProfile(Managers& managers, const segmecam::ConfigData& config_data);
+    
+    // Helper method to reduce cyclomatic complexity
+    template<typename SetterFunc>
+    static void ApplyCameraControlIfValid(int value, SetterFunc setter) {
+        if (value >= 0) {
+            setter(value);
+        }
+    }
 };
 
 #endif // MANAGER_COORDINATION_H
