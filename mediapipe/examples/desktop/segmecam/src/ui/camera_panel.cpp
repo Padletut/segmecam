@@ -38,10 +38,16 @@ void CameraPanel::Render() {
     if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
         RenderCameraSelection();
         RenderResolutionSettings();
-        virtual_camera_panel_.Render();
+        
+        // Show either Virtual Camera panel OR PipeWire panel based on environment
+        if (IsRunningInFlatpak()) {
+            pipewire_panel_.Render();
+        } else {
+            virtual_camera_panel_.Render();
+        }
+        
         profile_mgr_.RenderProfileSection();
         camera_controls_panel_.Render();
-        pipewire_panel_.Render();
     }
 }
 
@@ -132,6 +138,22 @@ void CameraPanel::RenderProfileSection() {
 
 void CameraPanel::UpdateDefaultProfileDisplay() {
     profile_mgr_.UpdateDefaultProfileDisplay();
+}
+
+bool CameraPanel::IsRunningInFlatpak() {
+    // Check for Flatpak environment variables
+    const char* flatpak_id = std::getenv("FLATPAK_ID");
+    if (flatpak_id && std::string(flatpak_id) == "org.segmecam.SegmeCam") {
+        return true;
+    }
+    
+    // Alternative check: look for Flatpak-specific paths
+    std::filesystem::path flatpak_info("/.flatpak-info");
+    if (std::filesystem::exists(flatpak_info)) {
+        return true;
+    }
+    
+    return false;
 }
 
 void CameraPanel::ProcessDeferredPipeWireInitialization() {

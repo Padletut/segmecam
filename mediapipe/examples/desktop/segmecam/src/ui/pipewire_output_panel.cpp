@@ -6,13 +6,13 @@ namespace segmecam {
 
 // PipeWire Output Panel Implementation
 PipeWireOutputPanel::PipeWireOutputPanel(AppState& state, CameraManager& camera_mgr)
-    : UIPanel("PipeWire Output"), state_(state), camera_mgr_(camera_mgr) {
+    : UIPanel("Virtual Camera"), state_(state), camera_mgr_(camera_mgr) {
 }
 
 void PipeWireOutputPanel::Render() {
     if (!visible_) return;
 
-    ImGui::Text("PipeWire Output");
+    ImGui::Text("Virtual Camera Output");
     ImGui::Separator();
 
     if (camera_mgr_.IsPipeWireOutputActive()) {
@@ -38,7 +38,7 @@ void PipeWireOutputPanel::RenderPipeWireOutputActive() {
     int actual_fps = camera_state.current_fps > 0 ? static_cast<int>(camera_state.current_fps) : 30;
     ImGui::Text("Resolution: %dx%d @ %d FPS", actual_width, actual_height, actual_fps);
 
-    if (ImGui::Button("Stop PipeWire Output")) {
+    if (ImGui::Button("Stop Virtual Camera")) {
         camera_mgr_.ShutdownPipeWireOutput();
         state_.pipewire_output_active = false;
         std::cout << "PipeWire output stopped" << std::endl;
@@ -55,7 +55,7 @@ void PipeWireOutputPanel::RenderPipeWireOutputInactive() {
     int display_fps = state_.camera_fps > 0 ? static_cast<int>(state_.camera_fps) : 30;
     ImGui::Text("Resolution: %dx%d @ %d FPS", display_width, display_height, display_fps);
 
-    if (ImGui::Button("Start PipeWire Output")) {
+    if (ImGui::Button("Start Virtual Camera")) {
         // Defer PipeWire initialization to avoid UI thread issues
         // Use the actual camera input resolution, not hardcoded values
         int pipewire_width = state_.camera_width > 0 ? state_.camera_width : 640;
@@ -77,8 +77,8 @@ void PipeWireOutputPanel::RenderPipeWireOutputHelp() {
     ImGui::Separator();
     ImGui::TextDisabled("PipeWire Output:");
     ImGui::TextDisabled("• Portal-compliant video streaming");
-    ImGui::TextDisabled("• Works with OBS, Discord, browser apps");
-    ImGui::TextDisabled("• No --device=all permission required");
+    ImGui::TextDisabled("• Works with modern OBS Studio, Discord, browser apps");
+    ImGui::TextDisabled("• Can be bridged to v4l2loopback for broader compatibility");
     ImGui::TextDisabled("• Manual control for testing and troubleshooting");
 }
 

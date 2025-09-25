@@ -329,8 +329,8 @@ bool PipeWireOutput::CreateAndSetupStream(pw_properties* props) {
 }
 
 int PipeWireOutput::BuildFormatParameters(const spa_pod** params, int max_params) {
-  // Build format parameters for the video stream (advertise multiple formats)
-  std::cout << "Building PipeWire format parameters (multi-format)..." << std::endl;
+  // Build format parameters for the video stream (only YUY2 for compatibility)
+  std::cout << "Building PipeWire format parameters (YUY2 only)..." << std::endl;
   uint8_t buffer[4096];
   spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
 
@@ -340,26 +340,11 @@ int PipeWireOutput::BuildFormatParameters(const spa_pod** params, int max_params
   video_format.framerate.num = fps_;
   video_format.framerate.denom = 1;
 
-  // List of formats to advertise (add YUY2 and UYVY for v4l2sink compatibility)
+  // Only advertise YUY2 format for maximum compatibility
   int param_count = 0;
 
-  // BGR
-  video_format.format = SPA_VIDEO_FORMAT_BGR;
-  params[param_count++] = spa_format_video_raw_build(&b, SPA_PARAM_EnumFormat, &video_format);
-  // RGB
-  video_format.format = SPA_VIDEO_FORMAT_RGB;
-  params[param_count++] = spa_format_video_raw_build(&b, SPA_PARAM_EnumFormat, &video_format);
-  // BGRx
-  video_format.format = SPA_VIDEO_FORMAT_BGRx;
-  params[param_count++] = spa_format_video_raw_build(&b, SPA_PARAM_EnumFormat, &video_format);
-  // RGBx
-  video_format.format = SPA_VIDEO_FORMAT_RGBx;
-  params[param_count++] = spa_format_video_raw_build(&b, SPA_PARAM_EnumFormat, &video_format);
-  // YUY2
+  // YUY2 (YUYV422) - most compatible format
   video_format.format = SPA_VIDEO_FORMAT_YUY2;
-  params[param_count++] = spa_format_video_raw_build(&b, SPA_PARAM_EnumFormat, &video_format);
-  // UYVY
-  video_format.format = SPA_VIDEO_FORMAT_UYVY;
   params[param_count++] = spa_format_video_raw_build(&b, SPA_PARAM_EnumFormat, &video_format);
 
   // Add buffer parameters to tell PipeWire how to allocate buffers

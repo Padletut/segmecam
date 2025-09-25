@@ -190,20 +190,9 @@ static cv::Mat get_frame_to_send(segmecam::PipeWireOutput* self, int process_cou
       frame_to_send = self->GetCurrentFrame().clone();
       self->GetFrameReady() = false;
       self->GetLastFrame() = frame_to_send.clone();  // Store as last frame
-
-      if (process_count <= 3) {
-        std::cout << "PipeWire process callback: sending NEW frame "
-                  << frame_to_send.cols << "x" << frame_to_send.rows << "x"
-                  << frame_to_send.channels() << std::endl;
-      }
     } else if (!self->GetLastFrame().empty()) {
       // No new frame, but we have a previous frame - reuse it
       frame_to_send = self->GetLastFrame().clone();
-      if (process_count <= 3) {
-        std::cout << "PipeWire process callback: reusing LAST frame "
-                  << frame_to_send.cols << "x" << frame_to_send.rows << "x"
-                  << frame_to_send.channels() << std::endl;
-      }
     }
   }
   return frame_to_send;

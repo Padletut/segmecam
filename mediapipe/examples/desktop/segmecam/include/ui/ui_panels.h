@@ -52,6 +52,9 @@ private:
     void RenderFPSControls();
     void RenderProfileSection();
     
+    // Check if running in Flatpak environment
+    bool IsRunningInFlatpak();
+    
     AppState& state_;
     CameraManager& camera_mgr_;
     class EffectsManager& effects_mgr_;

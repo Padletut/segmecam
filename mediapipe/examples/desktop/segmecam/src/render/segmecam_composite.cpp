@@ -161,10 +161,6 @@ cv::Mat CompositeBlurBackgroundBGR(const cv::Mat& frame_bgr,
   }
   
   cv::Mat mask_f; mask_single.convertTo(mask_f, CV_32FC1, 1.0/255.0);
-  
-  std::cout << "🔍 BLUR BGR DEBUG - mask_u8: " << mask_u8.cols << "x" << mask_u8.rows << " type:" << mask_u8.type() << " channels:" << mask_u8.channels()
-            << " mask_single: " << mask_single.cols << "x" << mask_single.rows << " type:" << mask_single.type()
-            << " mask_f: " << mask_f.cols << "x" << mask_f.rows << " type:" << mask_f.type() << std::endl;
 
   // Apply feathering if requested
   if (feather_px > 0.5f) {

@@ -33,9 +33,7 @@ static void set_buffer_metadata(pw_buffer* buffer, size_t copy_size, int stride)
 
 // Helper functions for YUY2 conversion
 static bool validate_yuy2_buffer_size(struct spa_buffer* spa_buf, size_t copy_size);
-static void log_yuy2_conversion_info(int process_count, size_t copy_size, size_t maxsize, int stride, const cv::Mat& frame);
 static void perform_yuy2_conversion(const cv::Mat& frame, struct spa_buffer* spa_buf);
-static void log_yuy2_first_bytes(int process_count, void* data, size_t copy_size);
 
 // Helper function to validate YUY2 buffer size
 static bool validate_yuy2_buffer_size(struct spa_buffer* spa_buf, size_t copy_size) {
@@ -44,14 +42,6 @@ static bool validate_yuy2_buffer_size(struct spa_buffer* spa_buf, size_t copy_si
     return false;
   }
   return true;
-}
-
-// Helper function to log YUY2 conversion info
-static void log_yuy2_conversion_info(int process_count, size_t copy_size, size_t maxsize, int stride, const cv::Mat& frame) {
-  if (process_count <= 3) {
-    std::cout << "[YUY2] copy_size=" << copy_size << ", maxsize=" << maxsize << ", stride=" << stride << std::endl;
-    std::cout << "[YUY2] frame type=" << frame.type() << ", step=" << frame.step << ", cols=" << frame.cols << ", rows=" << frame.rows << std::endl;
-  }
 }
 
 // Helper function to perform YUY2 conversion
@@ -70,18 +60,6 @@ static void perform_yuy2_conversion(const cv::Mat& frame, struct spa_buffer* spa
   }
 }
 
-// Helper function to log YUY2 first bytes
-static void log_yuy2_first_bytes(int process_count, void* data, size_t copy_size) {
-  if (process_count <= 3) {
-    uint8_t* yuy2 = static_cast<uint8_t*>(data);
-    std::cout << "[YUY2] First 16 bytes: ";
-    for (int i = 0; i < 16 && i < (int)copy_size; ++i) {
-      std::cout << std::hex << (int)yuy2[i] << " ";
-    }
-    std::cout << std::dec << std::endl;
-  }
-}
-
 namespace segmecam {
 
 // Convert YUY2 frame
@@ -92,13 +70,9 @@ bool convert_yuy2_frame(const cv::Mat& frame, pw_buffer* buffer, int process_cou
 
   if (!validate_yuy2_buffer_size(spa_buf, copy_size)) return false;
 
-  log_yuy2_conversion_info(process_count, copy_size, spa_buf->datas[0].maxsize, stride, frame);
-
   memset(spa_buf->datas[0].data, 0x80, copy_size);
 
   perform_yuy2_conversion(frame, spa_buf);
-
-  log_yuy2_first_bytes(process_count, spa_buf->datas[0].data, copy_size);
 
   set_buffer_metadata(buffer, copy_size, stride);
   return true;
