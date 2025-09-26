@@ -60,6 +60,10 @@ private:
     CameraManager& camera_mgr_;
     class EffectsManager& effects_mgr_;
     class ConfigManager* config_mgr_ = nullptr;
+    
+    // UI state for profile management
+    int ui_profile_idx_ = -1;
+    char profile_name_buf_[128] = {0};
 };
 
 } // namespace segmecam

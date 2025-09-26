@@ -1,6 +1,8 @@
 #include "include/render/segmecam_composite.h"
 #include "include/compositing_utils.h"
 
+#include <opencv2/core/ocl.hpp>
+
 // Persistently remembered preferred channel when mask comes as 4xU8 (SRGBA).
 // This avoids per-frame channel switches that can look like flicker.
 static int g_rgba_mask_channel = -1; // 0=B,1=G,2=R,3=A
@@ -8,38 +10,64 @@ static int g_rgba_mask_channel = -1; // 0=B,1=G,2=R,3=A
 // Helper function to perform compositing with optional upscaling
 cv::Mat PerformCompositingWithUpscale(const cv::Mat& small_frame, const cv::Mat& small_mask, 
                                      const cv::Mat& small_bg, const cv::Size& original_size) {
-  // Perform compositing at reduced scale
-  cv::Mat frame_f, bg_f;
-  small_frame.convertTo(frame_f, CV_32FC3, 1.0/255.0);
-  small_bg.convertTo(bg_f, CV_32FC3, 1.0/255.0);
-  cv::Mat mask_f;
-  small_mask.convertTo(mask_f, CV_32FC1, 1.0/255.0);
-  
-  std::vector<cv::Mat> fch, bch, cch;
-  cv::split(frame_f, fch);
-  cv::split(bg_f, bch);
-  cch.resize(3);
-  
-  for (int i = 0; i < 3; ++i) {
-    cch[i] = fch[i].mul(mask_f) + bch[i].mul(1.0 - mask_f);
-  }
-  
-  cv::Mat comp_f;
-  cv::merge(cch, comp_f);
-  cv::Mat comp_u8;
-  comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
-  
-  // Upscale result if needed
-  cv::Mat final_comp;
-  if (comp_u8.size() != original_size) {
-    cv::resize(comp_u8, final_comp, original_size, 0, 0, cv::INTER_LINEAR);
+  // GPU compositing if OpenCL is enabled and all inputs are UMat
+  static thread_local bool use_ocl = cv::ocl::useOpenCL();
+  if (use_ocl) {
+    cv::UMat frame_u, bg_u, mask_u;
+    small_frame.copyTo(frame_u);
+    small_bg.copyTo(bg_u);
+    small_mask.copyTo(mask_u);
+    cv::UMat frame_f, bg_f, mask_f;
+    frame_u.convertTo(frame_f, CV_32FC3, 1.0/255.0);
+    bg_u.convertTo(bg_f, CV_32FC3, 1.0/255.0);
+    mask_u.convertTo(mask_f, CV_32FC1, 1.0/255.0);
+    std::vector<cv::UMat> fch(3), bch(3), out(3);
+    cv::split(frame_f, fch);
+    cv::split(bg_f, bch);
+    cv::UMat one(mask_f.size(), mask_f.type()); one.setTo(1.0f);
+    cv::UMat inv; cv::subtract(one, mask_f, inv);
+    for (int i=0;i<3;++i) {
+      cv::UMat a,b; cv::multiply(fch[i], mask_f, a); cv::multiply(bch[i], inv, b); cv::add(a,b,out[i]);
+    }
+    cv::UMat comp_f; cv::merge(out, comp_f);
+    cv::UMat comp_u8; comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
+    cv::Mat comp_bgr;
+    comp_u8.copyTo(comp_bgr);
+    // Upscale result if needed
+    cv::Mat final_comp;
+    if (comp_bgr.size() != original_size) {
+      cv::resize(comp_bgr, final_comp, original_size, 0, 0, cv::INTER_LINEAR);
+    } else {
+      final_comp = comp_bgr;
+    }
+    return final_comp;
   } else {
-    final_comp = comp_u8;
+    // CPU compositing (original code)
+    cv::Mat frame_f, bg_f;
+    small_frame.convertTo(frame_f, CV_32FC3, 1.0/255.0);
+    small_bg.convertTo(bg_f, CV_32FC3, 1.0/255.0);
+    cv::Mat mask_f;
+    small_mask.convertTo(mask_f, CV_32FC1, 1.0/255.0);
+    std::vector<cv::Mat> fch, bch, cch;
+    cv::split(frame_f, fch);
+    cv::split(bg_f, bch);
+    cch.resize(3);
+    for (int i = 0; i < 3; ++i) {
+      cch[i] = fch[i].mul(mask_f) + bch[i].mul(1.0 - mask_f);
+    }
+    cv::Mat comp_f;
+    cv::merge(cch, comp_f);
+    cv::Mat comp_u8;
+    comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
+    // Upscale result if needed
+    cv::Mat final_comp;
+    if (comp_u8.size() != original_size) {
+      cv::resize(comp_u8, final_comp, original_size, 0, 0, cv::INTER_LINEAR);
+    } else {
+      final_comp = comp_u8;
+    }
+    return final_comp;
   }
-  
-  cv::Mat rgb;
-  cv::cvtColor(final_comp, rgb, cv::COLOR_BGR2RGB);
-  return final_comp;
 }
 
 // Helper function to decode single channel uint8 mask
@@ -179,51 +207,122 @@ cv::Mat CompositeBlurBackgroundBGR_Accel(const cv::Mat& frame_bgr,
                                          float feather_px,
                                          bool use_ocl,
                                          float scale) {
+  // Debug: Log OpenCL/GPU status if requested
+  // (OpenCL debug output removed)
   scale = std::clamp(scale, 0.4f, 1.0f);
-    
-  // Force CPU path to test
-  use_ocl = false;
-  
-  if (!use_ocl && std::abs(scale - 1.0f) < 1e-3f) {
-    return CompositeBlurBackgroundBGR(frame_bgr, mask_u8, blur_strength, feather_px);
-  }
-  int k = blur_strength | 1;
-  // Optional downscale for speed
+
+  // Timing: start total
+  auto t_start = std::chrono::high_resolution_clock::now();
+
+  // Allow OpenCL acceleration if requested (do not force CPU path)
+
+  // Timing: downscale
+  auto t_downscale_start = std::chrono::high_resolution_clock::now();
   cv::Mat small_src;
-  if (std::abs(scale - 1.0f) < 1e-3f) small_src = frame_bgr;
-  else cv::resize(frame_bgr, small_src, cv::Size(), scale, scale, (scale >= 0.85f)?cv::INTER_LINEAR:cv::INTER_AREA);
+  if (std::abs(scale - 1.0f) < 1e-3f) {
+    small_src = frame_bgr;
+  } else {
+    cv::resize(frame_bgr, small_src, cv::Size(), scale, scale, (scale >= 0.85f)?cv::INTER_LINEAR:cv::INTER_AREA);
+  }
+  auto t_downscale_end = std::chrono::high_resolution_clock::now();
+
+  // Compute kernel size based on blur_strength and scale
+  int k = std::max(1, int((blur_strength | 1) * scale));
+  if ((k % 2) == 0) ++k; // ensure odd
+  if (k < 3) k = 3;
+  // (BG-ACCEL debug output removed)
+
+  // Timing: blur
+  auto t_blur_start = std::chrono::high_resolution_clock::now();
 
   if (!use_ocl) {
     // CPU path but with background computed at reduced res
-    cv::Mat small_blur; cv::GaussianBlur(small_src, small_blur, cv::Size(k,k), 0);
+    cv::Mat small_blur; cv::blur(small_src, small_blur, cv::Size(k,k));
+    auto t_blur_end = std::chrono::high_resolution_clock::now();
+
+    // Timing: upscale
+    auto t_upscale_start = std::chrono::high_resolution_clock::now();
     cv::Mat blurred;
     if (small_blur.size() != frame_bgr.size()) cv::resize(small_blur, blurred, frame_bgr.size(), 0,0, cv::INTER_LINEAR);
     else blurred = small_blur;
-    // Normalized blend (same as baseline)
+    auto t_upscale_end = std::chrono::high_resolution_clock::now();
+
+    // Timing: blend prep
+    auto t_blendprep_start = std::chrono::high_resolution_clock::now();
     cv::Mat frame_f, blurred_f; frame_bgr.convertTo(frame_f, CV_32FC3, 1.0/255.0); blurred.convertTo(blurred_f, CV_32FC3, 1.0/255.0);
     cv::Mat mask_f; mask_u8.convertTo(mask_f, CV_32FC1, 1.0/255.0);
-    int fks = (int)std::max(1.0f, feather_px) * 2 + 1; if (feather_px > 0.5f) cv::GaussianBlur(mask_f, mask_f, cv::Size(fks,fks), 0);
-    std::vector<cv::Mat> fch(3), bch(3), out(3); cv::split(frame_f, fch); cv::split(blurred_f, bch);
-    for (int i=0;i<3;++i) out[i] = fch[i].mul(mask_f) + bch[i].mul(1.0f - mask_f);
-    cv::Mat comp_f; cv::merge(out, comp_f); cv::Mat comp_u8; comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
-    cv::Mat rgb; cv::cvtColor(comp_u8, rgb, cv::COLOR_BGR2RGB);
-    
-    // Debug output for blur composite
-    static int blur_debug_count = 0;
-    blur_debug_count++;
-    if (blur_debug_count <= 2 && !comp_u8.empty() && !rgb.empty()) {
-        cv::Vec3b bgr_pixel = comp_u8.at<cv::Vec3b>(comp_u8.rows/2, comp_u8.cols/2);
-        cv::Vec3b rgb_pixel = rgb.at<cv::Vec3b>(rgb.rows/2, rgb.cols/2);
-        std::cout << "🔍 BLUR COMPOSITE " << blur_debug_count << " - BGR result: [" 
-                  << (int)bgr_pixel[0] << "," << (int)bgr_pixel[1] << "," << (int)bgr_pixel[2] 
-                  << "] -> RGB output: [" << (int)rgb_pixel[0] << "," << (int)rgb_pixel[1] << "," << (int)rgb_pixel[2] << "]" << std::endl;
-    }
-    
-    return comp_u8;
+    int fks = (int)std::max(1.0f, feather_px) * 2 + 1;
+    auto t_blendprep_end = std::chrono::high_resolution_clock::now();
+
+    // Timing: feather
+    auto t_feather_start = std::chrono::high_resolution_clock::now();
+    if (feather_px > 0.5f) cv::GaussianBlur(mask_f, mask_f, cv::Size(fks,fks), 0);
+    auto t_feather_end = std::chrono::high_resolution_clock::now();
+
+  // Timing: blend
+  auto t_blend_start = std::chrono::high_resolution_clock::now();
+  cv::Mat comp_u8, rgb;
+  if (use_ocl) {
+    // Use UMat for all steps to enable OpenCL acceleration
+    cv::UMat frame_fU, blurred_fU, mask_fU, inv_mask_fU, mask3U, inv_mask3U, comp_fU, comp_u8U, rgbU;
+    frame_f.copyTo(frame_fU);
+    blurred_f.copyTo(blurred_fU);
+    mask_f.copyTo(mask_fU);
+    // Expand mask to 3 channels
+    std::vector<cv::UMat> mask_channelsU(3, mask_fU);
+    cv::merge(mask_channelsU, mask3U);
+  cv::subtract(1.0f, mask_fU, inv_mask_fU);
+    std::vector<cv::UMat> inv_mask_channelsU(3, inv_mask_fU);
+    cv::merge(inv_mask_channelsU, inv_mask3U);
+  // Blend on GPU
+  cv::add(frame_fU.mul(mask3U), blurred_fU.mul(inv_mask3U), comp_fU);
+    comp_fU.convertTo(comp_u8U, CV_8UC3, 255.0);
+    cv::cvtColor(comp_u8U, rgbU, cv::COLOR_BGR2RGB);
+    comp_u8U.copyTo(comp_u8);
+    rgbU.copyTo(rgb);
+  } else {
+    // CPU path (as before)
+    cv::Mat mask3, inv_mask3;
+    std::vector<cv::Mat> mask_channels(3, mask_f);
+    cv::merge(mask_channels, mask3);
+    cv::Mat inv_mask_f = 1.0f - mask_f;
+    std::vector<cv::Mat> inv_mask_channels(3, inv_mask_f);
+    cv::merge(inv_mask_channels, inv_mask3);
+    cv::Mat comp_f = frame_f.mul(mask3) + blurred_f.mul(inv_mask3);
+    comp_f.convertTo(comp_u8, CV_8UC3, 255.0);
+    cv::cvtColor(comp_u8, rgb, cv::COLOR_BGR2RGB);
+  }
+  auto t_blend_end = std::chrono::high_resolution_clock::now();
+
+  // Timing: total
+  auto t_end = std::chrono::high_resolution_clock::now();
+
+  // Print timing
+  auto ms = [](auto start, auto end) { return std::chrono::duration_cast<std::chrono::microseconds>(end-start).count()/1000.0; };
+  std::cout << "[BG-ACCEL-TIME] downscale=" << ms(t_downscale_start, t_downscale_end)
+        << "ms, blur=" << ms(t_blur_start, t_blur_end)
+        << "ms, upscale=" << ms(t_upscale_start, t_upscale_end)
+        << "ms, blendprep=" << ms(t_blendprep_start, t_blendprep_end)
+        << "ms, feather=" << ms(t_feather_start, t_feather_end)
+        << "ms, blend=" << ms(t_blend_start, t_blend_end)
+        << "ms, total=" << ms(t_start, t_end) << "ms" << std::endl;
+
+  // Debug output for blur composite
+  static int blur_debug_count = 0;
+  blur_debug_count++;
+  if (blur_debug_count <= 2 && !comp_u8.empty() && !rgb.empty()) {
+    cv::Vec3b bgr_pixel = comp_u8.at<cv::Vec3b>(comp_u8.rows/2, comp_u8.cols/2);
+    cv::Vec3b rgb_pixel = rgb.at<cv::Vec3b>(rgb.rows/2, rgb.cols/2);
+    std::cout << "🔍 BLUR COMPOSITE " << blur_debug_count << " - BGR result: [" 
+          << (int)bgr_pixel[0] << "," << (int)bgr_pixel[1] << "," << (int)bgr_pixel[2] 
+          << "] -> RGB output: [" << (int)rgb_pixel[0] << "," << (int)rgb_pixel[1] << "," << (int)rgb_pixel[2] << "]" << std::endl;
+  }
+
+  return comp_u8;
   }
   // OpenCL path via UMat
   cv::UMat src_u; small_src.copyTo(src_u);
-  cv::UMat blur_u; cv::GaussianBlur(src_u, blur_u, cv::Size(k,k), 0);
+  cv::UMat blur_u; cv::blur(src_u, blur_u, cv::Size(k,k));
   cv::UMat blurred_u;
   if (blur_u.size() != frame_bgr.size()) cv::resize(blur_u, blurred_u, frame_bgr.size(), 0,0, cv::INTER_LINEAR);
   else blurred_u = blur_u;
@@ -510,6 +609,7 @@ cv::Mat CompositeSolidBackgroundBGR_Accel(const cv::Mat& frame_bgr,
                (scale >= 0.85f) ? cv::INTER_LINEAR : cv::INTER_AREA);
     cv::resize(mask_u8, small_mask, small_frame.size(), 0, 0, cv::INTER_LINEAR);
     small_bg = cv::Mat(small_frame.size(), CV_8UC3, bgr);
+  // (BG-ACCEL debug output removed)
   }
   
   return PerformCompositingWithUpscale(small_frame, small_mask, small_bg, frame_bgr.size());

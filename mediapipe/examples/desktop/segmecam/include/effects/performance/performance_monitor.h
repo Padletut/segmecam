@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <vector>
+#include <functional>
 
 namespace segmecam {
 
@@ -38,8 +39,11 @@ public:
     float GetCurrentFPS() const;
     float GetTargetFPS() const;
     float GetProcessingScale() const;
+    void SetProcessingScaleGetter(std::function<float()> cb) { get_processing_scale_cb_ = std::move(cb); }
 
-private:
+    // Callback setter for processing scale
+    void SetProcessingScaleCallback(std::function<void(float)> cb) { set_processing_scale_cb_ = std::move(cb); }
+
     // Performance tracking members
     std::chrono::steady_clock::time_point last_perf_log_time_;
     double perf_sum_frame_ms_;
@@ -65,6 +69,11 @@ private:
     float CalculateScaleAdjustment(float avg_fps) const;
     void ApplyScaleAdjustment(float scale_adjustment, const std::chrono::steady_clock::time_point& now);
     void TrimFPSHistoryForStability();
+
+    // Callback to update processing scale in EffectsManager
+    std::function<void(float)> set_processing_scale_cb_;
+    // Callback to get current processing scale from EffectsManager
+    std::function<float()> get_processing_scale_cb_;
 };
 
 } // namespace segmecam

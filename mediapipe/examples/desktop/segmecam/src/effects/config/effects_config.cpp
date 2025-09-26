@@ -23,7 +23,9 @@ void EffectsConfiguration::GetCurrentBeautyState(BeautyState& state) const {
 }
 
 void EffectsConfiguration::SetBeautyState(const BeautyState& state) {
+    float prev_fx_adv_scale = beauty_state_.fx_adv_scale;
     beauty_state_ = state;
+    beauty_state_.fx_adv_scale = prev_fx_adv_scale;
 }
 
 // Background settings
@@ -172,7 +174,7 @@ void EffectsConfiguration::SetWrinklePreview(bool enabled) {
 
 // Advanced processing controls
 void EffectsConfiguration::SetProcessingScale(float scale) {
-    beauty_state_.fx_adv_scale = std::clamp(scale, 0.5f, 1.0f);
+    beauty_state_.fx_adv_scale = std::clamp(scale, 0.4f, 1.0f);
 }
 
 void EffectsConfiguration::SetDetailPreservation(float preserve) {

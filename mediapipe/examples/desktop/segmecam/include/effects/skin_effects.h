@@ -15,4 +15,4 @@
 void ApplySkinSmoothingBGR(cv::Mat& frame_bgr,
                            const FaceRegions& fr,
                            float strength,
-                           bool use_ocl = false);
+                           bool use_ocl = true);

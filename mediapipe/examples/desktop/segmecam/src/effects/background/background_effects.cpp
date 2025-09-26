@@ -14,7 +14,7 @@ BackgroundEffects::~BackgroundEffects() {
 }
 
 cv::Mat BackgroundEffects::ApplyBackgroundEffect(const cv::Mat& frame_bgr, const cv::Mat& mask,
-                                               const BeautyState& beauty_state) {
+                                               const BeautyState& beauty_state, bool use_ocl) {
     cv::Mat resized_mask = ResizeMaskIfNeeded(mask, frame_bgr.size());
 
     // Check if user wants to show mask visualization (overrides all other background effects)
@@ -28,10 +28,10 @@ cv::Mat BackgroundEffects::ApplyBackgroundEffect(const cv::Mat& frame_bgr, const
             return frame_bgr.clone(); // Return original frame with no background effect
         case 1: // BLUR
             return ApplyBlurBackground(frame_bgr, resized_mask, beauty_state.blur_strength,
-                                     beauty_state.feather_px);
+                                     beauty_state.feather_px, use_ocl, beauty_state.fx_adv_scale);
         case 2: // IMAGE
             if (!background_image_.empty()) {
-                return ApplyImageBackground(frame_bgr, resized_mask, background_image_);
+                return ApplyImageBackground(frame_bgr, resized_mask, background_image_, use_ocl, beauty_state.fx_adv_scale);
             }
             // Fall through to solid if no image loaded
         case 3: // SOLID
@@ -40,7 +40,7 @@ cv::Mat BackgroundEffects::ApplyBackgroundEffect(const cv::Mat& frame_bgr, const
                 cv::Scalar bg_color = ConvertRGBColorToBGR(beauty_state.solid_color[0],
                                                          beauty_state.solid_color[1],
                                                          beauty_state.solid_color[2]);
-                return ApplySolidBackground(frame_bgr, resized_mask, bg_color);
+                return ApplySolidBackground(frame_bgr, resized_mask, bg_color, use_ocl, beauty_state.fx_adv_scale);
             }
     }
 }
@@ -56,23 +56,23 @@ cv::Mat BackgroundEffects::ApplyMaskVisualization(const cv::Mat& mask) {
 }
 
 cv::Mat BackgroundEffects::ApplyBlurBackground(const cv::Mat& frame_bgr, const cv::Mat& mask,
-                                             int blur_strength, float feather_px) {
-    // This will need OpenCL state and processing scale from the main manager
-    // For now, use default values
-    return CompositeBlurBackgroundBGR_Accel(frame_bgr, mask, blur_strength, feather_px,
-                                           false, 1.0f); // opencl_enabled=false, scale=1.0
+                                             int blur_strength, float feather_px, bool use_ocl, float scale) {
+    cv::Mat result = CompositeBlurBackgroundBGR_Accel(frame_bgr, mask, blur_strength, feather_px,
+                                           use_ocl, scale);
+    return result;
 }
 
 cv::Mat BackgroundEffects::ApplyImageBackground(const cv::Mat& frame_bgr, const cv::Mat& mask,
-                                              const cv::Mat& bg_image) {
-    return CompositeImageBackgroundBGR_Accel(frame_bgr, mask, bg_image,
-                                           false, 1.0f); // opencl_enabled=false, scale=1.0
+                                              const cv::Mat& bg_image, bool use_ocl, float scale) {
+    // Removed debug output for image background result size
+    return CompositeImageBackgroundBGR_Accel(frame_bgr, mask, bg_image, use_ocl, scale);
 }
 
 cv::Mat BackgroundEffects::ApplySolidBackground(const cv::Mat& frame_bgr, const cv::Mat& mask,
-                                              const cv::Scalar& color) {
-    return CompositeSolidBackgroundBGR_Accel(frame_bgr, mask, color,
-                                           false, 1.0f); // opencl_enabled=false, scale=1.0
+                                              const cv::Scalar& color, bool use_ocl, float scale) {
+    cv::Mat result = CompositeSolidBackgroundBGR_Accel(frame_bgr, mask, color,
+                                           use_ocl, scale);
+    return result;
 }
 
 cv::Mat BackgroundEffects::ApplyDefaultBackgroundEffect(const cv::Mat& frame_bgr) {

@@ -23,6 +23,8 @@ EffectsManager::EffectsManager() {
     performance_monitor_ = std::make_unique<PerformanceMonitor>();
     effects_config_ = std::make_unique<EffectsConfiguration>(beauty_state_);
     face_processor_ = std::make_unique<FaceProcessor>();
+    // Wire up auto-scaling callback
+    WireAutoScaleCallback();
 }
 
 EffectsManager::~EffectsManager() {
@@ -208,7 +210,7 @@ cv::Mat EffectsManager::ProcessBackgroundEffects(const cv::Mat& processed_frame,
     if (config_.enable_background_effects && !segmentation_mask.empty()) {
         try {
             auto bg_start = std::chrono::steady_clock::now();
-            cv::Mat result = background_effects_->ApplyBackgroundEffect(processed_frame, segmentation_mask, beauty_state_);
+            cv::Mat result = background_effects_->ApplyBackgroundEffect(processed_frame, segmentation_mask, beauty_state_, state_.opencl_enabled);
             auto bg_end = std::chrono::steady_clock::now();
             state_.last_background_time_ms = std::chrono::duration<double, std::milli>(bg_end - bg_start).count();
             return result;
@@ -289,7 +291,7 @@ void EffectsManager::ApplySkinSmoothingAdvanced(cv::Mat& frame_bgr, const FaceRe
     float effective_scale = beauty_state_.fx_adv_scale;
     
     // Check if processing scale optimization should be used
-    if (effective_scale < 0.999f) {
+    if (effective_scale < 1.000f) {
         ApplySkinSmoothingWithProcessingScale(frame_bgr, regions, landmarks);
     } else {
         // Full resolution processing

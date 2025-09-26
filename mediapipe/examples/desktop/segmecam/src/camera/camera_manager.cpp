@@ -228,25 +228,13 @@ bool CameraManager::SetFPS(int fps) {
         return false;
     }
     
-    // Store current settings
-    int current_camera_index = cam_list_[state_.ui_cam_idx].index;
-    int current_width = state_.current_width;
-    int current_height = state_.current_height;
+    cap_.set(cv::CAP_PROP_FPS, fps);
     
-    // Close and reopen with new FPS
-    CloseCamera();
-    bool success = OpenCamera(current_camera_index, current_width, current_height, fps);
+    // Verify what was actually set
+    double actual_fps = cap_.get(cv::CAP_PROP_FPS);
+    state_.current_fps = (int)actual_fps;
     
-    if (success) {
-        state_.current_fps = fps;
-        std::cout << "✅ FPS changed to " << state_.actual_fps << " (requested: " << fps << ")" << std::endl;
-    } else {
-        std::cerr << "❌ Failed to change FPS to " << fps << std::endl;
-        // Try to reopen with original settings
-        OpenCamera(current_camera_index, current_width, current_height, state_.current_fps);
-    }
-    
-    return success;
+    return (state_.current_fps == fps);
 }
 
 void CameraManager::RefreshControls() {

@@ -91,7 +91,7 @@ void FaceProcessor::ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, co
         return;
     }
 
-    FaceRegions fr_small = TransformFaceRegionsToScaledROI(regions, roi);
+    FaceRegions fr_small = TransformFaceRegionsToScaledROI(regions, roi, beauty_state.fx_adv_scale);
     mediapipe::NormalizedLandmarkList lms_roi = TransformLandmarksToROI(landmarks, roi, frame_bgr.size());
 
     ProcessAndUpsampleROI(frame_bgr, roi, fr_small, lms_roi, beauty_state, beauty_state.fx_adv_scale);
@@ -140,12 +140,10 @@ void FaceProcessor::ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const F
     ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks);
 }
 
-FaceRegions FaceProcessor::TransformFaceRegionsToScaledROI(const FaceRegions& regions, const cv::Rect& roi) {
-    float sc = 0.8f; // Using default scale for now - this should come from beauty_state.fx_adv_scale
-
+FaceRegions FaceProcessor::TransformFaceRegionsToScaledROI(const FaceRegions& regions, const cv::Rect& roi, float scale) {
     // Transform to ROI coordinates, then scale
     FaceRegions fr_roi = ShiftFaceRegionsToROI(regions, roi);
-    FaceRegions fr_small = ScaleFaceRegions(fr_roi, sc);
+    FaceRegions fr_small = ScaleFaceRegions(fr_roi, scale);
     return fr_small;
 }
 

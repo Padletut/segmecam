@@ -36,7 +36,7 @@ private:
     void ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions,
                                         const mediapipe::NormalizedLandmarkList& landmarks,
                                         const BeautyState& beauty_state);
-    FaceRegions TransformFaceRegionsToScaledROI(const FaceRegions& regions, const cv::Rect& roi);
+    FaceRegions TransformFaceRegionsToScaledROI(const FaceRegions& regions, const cv::Rect& roi, float scale);
     FaceRegions ShiftFaceRegionsToROI(const FaceRegions& regions, const cv::Rect& roi);
     FaceRegions ScaleFaceRegions(const FaceRegions& regions, float scale);
     std::vector<cv::Point> ShiftPolygon(const std::vector<cv::Point>& poly, int dx, int dy);

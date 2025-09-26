@@ -64,7 +64,7 @@ void ProfileManager::ProcessProfileLoadRequest() {
         LoadProfileIntoState(profile_names[ui_profile_idx_]);
         // Update name buffer to match loaded profile
         std::string profile_name = profile_names[ui_profile_idx_];
-        strncpy(profile_name_buf_, profile_name.c_str(), sizeof(profile_name_buf_) - 1);
+        profile_name.copy(profile_name_buf_, sizeof(profile_name_buf_) - 1);
         profile_name_buf_[sizeof(profile_name_buf_) - 1] = '\0';
     }
 }
@@ -80,14 +80,14 @@ bool ProfileManager::LoadProfileIntoState(const std::string& profile_name) {
         return false;
     }
 
-    LoadCameraSettings(config);
     LoadDisplaySettings(config);
+    LoadCameraSettings(config);
     LoadBackgroundSettings(config);
     LoadLandmarkSettings(config);
     LoadBeautySettings(config);
     LoadPerformanceSettings(config);
 
-    std::cout << "Profile loaded successfully: " << profile_name << std::endl;
+    return true;
 }
 
 bool ProfileManager::ValidateProfileLoad(const std::string& profile_name) {
@@ -128,9 +128,9 @@ void ProfileManager::LoadCameraSelection(const ConfigData& config, bool in_flatp
         std::cout << "Profile loaded in Flatpak: camera settings retained (PipeWire session unchanged)." << std::endl;
     } else if (config.camera.ui_cam_idx != -1) {
         // Apply camera change with UI indices
-        camera_mgr_.SetCurrentCamera(config.camera.ui_cam_idx,
-                                   config.camera.ui_res_idx >= 0 ? config.camera.ui_res_idx : 0,
-                                   config.camera.ui_fps_idx >= 0 ? config.camera.ui_fps_idx : 0);
+        // camera_mgr_.SetCurrentCamera(config.camera.ui_cam_idx,
+        //                            config.camera.ui_res_idx >= 0 ? config.camera.ui_res_idx : 0,
+        //                            config.camera.ui_fps_idx >= 0 ? config.camera.ui_fps_idx : 0);
         std::cout << "Profile loaded: Camera changed to index " << config.camera.ui_cam_idx
                   << " with resolution index " << config.camera.ui_res_idx
                   << " and FPS index " << config.camera.ui_fps_idx << std::endl;
@@ -166,7 +166,7 @@ void ProfileManager::LoadBackgroundSettings(const ConfigData& config) {
     state_.bg_mode = config.background.bg_mode;
     state_.blur_strength = config.background.blur_strength;
     state_.feather_px = config.background.feather_px;
-    strncpy(state_.bg_path_buf, config.background.bg_path.c_str(), sizeof(state_.bg_path_buf) - 1);
+    config.background.bg_path.copy(state_.bg_path_buf, sizeof(state_.bg_path_buf) - 1);
     state_.bg_path_buf[sizeof(state_.bg_path_buf) - 1] = '\0';
     state_.solid_color[0] = config.background.solid_color[0];
     state_.solid_color[1] = config.background.solid_color[1];
@@ -174,18 +174,21 @@ void ProfileManager::LoadBackgroundSettings(const ConfigData& config) {
 
     // Load background image if path is provided
     if (!config.background.bg_path.empty() && state_.bg_mode == 2) { // 2 = background image mode
-        std::cout << "Loading background image from profile: " << config.background.bg_path << std::endl;
-        effects_mgr_.SetBackgroundImageFromPath(config.background.bg_path);
+        // Note: EffectsManager SetBackgroundImageFromPath is currently a placeholder
+        // std::cout << "Loading background image from profile: " << config.background.bg_path << std::endl;
+        // effects_mgr_.SetBackgroundImageFromPath(config.background.bg_path);
     }
 }
 
 void ProfileManager::LoadLandmarkSettings(const ConfigData& config) {
+    
     // Landmark settings
     state_.lm_roi_mode = config.landmarks.lm_roi_mode;
     state_.lm_apply_rot = config.landmarks.lm_apply_rot;
     state_.lm_flip_x = config.landmarks.lm_flip_x;
     state_.lm_flip_y = config.landmarks.lm_flip_y;
     state_.lm_swap_xy = config.landmarks.lm_swap_xy;
+    
 }
 
 void ProfileManager::LoadBeautySettings(const ConfigData& config) {
@@ -396,7 +399,7 @@ void ProfileManager::UpdateDefaultProfileDisplay() {
 
     std::string default_profile;
     if (config_mgr_->GetDefaultProfile(default_profile) && !default_profile.empty()) {
-        strncpy(profile_name_buf_, default_profile.c_str(), sizeof(profile_name_buf_) - 1);
+        default_profile.copy(profile_name_buf_, sizeof(profile_name_buf_) - 1);
         profile_name_buf_[sizeof(profile_name_buf_) - 1] = '\0';
 
         auto profile_names = config_mgr_->ListProfiles();

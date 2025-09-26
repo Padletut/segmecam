@@ -22,15 +22,15 @@ public:
 
     // Main background effect application
     cv::Mat ApplyBackgroundEffect(const cv::Mat& frame_bgr, const cv::Mat& mask,
-                                 const BeautyState& beauty_state);
+                                 const BeautyState& beauty_state, bool use_ocl);
 
     // Individual background effect types
     cv::Mat ApplyBlurBackground(const cv::Mat& frame_bgr, const cv::Mat& mask,
-                               int blur_strength, float feather_px);
+                               int blur_strength, float feather_px, bool use_ocl, float scale);
     cv::Mat ApplyImageBackground(const cv::Mat& frame_bgr, const cv::Mat& mask,
-                                const cv::Mat& bg_image);
+                                const cv::Mat& bg_image, bool use_ocl, float scale);
     cv::Mat ApplySolidBackground(const cv::Mat& frame_bgr, const cv::Mat& mask,
-                                const cv::Scalar& color);
+                                const cv::Scalar& color, bool use_ocl, float scale);
 
     // Mask visualization
     cv::Mat ApplyMaskVisualization(const cv::Mat& resized_mask);

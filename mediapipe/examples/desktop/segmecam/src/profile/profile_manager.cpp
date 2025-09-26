@@ -1,6 +1,6 @@
 #include "include/profile/profile_manager.h"
 #include <iostream>
-#include <cstring>
+#include <cstring>    
 #include <algorithm>
 #include <filesystem>
 
@@ -42,17 +42,21 @@ void ProfileManager::ProcessProfileLoadRequest() {
 }
 
 void ProfileManager::LoadProfileIntoState(const std::string& profile_name) {
+    
     if (!ValidateProfileLoad(profile_name)) {
+        std::cerr << "Profile validation failed" << std::endl;
         return;
     }
 
     ConfigData config;
+
+    std::cerr << "Calling config_mgr_->LoadProfile" << std::endl;
     if (!config_mgr_->LoadProfile(profile_name, config)) {
-        std::cout << "Failed to load profile: " << profile_name << std::endl;
+        std::cerr << "Failed to load profile: " << profile_name << std::endl;
         return;
     }
 
-    LoadCameraSettings(config);
+    LoadCameraSettings(config);  
     LoadDisplaySettings(config);
     LoadBackgroundSettings(config);
     LoadLandmarkSettings(config);
@@ -112,12 +116,13 @@ void ProfileManager::LoadCameraSelection(const ConfigData& config, bool in_flatp
 void ProfileManager::LoadResolutionSettings(const ConfigData& config, bool in_flatpak) {
     if (!in_flatpak) {
         // Same camera, but possibly different resolution/FPS using actual values
-        if (config.camera.res_w > 0 && config.camera.res_h > 0) {
+        // Only apply if camera is currently open to avoid conflicts
+        if (camera_mgr_.IsOpened() && config.camera.res_w > 0 && config.camera.res_h > 0) {
             camera_mgr_.SetResolution(config.camera.res_w, config.camera.res_h);
             std::cout << "Profile loaded: Resolution changed to "
                       << config.camera.res_w << "x" << config.camera.res_h << std::endl;
         }
-        if (config.camera.fps_value > 0) {
+        if (camera_mgr_.IsOpened() && config.camera.fps_value > 0) {
             camera_mgr_.SetFPS(config.camera.fps_value);
             std::cout << "Profile loaded: FPS changed to " << config.camera.fps_value << std::endl;
         }
@@ -143,11 +148,8 @@ void ProfileManager::LoadBackgroundSettings(const ConfigData& config) {
     state_.solid_color[1] = config.background.solid_color[1];
     state_.solid_color[2] = config.background.solid_color[2];
 
-    // Load background image if path is provided
-    if (!config.background.bg_path.empty() && state_.bg_mode == 2) { // 2 = background image mode
-        std::cout << "Loading background image from profile: " << config.background.bg_path << std::endl;
-        effects_mgr_.SetBackgroundImageFromPath(config.background.bg_path);
-    }
+    // Note: Background image loading is deferred to avoid memory issues during profile loading
+    // The UI will load the image when needed (similar to old monolithic version)
 }
 
 void ProfileManager::LoadLandmarkSettings(const ConfigData& config) {

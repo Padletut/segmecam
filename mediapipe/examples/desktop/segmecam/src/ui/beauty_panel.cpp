@@ -5,8 +5,8 @@
 namespace segmecam {
 
 // Beauty Panel Implementation
-BeautyPanel::BeautyPanel(AppState& state)
-    : UIPanel("Beauty"), state_(state) {
+BeautyPanel::BeautyPanel(AppState& state, EffectsManager& effects_mgr)
+    : UIPanel("Beauty"), state_(state), effects_mgr_(effects_mgr) {
 }
 
 void BeautyPanel::Render() {
@@ -39,94 +39,107 @@ void BeautyPanel::RenderPresets() {
 }
 
 void BeautyPanel::RenderPerformanceControls() {
-    ImGui::Checkbox("OpenCL", &state_.use_opencl);
-    
+    if (ImGui::Checkbox("OpenCL", &state_.use_opencl)) {
+        effects_mgr_.SetBeautyState(CreateBeautyStateFromAppState());
+    }
     ImGui::Separator();
 }
 
 void BeautyPanel::RenderSkinSmoothing() {
     ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
     if (ImGui::CollapsingHeader("Skin Smoothing")) {
-        ImGui::Checkbox("Enable##skin", &state_.fx_skin);
+        bool changed = false;
+        changed |= ImGui::Checkbox("Enable##skin", &state_.fx_skin);
         ImGui::SameLine();
-        ImGui::Checkbox("Advanced", &state_.fx_skin_adv);
-        
+        changed |= ImGui::Checkbox("Advanced", &state_.fx_skin_adv);
+
         if (state_.fx_skin) {
             if (!state_.fx_skin_adv) {
                 // Simple mode
-                ImGui::SliderFloat("Strength", &state_.fx_skin_strength, 0.0f, 1.0f);
+                changed |= ImGui::SliderFloat("Strength", &state_.fx_skin_strength, 0.0f, 1.0f);
             } else {
                 // Advanced mode
-                RenderAdvancedSkinControls();
+                changed |= RenderAdvancedSkinControls();
             }
+        }
+        if (changed) {
+            effects_mgr_.SetBeautyState(CreateBeautyStateFromAppState());
         }
     }
 }
 
-void BeautyPanel::RenderAdvancedSkinControls() {
-    ImGui::SliderFloat("Amount##skin", &state_.fx_skin_amount, 0.0f, 1.0f);
-    ImGui::SliderFloat("Radius (px)", &state_.fx_skin_radius, 1.0f, 20.0f);
-    ImGui::SliderFloat("Texture keep (0..1)", &state_.fx_skin_tex, 0.05f, 1.0f);
-    ImGui::SliderFloat("Edge feather (px)", &state_.fx_skin_edge, 2.0f, 40.0f);
-    
+bool BeautyPanel::RenderAdvancedSkinControls() {
+    bool changed = false;
+    changed |= ImGui::SliderFloat("Amount##skin", &state_.fx_skin_amount, 0.0f, 1.0f);
+    changed |= ImGui::SliderFloat("Radius (px)", &state_.fx_skin_radius, 1.0f, 20.0f);
+    changed |= ImGui::SliderFloat("Texture keep (0..1)", &state_.fx_skin_tex, 0.05f, 1.0f);
+    changed |= ImGui::SliderFloat("Edge feather (px)", &state_.fx_skin_edge, 2.0f, 40.0f);
+
     ImGui::Separator();
-    RenderWrinkleControls();
+    changed |= RenderWrinkleControls();
+    return changed;
 }
 
-void BeautyPanel::RenderWrinkleControls() {
-    ImGui::Checkbox("Wrinkle-aware", &state_.fx_skin_wrinkle);
-    
+bool BeautyPanel::RenderWrinkleControls() {
+    bool changed = false;
+    changed |= ImGui::Checkbox("Wrinkle-aware", &state_.fx_skin_wrinkle);
+
     if (state_.fx_skin_wrinkle) {
         ImGui::Indent();
-        
+
         // Sensitivity & boosts
-        ImGui::SliderFloat("Wrinkle gain", &state_.fx_skin_wrinkle_gain, 0.0f, 1.0f);
-        ImGui::SliderFloat("Smile boost", &state_.fx_skin_smile_boost, 0.0f, 1.0f);
-        ImGui::SliderFloat("Squint boost", &state_.fx_skin_squint_boost, 0.0f, 1.0f);
-        ImGui::SliderFloat("Forehead boost", &state_.fx_skin_forehead_boost, 0.0f, 2.0f);
-        
+        changed |= ImGui::SliderFloat("Wrinkle gain", &state_.fx_skin_wrinkle_gain, 0.0f, 1.0f);
+        changed |= ImGui::SliderFloat("Smile boost", &state_.fx_skin_smile_boost, 0.0f, 1.0f);
+        changed |= ImGui::SliderFloat("Squint boost", &state_.fx_skin_squint_boost, 0.0f, 1.0f);
+        changed |= ImGui::SliderFloat("Forehead boost", &state_.fx_skin_forehead_boost, 0.0f, 2.0f);
+
         ImGui::Separator();
-        
+
         // Region controls
-        ImGui::Checkbox("Suppress chin/stubble", &state_.fx_wrinkle_suppress_lower);
+        changed |= ImGui::Checkbox("Suppress chin/stubble", &state_.fx_wrinkle_suppress_lower);
         if (state_.fx_wrinkle_suppress_lower) {
-            ImGui::SliderFloat("Lower-face ratio", &state_.fx_wrinkle_lower_ratio, 0.25f, 0.65f);
+            changed |= ImGui::SliderFloat("Lower-face ratio", &state_.fx_wrinkle_lower_ratio, 0.25f, 0.65f);
         }
-        
-        ImGui::Checkbox("Ignore glasses", &state_.fx_wrinkle_ignore_glasses);
+
+        changed |= ImGui::Checkbox("Ignore glasses", &state_.fx_wrinkle_ignore_glasses);
         if (state_.fx_wrinkle_ignore_glasses) {
-            ImGui::SliderFloat("Glasses margin (px)", &state_.fx_wrinkle_glasses_margin, 0.0f, 30.0f);
+            changed |= ImGui::SliderFloat("Glasses margin (px)", &state_.fx_wrinkle_glasses_margin, 0.0f, 30.0f);
         }
-        
+
         ImGui::Separator();
-        
+
         // Advanced masking
-        ImGui::SliderFloat("Wrinkle sensitivity", &state_.fx_wrinkle_keep_ratio, 0.05f, 10.60f);
-        ImGui::Checkbox("Custom line width", &state_.fx_wrinkle_custom_scales);
-        
+        changed |= ImGui::SliderFloat("Wrinkle sensitivity", &state_.fx_wrinkle_keep_ratio, 0.05f, 10.60f);
+        changed |= ImGui::Checkbox("Custom line width", &state_.fx_wrinkle_custom_scales);
+
         if (state_.fx_wrinkle_custom_scales) {
-            ImGui::SliderFloat("Min width (px)", &state_.fx_wrinkle_min_px, 1.0f, 10.0f);
-            ImGui::SliderFloat("Max width (px)", &state_.fx_wrinkle_max_px, 2.0f, 16.0f);
+            changed |= ImGui::SliderFloat("Min width (px)", &state_.fx_wrinkle_min_px, 1.0f, 10.0f);
+            changed |= ImGui::SliderFloat("Max width (px)", &state_.fx_wrinkle_max_px, 2.0f, 16.0f);
             if (state_.fx_wrinkle_max_px < state_.fx_wrinkle_min_px) {
                 state_.fx_wrinkle_max_px = state_.fx_wrinkle_min_px;
             }
         }
-        
-        ImGui::Checkbox("Skin gate (YCbCr)", &state_.fx_wrinkle_use_skin_gate);
+
+        changed |= ImGui::Checkbox("Skin gate (YCbCr)", &state_.fx_wrinkle_use_skin_gate);
         if (state_.fx_wrinkle_use_skin_gate) {
             ImGui::Indent();
-            ImGui::SliderFloat("Mask gain", &state_.fx_wrinkle_mask_gain, 0.5f, 3.0f);
+            changed |= ImGui::SliderFloat("Mask gain", &state_.fx_wrinkle_mask_gain, 0.5f, 3.0f);
             ImGui::Unindent();
         }
-        
-        ImGui::SliderFloat("Baseline boost", &state_.fx_wrinkle_baseline, 0.0f, 1.0f);
-        ImGui::SliderFloat("Neg atten cap", &state_.fx_wrinkle_neg_cap, 0.6f, 1.0f);
-        
+
+        changed |= ImGui::SliderFloat("Baseline boost", &state_.fx_wrinkle_baseline, 0.0f, 1.0f);
+        changed |= ImGui::SliderFloat("Neg atten cap", &state_.fx_wrinkle_neg_cap, 0.6f, 1.0f);
+
         ImGui::Separator();
-        ImGui::Checkbox("Wrinkle-only preview", &state_.fx_wrinkle_preview);
-        
+        bool preview_changed = ImGui::Checkbox("Wrinkle-only preview", &state_.fx_wrinkle_preview);
+        changed |= preview_changed;
+        if (preview_changed) {
+            effects_mgr_.SetWrinklePreview(state_.fx_wrinkle_preview);
+        }
+
         ImGui::Unindent();
     }
+    return changed;
 }
 
 void BeautyPanel::RenderLipEffects() {
@@ -291,6 +304,7 @@ void BeautyPanel::CopyBeautyFieldsToBeautyState(BeautyState& bs) {
     bs.fx_skin_edge = state_.fx_skin_edge;
     bs.fx_adv_scale = state_.fx_adv_scale;
     bs.fx_adv_detail_preserve = state_.fx_adv_detail_preserve;
+
     
     // Wrinkle settings
     CopyWrinkleFieldsToBeautyState(bs);

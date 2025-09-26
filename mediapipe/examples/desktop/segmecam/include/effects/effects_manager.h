@@ -54,6 +54,8 @@ class EffectsManager {
 public:
     EffectsManager();
     ~EffectsManager();
+    // Getter for current processing scale (for auto-scaling)
+    float GetProcessingScale() const { return beauty_state_.fx_adv_scale; }
     
     // Core lifecycle
     int Initialize(const EffectsConfig& config);
@@ -66,16 +68,16 @@ public:
     
     // Background effects - delegated to BackgroundEffects module
     cv::Mat ApplyBackgroundEffect(const cv::Mat& frame_bgr, const cv::Mat& mask) {
-        return background_effects_->ApplyBackgroundEffect(frame_bgr, mask, beauty_state_);
+        return background_effects_->ApplyBackgroundEffect(frame_bgr, mask, beauty_state_, state_.opencl_enabled);
     }
-    cv::Mat ApplyBlurBackground(const cv::Mat& frame_bgr, const cv::Mat& mask, int blur_strength, float feather_px) {
-        return background_effects_->ApplyBlurBackground(frame_bgr, mask, blur_strength, feather_px);
+    cv::Mat ApplyBlurBackground(const cv::Mat& frame_bgr, const cv::Mat& mask, int blur_strength, float feather_px, float scale) {
+        return background_effects_->ApplyBlurBackground(frame_bgr, mask, blur_strength, feather_px, state_.opencl_enabled, scale);
     }
-    cv::Mat ApplyImageBackground(const cv::Mat& frame_bgr, const cv::Mat& mask, const cv::Mat& bg_image) {
-        return background_effects_->ApplyImageBackground(frame_bgr, mask, bg_image);
+    cv::Mat ApplyImageBackground(const cv::Mat& frame_bgr, const cv::Mat& mask, const cv::Mat& bg_image, float scale) {
+        return background_effects_->ApplyImageBackground(frame_bgr, mask, bg_image, state_.opencl_enabled, scale);
     }
-    cv::Mat ApplySolidBackground(const cv::Mat& frame_bgr, const cv::Mat& mask, const cv::Scalar& color) {
-        return background_effects_->ApplySolidBackground(frame_bgr, mask, color);
+    cv::Mat ApplySolidBackground(const cv::Mat& frame_bgr, const cv::Mat& mask, const cv::Scalar& color, float scale) {
+        return background_effects_->ApplySolidBackground(frame_bgr, mask, color, state_.opencl_enabled, scale);
     }
     
     // Face effects
@@ -109,6 +111,7 @@ public:
         effects_config_->SetFeatherAmount(feather_px);
     }
     void SetBackgroundImage(const cv::Mat& image) {
+        background_image_ = image.clone();
         effects_config_->SetBackgroundImage(image);
         if (background_effects_) {
             background_effects_->SetBackgroundImage(image);
@@ -212,6 +215,7 @@ public:
     // Advanced processing controls
     void SetProcessingScale(float scale) {
         effects_config_->SetProcessingScale(scale);
+        beauty_state_.fx_adv_scale = std::clamp(scale, 0.4f, 1.0f);
     }
     void SetDetailPreservation(float preserve) {
         effects_config_->SetDetailPreservation(preserve);
@@ -265,6 +269,16 @@ public:
     void UpdateAutoProcessingScale(float current_fps) {
         performance_monitor_->UpdateAutoProcessingScale(current_fps);
     }
+
+    // Wire up callback after construction
+    void WireAutoScaleCallback() {
+        performance_monitor_->SetProcessingScaleCallback([this](float scale) {
+            this->SetProcessingScale(scale);
+        });
+        performance_monitor_->SetProcessingScaleGetter([this]() {
+            return this->GetProcessingScale();
+        });
+    }
     void UpdateTargetFPSFromCamera(float camera_fps) {
         performance_monitor_->UpdateTargetFPSFromCamera(camera_fps);
     }
@@ -276,9 +290,6 @@ public:
     }
     float GetTargetFPS() const {
         return performance_monitor_->GetTargetFPS();
-    }
-    float GetProcessingScale() const {
-        return performance_monitor_->GetProcessingScale();
     }
     
     // Debug and visualization - delegated to EffectsConfiguration module

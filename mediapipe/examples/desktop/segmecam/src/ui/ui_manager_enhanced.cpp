@@ -130,7 +130,7 @@ void UIManager::InitializePanels(AppState& state, CameraManager& camera_mgr, Eff
     RegisterPanel(std::move(camera_panel));
     
     RegisterPanel(std::make_unique<BackgroundPanel>(state));
-    RegisterPanel(std::make_unique<BeautyPanel>(state));
+    RegisterPanel(std::make_unique<BeautyPanel>(state, effects_mgr));
     
     // Debug and Status panels
     RegisterPanel(std::make_unique<DebugPanel>(state));

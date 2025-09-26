@@ -534,6 +534,8 @@ cv::Mat BuildWrinkleLineMask(const cv::Mat& frame_bgr, const FaceRegions& fr, co
 
 void ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceRegions& fr,
                               const SkinSmoothingConfig& config, const mediapipe::NormalizedLandmarkList* lms) {
+
+
   float amount = std::clamp(config.amount, 0.0f, 1.0f);
   if (amount <= 0.0f || fr.face_oval.empty()) return;
 

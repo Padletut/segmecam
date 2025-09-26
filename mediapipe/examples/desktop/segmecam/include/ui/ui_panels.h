@@ -81,10 +81,8 @@ private:
     std::vector<const char*> fps_items_;
     
     // Profile UI state
-    char profile_name_buf_[256] = {0};
     bool show_set_default_ = false;
     int ui_profile_idx_ = 0;
-    std::vector<std::string> profile_names_;
     bool profile_loaded_ = false;
     
     // PipeWire deferred initialization
@@ -94,9 +92,9 @@ private:
 // Beauty effects panel
 class BeautyPanel : public UIPanel {
 public:
-    BeautyPanel(AppState& state);
+    BeautyPanel(AppState& state, class EffectsManager& effects_mgr);
     ~BeautyPanel() override = default;
-    
+
     void Render() override;
 
 private:
@@ -106,12 +104,12 @@ private:
     void RenderLipEffects();
     void RenderTeethWhitening();
     void RenderSkinSmoothingControls();
-    void RenderWrinkleControls();
+    bool RenderWrinkleControls();
     void RenderLipControls();
     void RenderTeethControls();
     void RenderBeautyPresets();
     void RenderAdvancedControls();
-    void RenderAdvancedSkinControls();
+    bool RenderAdvancedSkinControls();
     void RenderLipSliders();
     void RenderLipColorPresets();
     void ApplyLipColorPreset(const char* name, float r, float g, float b);
@@ -132,7 +130,8 @@ private:
     void CopyTeethStateToAppState(const BeautyState& bs);
     
     AppState& state_;
-    
+    class EffectsManager& effects_mgr_;
+
     // UI state
     int ui_preset_idx_ = 0;
     bool show_advanced_ = false;
@@ -171,7 +170,6 @@ private:
     
     // UI state
     int ui_bg_mode_idx_ = 0;
-    char bg_image_path_[512] = {0};
     int scale_mode_ = 0;
 };
 
@@ -194,10 +192,8 @@ private:
     class ConfigManager* config_mgr_;
     
     // UI state
-    char profile_name_buf_[256] = {0};
     bool show_set_default_ = false;
     int ui_profile_idx_ = 0;
-    std::vector<std::string> profile_names_;
     bool profile_loaded_ = false;
 };
 

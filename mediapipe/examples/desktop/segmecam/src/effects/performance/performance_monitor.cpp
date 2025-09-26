@@ -95,14 +95,11 @@ void PerformanceMonitor::SetTargetFPS(float target_fps) {
 
 void PerformanceMonitor::UpdateTargetFPSFromCamera(float camera_fps) {
     float target_fps;
-    if (camera_fps > 15.0f) {
+    if (camera_fps >= 15.0f) {
         target_fps = 15.0f - 1.0f; // Target 14 FPS for high frame rate cameras
     } else {
         target_fps = camera_fps - 1.0f; // Target camera_fps - 1 for lower frame rates
     }
-
-    // Ensure minimum target of 5 FPS
-    target_fps = std::max(target_fps, 5.0f);
 
     SetTargetFPS(target_fps);
 }
@@ -171,8 +168,14 @@ float PerformanceMonitor::CalculateScaleAdjustment(float avg_fps) const {
 }
 
 void PerformanceMonitor::ApplyScaleAdjustment(float scale_adjustment, const std::chrono::steady_clock::time_point& now) {
-    // This method needs access to beauty_state_.fx_adv_scale
-    // It will be implemented when integrated with the main manager
+    // Actually update the processing scale via callback if set
+    if (set_processing_scale_cb_) {
+        float current_scale = GetProcessingScale();
+        float new_scale = std::clamp(current_scale + scale_adjustment, 0.4f, 1.0f);
+        if (std::abs(new_scale - current_scale) > 0.0005f) {
+            set_processing_scale_cb_(new_scale);
+        }
+    }
     last_scale_adjustment_ = now;
     TrimFPSHistoryForStability();
 }
@@ -196,8 +199,10 @@ float PerformanceMonitor::GetTargetFPS() const {
 }
 
 float PerformanceMonitor::GetProcessingScale() const {
-    // This needs to be passed in or stored
-    return 1.0f; // Default for now
+    if (get_processing_scale_cb_) {
+        return get_processing_scale_cb_();
+    }
+    return 1.0f; // Default fallback
 }
 
 } // namespace segmecam

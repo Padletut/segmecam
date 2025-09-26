@@ -125,7 +125,8 @@ void CameraPanel::RenderFPSControls() {
     if (!fps_items_.empty()) {
         if (ImGui::Combo("FPS", &ui_fps_idx_, fps_items_.data(), (int)fps_items_.size())) {
             if (ui_fps_idx_ >= 0 && ui_fps_idx_ < (int)fps_list.size()) {
-                camera_mgr_.SetFPS(fps_list[ui_fps_idx_]);
+                // Reopen camera with new FPS (and current camera/resolution indices)
+                camera_mgr_.SetCurrentCamera(ui_cam_idx_, ui_res_idx_, ui_fps_idx_);
                 std::cout << "FPS changed to: " << fps_list[ui_fps_idx_] << std::endl;
             }
         }
