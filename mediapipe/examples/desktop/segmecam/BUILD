@@ -48,7 +48,12 @@ cc_library( # type: ignore
     srcs = ["src/effects/presets.cpp"],
     hdrs = ["include/effects/presets.h"],
     includes = ["."],
-    deps = [],
+    deps = [
+        # ...existing deps...
+        "//mediapipe/calculators/core:split_vector_calculator",
+        "//mediapipe/calculators/core:split_vector_calculator_cc_proto",
+        # ...existing deps...
+    ],
     visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
 )
 
@@ -138,6 +143,9 @@ cc_library( # type: ignore
         "//mediapipe/gpu:image_frame_to_gpu_buffer_calculator",
         # Flow limiter dependency
         "//mediapipe/calculators/core:flow_limiter_calculator",
+        # For blendshapes vector extraction
+        "//mediapipe/calculators/core:split_vector_calculator",
+        "//mediapipe/calculators/core:split_vector_calculator_cc_proto",
     ],
 )
 
@@ -227,6 +235,9 @@ cc_library( # type: ignore
         "//third_party/imgui:imgui_lib",
         "//third_party/imgui:imgui_impl_sdl2",
         "//third_party/imgui:imgui_impl_opengl3",
+        "//mediapipe/tasks/cc/vision/face_landmarker:face_blendshapes_graph",
+        "//mediapipe/calculators/core:split_vector_calculator",
+        "//mediapipe/calculators/core:split_vector_calculator_cc_proto",
     ],
     copts = [
         "-I/usr/include/SDL2",
@@ -630,6 +641,7 @@ cc_library( # type: ignore
         "//mediapipe/framework/port:opencv_imgproc",
         "//mediapipe/framework/port:opencv_highgui",
         "//mediapipe/tasks/cc/vision/face_landmarker:face_landmarks_connections",
+        "//mediapipe/tasks/cc/vision/face_landmarker:face_blendshapes_graph",
     ],
     copts = [
         "-I/usr/include/opencv4",
@@ -697,6 +709,7 @@ cc_library( # type: ignore
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
         "//mediapipe/tasks/cc/vision/face_landmarker:face_landmarks_connections",
+        "//mediapipe/tasks/cc/vision/face_landmarker:face_blendshapes_graph",
     ],
     copts = ["-I/usr/include/opencv4"],
 )
@@ -758,6 +771,7 @@ cc_binary( # pyright: ignore[reportUndefinedVariable]
         "//mediapipe/calculators/core:constant_side_packet_calculator",
         "//mediapipe/calculators/core:constant_side_packet_calculator_cc_proto",
         "//mediapipe/calculators/core:flow_limiter_calculator",
+        "//mediapipe/calculators/core:split_proto_list_calculator",
         "//mediapipe/gpu:image_frame_to_gpu_buffer_calculator",
         "//mediapipe/gpu:gpu_buffer_to_image_frame_calculator",
         "//mediapipe/graphs/selfie_segmentation:selfie_segmentation_gpu_deps",

@@ -10,6 +10,8 @@
 #include "absl/flags/flag.h"
 #include "absl/flags/declare.h"
 
+#include "mediapipe/framework/formats/classification.pb.h"
+
 // Declare the resource root dir flag (defined in MediaPipe resource_util)
 ABSL_DECLARE_FLAG(std::string, resource_root_dir);
 
@@ -79,6 +81,28 @@ int MediaPipeSetup::InitializeGraph(std::unique_ptr<mediapipe::CalculatorGraph>&
     if (!st.ok()) { 
         std::fprintf(stderr, "Initialize failed: %s\n", st.message().data()); 
         return 2; 
+    }
+
+    // --- BLENDSHAPES OUTPUT OBSERVER ---
+    // Attach observer for face_blendshapes output stream (if present in graph)
+    auto blendshapes_status = graph->ObserveOutputStream(
+        "face_blendshapes",
+        [](const mediapipe::Packet& packet) -> mediapipe::Status {
+            try {
+                const auto& blendshapes = packet.Get<mediapipe::ClassificationList>();
+                std::cout << "[Blendshapes] Received " << blendshapes.classification_size() << " blendshape scores:" << std::endl;
+                for (int i = 0; i < blendshapes.classification_size(); ++i) {
+                    const auto& c = blendshapes.classification(i);
+                    std::cout << "  " << c.label() << ": " << c.score() << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[Blendshapes] Error extracting blendshapes: " << e.what() << std::endl;
+            }
+            return mediapipe::OkStatus();
+        });
+    if (!blendshapes_status.ok()) {
+        std::cerr << "[Blendshapes] Warning: Could not attach observer to face_blendshapes: "
+                  << blendshapes_status.message() << std::endl;
     }
     
     // Provide GPU resources BEFORE StartRun (only if using GPU graph)

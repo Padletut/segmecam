@@ -83,17 +83,17 @@ void SegmeCamApplication::Cleanup() {
 int main(int argc, char** argv) {
     // Parse command line configuration using extracted module
     auto config = segmecam::ApplicationConfig::FromCommandLine(argc, argv);
-    
+
     segmecam::SegmeCamApplication app;
-    
+
     if (int result = app.Initialize(config); result != 0) {
         std::cerr << "❌ Application initialization failed with code: " << result << std::endl;
         return result;
     }
-    
+
     int result = app.Run();
-    
+
     // Cleanup is handled by destructor
-    
+
     return result;
 }

@@ -92,6 +92,29 @@ int MediaPipeManager::SetupOutputPollers(bool use_face_landmarks) {
                       << face_rects_status.message() << std::endl;
             return 4;
         }
+
+        // Set up face_blendshapes poller
+        auto blendshapes_status = graph_->ObserveOutputStream(
+            "face_blendshapes",
+            [&](const mediapipe::Packet& packet) -> mediapipe::Status {
+                // Example: Extract and print blendshape scores
+                try {
+                    const auto& blendshapes = packet.Get<mediapipe::ClassificationList>();
+                    std::cout << "[Blendshapes] Received " << blendshapes.classification_size() << " blendshape scores:" << std::endl;
+                    for (int i = 0; i < blendshapes.classification_size(); ++i) {
+                        const auto& c = blendshapes.classification(i);
+                        std::cout << "  " << c.label() << ": " << c.score() << std::endl;
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "[Blendshapes] Error extracting blendshapes: " << e.what() << std::endl;
+                }
+                return mediapipe::OkStatus();
+            });
+        if (!blendshapes_status.ok()) {
+            std::cerr << "❌ Failed to set up face_blendshapes poller: "
+                      << blendshapes_status.message() << std::endl;
+            return 5;
+        }
         
         std::cout << "✅ Face landmarks pollers set up successfully!" << std::endl;
     }
