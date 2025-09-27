@@ -6,6 +6,42 @@
 #include <opencv2/photo.hpp>
 
 
+// ROI-based inpainting blending function
+static inline void blendInpaintedROI(
+    cv::Mat& baseBGR, cv::Rect roi,
+    const cv::Mat& inpaintSmallBGR,
+    const cv::Mat& maskSmall8U,
+    float gain)
+{
+    if (baseBGR.empty() || inpaintSmallBGR.empty() || maskSmall8U.empty()) return;
+
+    // 1) Clamp ROI and get view in base
+    roi &= cv::Rect(0,0,baseBGR.cols, baseBGR.rows);
+    if (roi.width<=0 || roi.height<=0) return;
+    cv::Mat dstROI = baseBGR(roi);
+
+    // 2) Scale up result + mask to ROI size
+    cv::Mat resUp, maskUp;
+    cv::resize(inpaintSmallBGR, resUp, dstROI.size(), 0, 0, cv::INTER_LINEAR);
+    cv::resize(maskSmall8U,    maskUp, dstROI.size(), 0, 0, cv::INTER_LINEAR);
+
+    // 3) Convert to same dtype/channels before blending
+    cv::Mat dstF, resF, aF, a3;
+    dstROI.convertTo(dstF, CV_32F, 1.0/255.0);
+    resUp.convertTo(resF, CV_32F, 1.0/255.0);
+    if (maskUp.type()!=CV_8U) {
+        cv::Mat tmp; maskUp.convertTo(tmp, CV_8U); maskUp = tmp;
+    }
+    maskUp.convertTo(aF, CV_32F, 1.0/255.0);          // 1c [0..1]
+    cv::merge(std::vector<cv::Mat>{aF,aF,aF}, a3);    // 3c [0..1] (avoid 1c*3c mismatch)
+
+    // 4) Blend: base + gain * a * (res - base)
+    cv::Mat outF = dstF + (resF - dstF).mul(a3) * gain;
+
+    // 5) Convert back in place
+    outF.convertTo(dstROI, CV_8U, 255.0);
+}
+
 // Helper functions - defined first to avoid forward declaration issues
 cv::Mat ApplyLowerFaceSuppression(cv::Size sz, const FaceRegions& fr, float lower_face_ratio) {
   if (fr.face_oval.empty() || fr.lips_outer.empty()) {
@@ -150,6 +186,22 @@ cv::Mat CreateGaussianBase(const cv::Mat& Lf, float radius_px) {
 
 cv::Mat CombineBoostMaps(const cv::Mat& expression_boost, const cv::Mat& wrinkle_boost,
                         float baseline_boost, const cv::Mat& face_gate) {
+  // Validate input matrices
+  if (expression_boost.empty() || wrinkle_boost.empty() || face_gate.empty()) {
+    std::cerr << "CombineBoostMaps: Empty input matrices" << std::endl;
+    return cv::Mat();
+  }
+  if (expression_boost.size() != wrinkle_boost.size() || expression_boost.size() != face_gate.size()) {
+    std::cerr << "CombineBoostMaps: Matrix size mismatch - expression:" << expression_boost.size()
+              << " wrinkle:" << wrinkle_boost.size() << " face_gate:" << face_gate.size() << std::endl;
+    return cv::Mat();
+  }
+  if (expression_boost.type() != CV_32F || wrinkle_boost.type() != CV_32F || face_gate.type() != CV_32F) {
+    std::cerr << "CombineBoostMaps: Type mismatch - expression:" << expression_boost.type()
+              << " wrinkle:" << wrinkle_boost.type() << " face_gate:" << face_gate.type() << std::endl;
+    return cv::Mat();
+  }
+
   cv::Mat boost_any = cv::min(1.0f, expression_boost + wrinkle_boost + std::max(0.0f, baseline_boost));
   cv::Mat boost_final = boost_any.mul(face_gate);
   return boost_final;
@@ -517,6 +569,12 @@ cv::Mat BuildWrinkleBoostMap(const cv::Mat& frame_bgr, const FaceRegions& fr,
     cv::inpaint(frame_bgr, wrinkle_mask, inpainted, 7.0, cv::INPAINT_TELEA);
     dump("inpaint output", inpainted);
 
+    // Ensure inpainted is valid
+    if (inpainted.empty() || inpainted.size() != frame_bgr.size()) {
+      std::cerr << "❌ Inpaint failed or returned invalid result" << std::endl;
+      return cv::Mat::zeros(frame_bgr.size(), CV_32F); // Return zero boost map as fallback
+    }
+
     // Ensure mask and inpainted are same size as frame_bgr (for process scaling)
     if (wrinkle_mask.size() != frame_bgr.size()) {
       cv::resize(wrinkle_mask, wrinkle_mask, frame_bgr.size(), 0, 0, cv::INTER_NEAREST);
@@ -531,9 +589,15 @@ cv::Mat BuildWrinkleBoostMap(const cv::Mat& frame_bgr, const FaceRegions& fr,
     cv::Mat mask_channels[] = {mask_f, mask_f, mask_f};
     cv::merge(mask_channels, 3, mask3);
 
-    // Ensure mask values are in valid range [0,1]
-    cv::max(mask3, 0.0f, mask3);
-    cv::min(mask3, 1.0f, mask3);
+    // Ensure mask values are in valid range [0,1] using pixel-wise operations
+    for (int y = 0; y < mask3.rows; ++y) {
+      for (int x = 0; x < mask3.cols; ++x) {
+        cv::Vec3f& pixel = mask3.at<cv::Vec3f>(y, x);
+        for (int c = 0; c < 3; ++c) {
+          pixel[c] = std::max(0.0f, std::min(1.0f, pixel[c]));
+        }
+      }
+    }
 
     // Convert images to float and 3 channels
     cv::Mat orig, inp;
@@ -543,18 +607,64 @@ cv::Mat BuildWrinkleBoostMap(const cv::Mat& frame_bgr, const FaceRegions& fr,
     else inp = inpainted;
 
     // Sanity check: all must be same size and 3 channels
+    if (orig.size() != inp.size() || orig.size() != mask3.size()) {
+      std::cerr << "BuildWrinkleBoostMap: Size mismatch - orig:" << orig.size()
+                << " inp:" << inp.size() << " mask3:" << mask3.size() << std::endl;
+      return cv::Mat::zeros(frame_bgr.size(), CV_32F);
+    }
+    if (orig.channels() != 3 || inp.channels() != 3 || mask3.channels() != 3) {
+      std::cerr << "BuildWrinkleBoostMap: Channel mismatch - orig:" << orig.channels()
+                << " inp:" << inp.channels() << " mask3:" << mask3.channels() << std::endl;
+      return cv::Mat::zeros(frame_bgr.size(), CV_32F);
+    }
+    if (orig.type() != CV_32FC3 || inp.type() != CV_32FC3 || mask3.type() != CV_32FC3) {
+      std::cerr << "BuildWrinkleBoostMap: Type mismatch - orig:" << orig.type()
+                << " inp:" << inp.type() << " mask3:" << mask3.type() << std::endl;
+      return cv::Mat::zeros(frame_bgr.size(), CV_32F);
+    }
+
     CV_Assert(orig.size() == inp.size() && orig.size() == mask3.size());
     CV_Assert(orig.channels() == 3 && inp.channels() == 3 && mask3.channels() == 3);
 
-    // Blend using the 3-channel mask - use explicit operations to avoid type issues
-    cv::Mat inv_mask;
-    cv::subtract(cv::Scalar(1.0f, 1.0f, 1.0f), mask3, inv_mask);
-    cv::Mat blended;
-    cv::add(orig.mul(inv_mask), inp.mul(mask3), blended);
+    // Additional validation before arithmetic operations
+    cv::Mat ones = cv::Mat::ones(mask3.size(), CV_32FC3);
+    std::cout << "[DEBUG] BuildWrinkleBoostMap: ones size=" << ones.size() << " type=" << ones.type()
+              << " mask3 size=" << mask3.size() << " type=" << mask3.type() << std::endl;
+    if (ones.size() != mask3.size() || ones.type() != mask3.type()) {
+      std::cerr << "BuildWrinkleBoostMap: ones matrix incompatible - ones:" << ones.size() << " type:" << ones.type()
+                << " mask3:" << mask3.size() << " type:" << mask3.type() << std::endl;
+      return cv::Mat::zeros(frame_bgr.size(), CV_32F);
+    }
 
-    // Convert back to float (or 8-bit if needed)
-    blended.convertTo(blendshape_boost, CV_32F, 1.0);
-    // Optionally, scale the effect by boost_val if needed
+    // Blend using proper alpha blending with pixel-wise operations
+    cv::Mat blended;
+    try {
+      // Use the already converted matrices (orig and inp are already CV_32FC3)
+      // mask3 is already CV_32FC3 from the merge operation
+
+      // Pixel-wise alpha blending: result = (1 - mask) * orig + mask * inp
+      blended = cv::Mat::zeros(orig.size(), CV_32FC3);
+      for (int y = 0; y < orig.rows; ++y) {
+        for (int x = 0; x < orig.cols; ++x) {
+          cv::Vec3f orig_pixel = orig.at<cv::Vec3f>(y, x);
+          cv::Vec3f inp_pixel = inp.at<cv::Vec3f>(y, x);
+          cv::Vec3f mask_pixel = mask3.at<cv::Vec3f>(y, x);
+
+          cv::Vec3f result_pixel;
+          for (int c = 0; c < 3; ++c) {
+            float alpha = mask_pixel[c];
+            result_pixel[c] = (1.0f - alpha) * orig_pixel[c] + alpha * inp_pixel[c];
+          }
+          blended.at<cv::Vec3f>(y, x) = result_pixel;
+        }
+      }
+
+      // Convert to single-channel boost map (already in [0,1] range from blending)
+      cv::cvtColor(blended, blendshape_boost, cv::COLOR_BGR2GRAY);
+    } catch (const cv::Exception& e) {
+      std::cerr << "BuildWrinkleBoostMap: Pixel-wise blending failed: " << e.what() << std::endl;
+      return cv::Mat::zeros(frame_bgr.size(), CV_32F);
+    }
   }
 
   // Combine local and line masks with sensitivity: higher keep_ratio favors line mask
@@ -588,6 +698,22 @@ cv::Mat BuildWrinkleBoostMap(const cv::Mat& frame_bgr, const FaceRegions& fr,
 
 void ApplyFrequencySeparation(cv::Mat& Lf, const cv::Mat& weight, float amount, float boost_gain,
                              const cv::Mat& boost_final, bool wrinkle_preview, float neg_atten_cap) {
+  // Validate input matrices
+  if (Lf.empty() || weight.empty() || boost_final.empty()) {
+    std::cerr << "ApplyFrequencySeparation: Empty input matrices" << std::endl;
+    return;
+  }
+  if (Lf.size() != weight.size() || Lf.size() != boost_final.size()) {
+    std::cerr << "ApplyFrequencySeparation: Matrix size mismatch - Lf:" << Lf.size()
+              << " weight:" << weight.size() << " boost_final:" << boost_final.size() << std::endl;
+    return;
+  }
+  if (Lf.type() != CV_32F || weight.type() != CV_32F || boost_final.type() != CV_32F) {
+    std::cerr << "ApplyFrequencySeparation: Type mismatch - Lf:" << Lf.type()
+              << " weight:" << weight.type() << " boost_final:" << boost_final.type() << std::endl;
+    return;
+  }
+
   // Create low-frequency base via Gaussian blur
   cv::Mat base;
   cv::GaussianBlur(Lf, base, cv::Size(0, 0), 3.0); // 3px sigma for low-frequency base
@@ -813,16 +939,38 @@ void ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceRegions& fr,
       cv::inpaint(frame_bgr, mask_u8, inpainted, 7.0, cv::INPAINT_TELEA);
       dump("inpaint output", inpainted);
 
-      // Blend inpainted region into output frame (use mask as 0..1 float)
+      // Blend inpainted region into output frame using pixel-wise blending with validation
       cv::Mat mask_f;
       mask_u8.convertTo(mask_f, CV_32F, 1.0/255.0);
+
+      // Validate matrices before blending
+      if (frame_bgr.size() != inpainted.size() || frame_bgr.size() != mask_f.size()) {
+        std::cout << "[ERROR] Matrix size mismatch in inpainting blend: frame=" << frame_bgr.size()
+                  << " inpainted=" << inpainted.size() << " mask=" << mask_f.size() << std::endl;
+        return;
+      }
+
+      if (frame_bgr.type() != CV_8UC3 || inpainted.type() != CV_8UC3 || mask_f.type() != CV_32FC1) {
+        std::cout << "[ERROR] Matrix type mismatch in inpainting blend: frame=" << frame_bgr.type()
+                  << " inpainted=" << inpainted.type() << " mask=" << mask_f.type() << std::endl;
+        return;
+      }
+
+      // Apply gain to mask for blending strength
+      mask_f *= config.smile_wrinkle_gain;
+
+      // Pixel-wise blending with bounds checking
       for (int y = 0; y < frame_bgr.rows; ++y) {
         for (int x = 0; x < frame_bgr.cols; ++x) {
           float w = mask_f.at<float>(y, x);
           if (w > 0.01f) {
+            // Clamp weight to prevent over-blending
+            w = std::min(w, 1.0f);
             for (int c = 0; c < 3; ++c) {
-              frame_bgr.at<cv::Vec3b>(y, x)[c] =
-                static_cast<uchar>(frame_bgr.at<cv::Vec3b>(y, x)[c] * (1.0f - w) + inpainted.at<cv::Vec3b>(y, x)[c] * w);
+              float orig = frame_bgr.at<cv::Vec3b>(y, x)[c];
+              float inpt = inpainted.at<cv::Vec3b>(y, x)[c];
+              float blended = orig * (1.0f - w) + inpt * w;
+              frame_bgr.at<cv::Vec3b>(y, x)[c] = static_cast<uchar>(std::clamp(blended, 0.0f, 255.0f));
             }
           }
         }
