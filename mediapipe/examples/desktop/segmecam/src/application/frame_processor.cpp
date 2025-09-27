@@ -121,6 +121,9 @@ cv::Mat FrameProcessor::ProcessAndDisplayFrame(
     if (!last_mask_u8.empty() || have_lms) {
         // Use EffectsManager to process the frame with segmentation mask and face landmarks
         processed_frame = effects_mgr.ProcessFrame(frame_bgr, last_mask_u8, landmarks_ptr, app_state.last_blendshapes.get());
+        
+        // Copy facial metrics for debug display
+        app_state.last_facial_metrics = effects_mgr.GetLastFacialMetrics();
     }
 
     // EffectsManager now returns RGB directly, no conversion needed

@@ -23,6 +23,15 @@ void DebugPanel::Render() {
     // Blendshapes Debug Panel
     if (state_.show_blendshapes_debug && state_.last_blendshapes) {
         if (ImGui::Begin("Blendshapes Debug", &state_.show_blendshapes_debug)) {
+            // Smile detection status
+            ImGui::Text("Smile Detection:");
+            ImGui::SameLine();
+            bool is_smiling = state_.last_facial_metrics.smile_factor > 0.1f;
+            ImGui::TextColored(is_smiling ? ImVec4(0.0f, 1.0f, 0.0f, 1.0f) : ImVec4(1.0f, 0.0f, 0.0f, 1.0f), 
+                              is_smiling ? "SMILING" : "NOT SMILING");
+            ImGui::Text("Smile Factor: %.3f", state_.last_facial_metrics.smile_factor);
+            ImGui::Separator();
+            
             ImGui::Text("Blendshape Scores (last frame):");
             ImGui::Separator();
             const auto& blendshapes = *state_.last_blendshapes;

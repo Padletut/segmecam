@@ -79,6 +79,7 @@ cc_library( # type: ignore
     includes = ["."],
     deps = [
         ":vcam",
+        ":advanced_skin_effects",
         "//mediapipe/framework/formats:classification_cc_proto",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",

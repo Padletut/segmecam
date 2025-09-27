@@ -1,6 +1,7 @@
 #include "include/effects/face_processor.h"
 #include "include/effects/face_regions.h"
 #include "include/effects/segmecam_face_effects.h"
+#include "include/effects/advanced_skin_effects.h"
 #include "mediapipe/tasks/cc/vision/face_landmarker/face_landmarks_connections.h"
 #include <iostream>
 #include <opencv2/core.hpp>
@@ -117,6 +118,7 @@ void FaceProcessor::SetupSkinSmoothingConfig(SkinSmoothingConfig& config, const 
     config.expression.forehead_margin_px = 10.0f * scale;
     config.boost_gain = beauty_state.fx_skin_wrinkle_gain;
     config.smile_wrinkle_gain = beauty_state.fx_skin_smile_wrinkle_gain;
+    std::cout << "[DEBUG] FaceProcessor: smile_wrinkle_gain set to " << config.smile_wrinkle_gain << std::endl;
     config.wrinkle_enabled = beauty_state.fx_skin_wrinkle;
     config.wrinkle.region_gates.suppress_lower_face = beauty_state.fx_wrinkle_suppress_lower;
     config.wrinkle.region_gates.lower_face_ratio = beauty_state.fx_wrinkle_lower_ratio;
@@ -140,7 +142,9 @@ void FaceProcessor::ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const F
     // Create config with scale = 1.0 for full resolution
     SkinSmoothingConfig config;
     SetupSkinSmoothingConfig(config, beauty_state, 1.0f);
-    ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks, blendshapes);
+    FacialExpressionMetrics metrics = ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks, blendshapes);
+    // Note: metrics are not stored here as this is called from multiple places
+    // The caller (EffectsManager) should store the metrics if needed
 }
 
 FaceRegions FaceProcessor::TransformFaceRegionsToScaledROI(const FaceRegions& regions, const cv::Rect& roi, float scale) {
@@ -231,6 +235,7 @@ void FaceProcessor::ApplySkinSmoothingToScaledImage(cv::Mat& small, const FaceRe
                                                   const mediapipe::ClassificationList* blendshapes) {
     SkinSmoothingConfig config;
     SetupSkinSmoothingConfig(config, beauty_state, scale);
+    // For scaled processing, we don't need to store metrics
     ApplySkinSmoothingAdvBGR(small, fr_small, config, &lms_roi, blendshapes);
 }
 

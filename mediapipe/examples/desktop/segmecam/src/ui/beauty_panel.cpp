@@ -63,6 +63,7 @@ void BeautyPanel::RenderSkinSmoothing() {
             }
         }
         if (changed) {
+            std::cout << "[DEBUG] UI: Beauty state changed, updating effects with smile_wrinkle_gain=" << state_.fx_skin_smile_wrinkle_gain << std::endl;
             effects_mgr_.SetBeautyState(CreateBeautyStateFromAppState());
         }
     }
@@ -90,6 +91,9 @@ bool BeautyPanel::RenderWrinkleControls() {
         // Sensitivity & boosts
         changed |= ImGui::SliderFloat("Wrinkle gain", &state_.fx_skin_wrinkle_gain, 0.0f, 1.0f);
         changed |= ImGui::SliderFloat("Smile Wrinkle Suppression", &state_.fx_skin_smile_wrinkle_gain, 0.0f, 1.0f);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            std::cout << "[DEBUG] UI: Smile Wrinkle Suppression changed to " << state_.fx_skin_smile_wrinkle_gain << std::endl;
+        }
         changed |= ImGui::SliderFloat("Smile boost", &state_.fx_skin_smile_boost, 0.0f, 1.0f);
         changed |= ImGui::SliderFloat("Squint boost", &state_.fx_skin_squint_boost, 0.0f, 1.0f);
         changed |= ImGui::SliderFloat("Forehead boost", &state_.fx_skin_forehead_boost, 0.0f, 2.0f);

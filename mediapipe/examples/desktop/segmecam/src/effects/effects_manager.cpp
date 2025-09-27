@@ -3,6 +3,7 @@
 #include "effects/performance/performance_monitor.h"
 #include "effects/config/effects_config.h"
 #include "effects/face_processor.h"
+#include "effects/advanced_skin_effects.h"
 #include "render/segmecam_composite.h"
 #include "mediapipe/tasks/cc/vision/face_landmarker/face_landmarks_connections.h"
 
@@ -301,7 +302,9 @@ void EffectsManager::ApplySkinSmoothingAdvanced(cv::Mat& frame_bgr, const FaceRe
     } else {
         // Full resolution processing
         SkinSmoothingConfig config = CreateSkinSmoothingConfig();
-        ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks, blendshapes);
+        FacialExpressionMetrics metrics = ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks, blendshapes);
+        // Store metrics for debug display
+        state_.last_facial_metrics = metrics;
     }
 }
 
@@ -348,6 +351,10 @@ void EffectsManager::ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, c
                                                           const mediapipe::ClassificationList* blendshapes) {
     // Delegate to face processor with current beauty state
     face_processor_->ApplySkinSmoothingWithProcessingScale(frame_bgr, regions, landmarks, beauty_state_, blendshapes);
+    
+    // Extract and store facial metrics for debug display
+    FacialExpressionMetrics metrics = ExtractFacialExpressions(&landmarks, frame_bgr.cols, frame_bgr.rows, blendshapes);
+    state_.last_facial_metrics = metrics;
 }
 
 

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include "include/camera/vcam.h"
 #include "mediapipe/framework/formats/classification.pb.h"
+#include "effects/advanced_skin_effects.h"
 
 namespace segmecam {
 
@@ -53,6 +54,9 @@ struct AppState {
   
   // Latest blendshapes for facial expression analysis
   std::unique_ptr<mediapipe::ClassificationList> last_blendshapes;
+  
+  // Latest facial expression metrics for debug display
+  FacialExpressionMetrics last_facial_metrics;
   
   // Beauty controls
   bool fx_skin = false;

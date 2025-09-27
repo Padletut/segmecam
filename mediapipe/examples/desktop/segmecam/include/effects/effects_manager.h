@@ -47,6 +47,9 @@ struct EffectsState {
     bool show_landmarks = false;
     bool show_mesh = false;
     bool show_mesh_dense = false;
+    
+    // Latest facial expression metrics for debug display
+    FacialExpressionMetrics last_facial_metrics;
 };
 
 // Comprehensive effects manager for background replacement, face effects, and image processing
@@ -56,6 +59,9 @@ public:
     ~EffectsManager();
     // Getter for current processing scale (for auto-scaling)
     float GetProcessingScale() const { return beauty_state_.fx_adv_scale; }
+    
+    // Getter for latest facial metrics (for debug display)
+    const FacialExpressionMetrics& GetLastFacialMetrics() const { return state_.last_facial_metrics; }
     
     // Core lifecycle
     int Initialize(const EffectsConfig& config);

@@ -64,6 +64,11 @@ struct FacialExpressionMetrics {
   float brow_inner_up;         // browInnerUp
   float brow_outer_up_left;    // browOuterUpLeft
   float brow_outer_up_right;   // browOuterUpRight
+  float mouth_pucker;          // mouthPucker
+  float mouth_left_expr;       // mouthLeft
+  float mouth_right_expr;      // mouthRight
+  float mouth_upper_up_left;   // mouthUpperUpLeft
+  float mouth_upper_up_right;  // mouthUpperUpRight
 };
 
 struct SkinSmoothingConfig {
@@ -123,7 +128,7 @@ cv::Mat BuildWrinkleLineMask(const cv::Mat& frame_bgr,
 // - radius_px: Gaussian radius for base layer (pixels).
 // - texture_thresh: see BuildSkinWeightMap.
 // - edge_feather_px: see BuildSkinWeightMap.
-void ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr,
+FacialExpressionMetrics ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr,
                               const FaceRegions& fr,
                               const SkinSmoothingConfig& config,
                               const mediapipe::NormalizedLandmarkList* lms,

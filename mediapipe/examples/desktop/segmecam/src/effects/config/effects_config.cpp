@@ -26,6 +26,7 @@ void EffectsConfiguration::SetBeautyState(const BeautyState& state) {
     float prev_fx_adv_scale = beauty_state_.fx_adv_scale;
     beauty_state_ = state;
     beauty_state_.fx_adv_scale = prev_fx_adv_scale;
+    std::cout << "[DEBUG] EffectsConfig: Beauty state updated, smile_wrinkle_gain=" << beauty_state_.fx_skin_smile_wrinkle_gain << std::endl;
 }
 
 // Background settings
