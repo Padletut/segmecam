@@ -622,7 +622,7 @@ cv::Mat BuildWrinkleBoostMap(const cv::Mat& frame_bgr, const FaceRegions& fr,
 
   // ENHANCED CHEEK WRINKLE DETECTION: More aggressive detection for static cheek wrinkles
   // Always apply some base cheek wrinkle detection, even without strong expressions
-  float base_cheek_boost = 0.3f; // Always apply some cheek smoothing
+  float base_cheek_boost = 0.8f; // Increased from 0.5f for maximum base smoothing
 
   // Increase sensitivity for cheek expressions and add nasolabial fold detection
   float enhanced_cheek_expression = std::max({
@@ -649,8 +649,8 @@ cv::Mat BuildWrinkleBoostMap(const cv::Mat& frame_bgr, const FaceRegions& fr,
   float w_local = 0.6f * (1.0f - s_norm); // 0.6 .. 0
   float w_blendshape = 0.8f; // INCREASED weight for blendshape-guided enhancement (was 0.3f)
 
-  // EXTREME: Increase blendshape boost weight for smile suppression
-  float w_blendshape_extreme = 1.5f; // INCREASED for better cheek wrinkle detection (was 1.0f)
+  // EXTREME: Increase blendshape boost weight for maximum smile suppression
+  float w_blendshape_extreme = 3.0f; // INCREASED for maximum cheek wrinkle detection (was 2.0f)
   // Ensure all masks are CV_32F and same size
   cv::Mat wrinkle_line_f, wrinkle_local_f, blendshape_boost_f;
   if (wrinkle_line.type() != CV_32F) wrinkle_line.convertTo(wrinkle_line_f, CV_32F);
@@ -865,9 +865,9 @@ cv::Mat BuildSkinWeightMap(const FaceRegions& fr,
 
   cv::Mat weight;
   cv::multiply(weight_edge, wtex, weight);
-  // Higher baseline weight for cheek areas (increased from 0.25f to 0.4f for extreme smoothing)
+  // Higher baseline weight for cheek areas (increased from 0.6f to 1.0f for maximum smoothing)
   cv::Mat baseline_weight;
-  cv::multiply(cv::Scalar(0.4f), base_f, baseline_weight);
+  cv::multiply(cv::Scalar(1.0f), base_f, baseline_weight);
   weight = cv::max(weight, baseline_weight);
   // If still extremely low on average, drop texture suppression entirely
   if (cv::mean(weight)[0] < 0.02) weight = weight_edge;
@@ -1376,7 +1376,7 @@ void ApplySnapchatStyleSmoothing(cv::Mat& frame_bgr, const cv::Mat& refined_face
                                     config.wrinkle.region_gates.lower_face_ratio,
                                     config.wrinkle.region_gates.ignore_glasses,
                                     config.wrinkle.region_gates.glasses_margin_px,
-                                    config.wrinkle.keep_ratio * 0.5f, config.wrinkle.use_skin_gate, config.wrinkle.mask_gain * 0.4f};  // Much lower suppression for cheek areas
+                                    config.wrinkle.keep_ratio * 0.1f, config.wrinkle.use_skin_gate, config.wrinkle.mask_gain * 0.4f};  // Maximum suppression reduction for cheek areas
     wrinkle_mask = BuildWrinkleLineMask(frame_bgr, fr, wrinkle_config);
     if (wrinkle_mask.empty() || wrinkle_mask.size() != frame_bgr.size() || wrinkle_mask.type() != CV_32F) {
       std::cerr << "ApplySnapchatStyleSmoothing: Invalid wrinkle_mask - empty:" << wrinkle_mask.empty()
@@ -1421,7 +1421,7 @@ void ApplySnapchatStyleSmoothing(cv::Mat& frame_bgr, const cv::Mat& refined_face
     face_gate = cv::Mat::ones(frame_bgr.size(), CV_32F);
   }
 
-  float effective_baseline = config.baseline_boost > 0.0f ? config.baseline_boost : 0.3f; // Minimum baseline for visible Snapchat smoothing
+  float effective_baseline = config.baseline_boost > 0.0f ? config.baseline_boost : 0.8f; // Increased minimum baseline for maximum Snapchat smoothing
 
   // Snapchat-style contrast reduction around wrinkles (subtle, not aggressive)
   if (config.wrinkle_enabled) {
@@ -1452,8 +1452,8 @@ void ApplySnapchatStyleSmoothing(cv::Mat& frame_bgr, const cv::Mat& refined_face
     std::cout << "[DEBUG] Snapchat-style base wrinkle reduction: " << base_wrinkle_enhancement << "x" << std::endl;
   }
 
-  // Apply the Snapchat-style frequency separation with MUCH increased amount for extreme wrinkle smoothing
-  float extreme_amount = std::min(amount * 2.0f, 1.0f);  // Double the amount for extreme wrinkle coverage
+  // Apply the Snapchat-style frequency separation with MAXIMUM increased amount for complete wrinkle smoothing
+  float extreme_amount = std::min(amount * 5.0f, 1.0f);  // Quintuple the amount for maximum wrinkle coverage
   ApplyFrequencySeparation(Lf, weight, extreme_amount, effective_boost_gain, boost_final,
                           config.wrinkle_enabled && config.wrinkle_preview, config.neg_atten_cap);
 }

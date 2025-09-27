@@ -188,7 +188,11 @@ cv::Mat CompositeBlurBackgroundBGR(const cv::Mat& frame_bgr,
     mask_single = mask_u8;
   }
   
-  cv::Mat mask_f; mask_single.convertTo(mask_f, CV_32FC1, 1.0/255.0);
+  // Threshold the mask to make it more binary (less transparent)
+  cv::Mat mask_thresholded;
+  cv::threshold(mask_single, mask_thresholded, 10, 255, cv::THRESH_BINARY);  // Threshold at 10/255 ≈ 4% to make mask more opaque
+  
+  cv::Mat mask_f; mask_thresholded.convertTo(mask_f, CV_32FC1, 1.0/255.0);
 
   // Apply feathering if requested
   if (feather_px > 0.5f) {
@@ -469,7 +473,10 @@ cv::Mat CompositeImageBackgroundBGR(const cv::Mat& frame_bgr,
                                     const cv::Mat& mask_u8,
                                     const cv::Mat& bg_bgr) {
   cv::Mat result = frame_bgr.clone();
-  cv::Mat mask_f; mask_u8.convertTo(mask_f, CV_32FC1, 1.0/255.0);
+  // Threshold the mask to make it more binary (less transparent)
+  cv::Mat mask_thresholded;
+  cv::threshold(mask_u8, mask_thresholded, 10, 255, cv::THRESH_BINARY);  // Threshold at 10/255 ≈ 4% to make mask more opaque
+  cv::Mat mask_f; mask_thresholded.convertTo(mask_f, CV_32FC1, 1.0/255.0);
   segmecam::CompositeWithMask(result, bg_bgr, mask_f, false);
   return result;
 }
@@ -478,7 +485,10 @@ cv::Mat CompositeSolidBackgroundBGR(const cv::Mat& frame_bgr,
                                     const cv::Mat& mask_u8,
                                     const cv::Scalar& bgr) {
   cv::Mat result = frame_bgr.clone();
-  cv::Mat mask_f; mask_u8.convertTo(mask_f, CV_32FC1, 1.0/255.0);
+  // Threshold the mask to make it more binary (less transparent)
+  cv::Mat mask_thresholded;
+  cv::threshold(mask_u8, mask_thresholded, 10, 255, cv::THRESH_BINARY);  // Threshold at 10/255 ≈ 4% to make mask more opaque
+  cv::Mat mask_f; mask_thresholded.convertTo(mask_f, CV_32FC1, 1.0/255.0);
   segmecam::CompositeWithSolidColor(result, bgr, mask_f, false);
   return result;
 }
