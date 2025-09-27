@@ -60,19 +60,20 @@ public:
 
 private:
     ApplicationConfig config_;
-    
+
     // State for extracted modules
     GPUSetupState gpu_setup_state_;
     std::unique_ptr<mediapipe::CalculatorGraph> mediapipe_graph_;  // MediaPipe graph managed directly
     std::unique_ptr<mediapipe::OutputStreamPoller> mask_poller_;   // Output stream poller for masks
     std::unique_ptr<mediapipe::OutputStreamPoller> multi_face_landmarks_poller_;  // Face landmarks poller
     std::unique_ptr<mediapipe::OutputStreamPoller> face_rects_poller_;             // Face rects poller
+    std::unique_ptr<mediapipe::OutputStreamPoller> face_blendshapes_poller_;       // Face blendshapes poller
     ManagerCoordination::Managers managers_;
-    segmecam::AppState app_state_;  // Shared app state for manager coordination
-    
+    AppState app_state_;  // Shared app state for manager coordination
+
     // TODO: Enhanced UI panels integration (Phase 8 next iteration)
     // std::unique_ptr<segmecam::UIManager> ui_manager_;
-    
+
     // SDL window and OpenGL context (needed for MediaPipe GPU)
     SDL_Window* window_;
     SDL_GLContext gl_context_;

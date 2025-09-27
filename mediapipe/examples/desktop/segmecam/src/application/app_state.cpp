@@ -109,6 +109,7 @@ void AppState::LoadWrinkleSettings(const cv::FileNode& root) {
   fx_skin_squint_boost = ReadFloat(root["fx_skin_squint_boost"], fx_skin_squint_boost);
   fx_skin_forehead_boost = ReadFloat(root["fx_skin_forehead_boost"], fx_skin_forehead_boost);
   fx_skin_wrinkle_gain = ReadFloat(root["fx_skin_wrinkle_gain"], fx_skin_wrinkle_gain);
+  fx_skin_smile_wrinkle_gain = ReadFloat(root["fx_skin_smile_wrinkle_gain"], fx_skin_smile_wrinkle_gain);
   fx_wrinkle_suppress_lower = ReadInt(root["fx_wrinkle_suppress_lower"], fx_wrinkle_suppress_lower);
   fx_wrinkle_lower_ratio = ReadFloat(root["fx_wrinkle_lower_ratio"], fx_wrinkle_lower_ratio);
   fx_wrinkle_ignore_glasses = ReadInt(root["fx_wrinkle_ignore_glasses"], fx_wrinkle_ignore_glasses);

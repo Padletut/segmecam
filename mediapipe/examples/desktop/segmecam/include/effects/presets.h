@@ -27,6 +27,7 @@ struct BeautyState {
   float fx_skin_squint_boost = 0.5f;
   float fx_skin_forehead_boost = 0.8f;
   float fx_skin_wrinkle_gain = 1.0f;
+  float fx_skin_smile_wrinkle_gain = 1.0f;
   bool fx_wrinkle_suppress_lower = true;
   float fx_wrinkle_lower_ratio = 0.45f;
   bool fx_wrinkle_ignore_glasses = true;

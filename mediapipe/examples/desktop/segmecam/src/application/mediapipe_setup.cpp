@@ -1,4 +1,3 @@
-#include "include/application/mediapipe_setup.h"
 #include <iostream>
 #include <filesystem>
 #include <vector>
@@ -11,6 +10,11 @@
 #include "absl/flags/declare.h"
 
 #include "mediapipe/framework/formats/classification.pb.h"
+#include "mediapipe/framework/calculator_graph.h"
+#include "application/application_config.h"
+#include "include/mediapipe_manager/gpu_detector.h"
+#include "include/application/app_state.h"
+#include "include/application/mediapipe_setup.h"
 
 // Declare the resource root dir flag (defined in MediaPipe resource_util)
 ABSL_DECLARE_FLAG(std::string, resource_root_dir);
@@ -47,7 +51,8 @@ std::string MediaPipeSetup::SelectGraphPath(const ApplicationConfig& config, con
 int MediaPipeSetup::InitializeGraph(std::unique_ptr<mediapipe::CalculatorGraph>& graph, 
                                   const std::string& graph_path, 
                                   const GPUCapabilities& gpu_caps,
-                                  const ApplicationConfig& config) {
+                                  const ApplicationConfig& config,
+                                  AppState& app_state) {
     std::cout << "📊 Loading graph config from: " << graph_path << std::endl;
     
     // CRITICAL: Setup MediaPipe resource root directory for model files
@@ -83,28 +88,6 @@ int MediaPipeSetup::InitializeGraph(std::unique_ptr<mediapipe::CalculatorGraph>&
         return 2; 
     }
 
-    // --- BLENDSHAPES OUTPUT OBSERVER ---
-    // Attach observer for face_blendshapes output stream (if present in graph)
-    auto blendshapes_status = graph->ObserveOutputStream(
-        "face_blendshapes",
-        [](const mediapipe::Packet& packet) -> mediapipe::Status {
-            try {
-                const auto& blendshapes = packet.Get<mediapipe::ClassificationList>();
-                std::cout << "[Blendshapes] Received " << blendshapes.classification_size() << " blendshape scores:" << std::endl;
-                for (int i = 0; i < blendshapes.classification_size(); ++i) {
-                    const auto& c = blendshapes.classification(i);
-                    std::cout << "  " << c.label() << ": " << c.score() << std::endl;
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "[Blendshapes] Error extracting blendshapes: " << e.what() << std::endl;
-            }
-            return mediapipe::OkStatus();
-        });
-    if (!blendshapes_status.ok()) {
-        std::cerr << "[Blendshapes] Warning: Could not attach observer to face_blendshapes: "
-                  << blendshapes_status.message() << std::endl;
-    }
-    
     // Provide GPU resources BEFORE StartRun (only if using GPU graph)
     bool use_gpu = (gpu_caps.backend != GPUBackend::CPU_ONLY);
     if (use_gpu) {

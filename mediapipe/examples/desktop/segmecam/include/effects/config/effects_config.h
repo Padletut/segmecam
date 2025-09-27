@@ -42,6 +42,7 @@ public:
     // Wrinkle-aware controls
     void SetWrinkleAwareEnabled(bool enabled);
     void SetWrinkleGain(float gain);
+    void SetSmileWrinkleGain(float gain);
     void SetSmileBoost(float boost);
     void SetSquintBoost(float boost);
     void SetForeheadBoost(float boost);

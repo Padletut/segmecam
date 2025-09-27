@@ -108,6 +108,10 @@ void EffectsConfiguration::SetWrinkleGain(float gain) {
     beauty_state_.fx_skin_wrinkle_gain = std::max(0.0f, gain);
 }
 
+void EffectsConfiguration::SetSmileWrinkleGain(float gain) {
+    beauty_state_.fx_skin_smile_wrinkle_gain = std::max(0.0f, gain);
+}
+
 void EffectsConfiguration::SetSmileBoost(float boost) {
     beauty_state_.fx_skin_smile_boost = std::clamp(boost, 0.0f, 2.0f);
 }

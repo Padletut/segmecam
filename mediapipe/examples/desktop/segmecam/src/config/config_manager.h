@@ -184,6 +184,7 @@ struct ConfigData {
         float fx_skin_squint_boost = 0.5f;
         float fx_skin_forehead_boost = 0.8f;
         float fx_skin_wrinkle_gain = 1.5f;
+        float fx_skin_smile_wrinkle_gain = 1.0f; // New parameter for smile wrinkle gain
         
         // Wrinkle processing controls
         bool fx_wrinkle_suppress_lower = true;

@@ -84,17 +84,18 @@ void FaceProcessor::DrawConnections(cv::Mat& frame_bgr, const mediapipe::Normali
 
 void FaceProcessor::ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, const FaceRegions& regions,
                                                         const mediapipe::NormalizedLandmarkList& landmarks,
-                                                        const BeautyState& beauty_state) {
+                                                        const BeautyState& beauty_state,
+                                                        const mediapipe::ClassificationList* blendshapes) {
     cv::Rect roi = CalculateProcessingROI(regions, frame_bgr.size());
     if (roi.width < 8 || roi.height < 8) {
-        ApplyFullResolutionSkinSmoothing(frame_bgr, regions, landmarks, beauty_state);
+        ApplyFullResolutionSkinSmoothing(frame_bgr, regions, landmarks, beauty_state, blendshapes);
         return;
     }
 
     FaceRegions fr_small = TransformFaceRegionsToScaledROI(regions, roi, beauty_state.fx_adv_scale);
     mediapipe::NormalizedLandmarkList lms_roi = TransformLandmarksToROI(landmarks, roi, frame_bgr.size());
 
-    ProcessAndUpsampleROI(frame_bgr, roi, fr_small, lms_roi, beauty_state, beauty_state.fx_adv_scale);
+    ProcessAndUpsampleROI(frame_bgr, roi, fr_small, lms_roi, beauty_state, beauty_state.fx_adv_scale, blendshapes);
 }
 
 cv::Rect FaceProcessor::CalculateProcessingROI(const FaceRegions& regions, const cv::Size& frame_size) {
@@ -115,6 +116,7 @@ void FaceProcessor::SetupSkinSmoothingConfig(SkinSmoothingConfig& config, const 
     config.expression.forehead_boost = beauty_state.fx_skin_forehead_boost;
     config.expression.forehead_margin_px = 10.0f * scale;
     config.boost_gain = beauty_state.fx_skin_wrinkle_gain;
+    config.smile_wrinkle_gain = beauty_state.fx_skin_smile_wrinkle_gain;
     config.wrinkle_enabled = beauty_state.fx_skin_wrinkle;
     config.wrinkle.region_gates.suppress_lower_face = beauty_state.fx_wrinkle_suppress_lower;
     config.wrinkle.region_gates.lower_face_ratio = beauty_state.fx_wrinkle_lower_ratio;
@@ -133,11 +135,12 @@ void FaceProcessor::SetupSkinSmoothingConfig(SkinSmoothingConfig& config, const 
 
 void FaceProcessor::ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions,
                                                    const mediapipe::NormalizedLandmarkList& landmarks,
-                                                   const BeautyState& beauty_state) {
+                                                   const BeautyState& beauty_state,
+                                                   const mediapipe::ClassificationList* blendshapes) {
     // Create config with scale = 1.0 for full resolution
     SkinSmoothingConfig config;
     SetupSkinSmoothingConfig(config, beauty_state, 1.0f);
-    ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks);
+    ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks, blendshapes);
 }
 
 FaceRegions FaceProcessor::TransformFaceRegionsToScaledROI(const FaceRegions& regions, const cv::Rect& roi, float scale) {
@@ -201,11 +204,12 @@ mediapipe::NormalizedLandmarkList FaceProcessor::TransformLandmarksToROI(const m
 }
 
 void FaceProcessor::ProcessAndUpsampleROI(cv::Mat& frame_bgr, const cv::Rect& roi, const FaceRegions& fr_small,
-                                        const mediapipe::NormalizedLandmarkList& lms_roi, const BeautyState& beauty_state, float scale) {
+                                        const mediapipe::NormalizedLandmarkList& lms_roi, const BeautyState& beauty_state, float scale,
+                                        const mediapipe::ClassificationList* blendshapes) {
     cv::Mat roi_bgr = frame_bgr(roi);
     cv::Mat small = DownscaleROI(roi_bgr, scale);
 
-    ApplySkinSmoothingToScaledImage(small, fr_small, lms_roi, beauty_state, scale);
+    ApplySkinSmoothingToScaledImage(small, fr_small, lms_roi, beauty_state, scale, blendshapes);
 
     cv::Mat up = UpsampleProcessedImage(small, roi.size());
     ApplyDetailPreservationIfNeeded(up, roi_bgr, fr_small, beauty_state);
@@ -223,10 +227,11 @@ cv::Mat FaceProcessor::DownscaleROI(const cv::Mat& roi_bgr, float scale) {
 
 void FaceProcessor::ApplySkinSmoothingToScaledImage(cv::Mat& small, const FaceRegions& fr_small,
                                                   const mediapipe::NormalizedLandmarkList& lms_roi,
-                                                  const BeautyState& beauty_state, float scale) {
+                                                  const BeautyState& beauty_state, float scale,
+                                                  const mediapipe::ClassificationList* blendshapes) {
     SkinSmoothingConfig config;
     SetupSkinSmoothingConfig(config, beauty_state, scale);
-    ApplySkinSmoothingAdvBGR(small, fr_small, config, &lms_roi);
+    ApplySkinSmoothingAdvBGR(small, fr_small, config, &lms_roi, blendshapes);
 }
 
 cv::Mat FaceProcessor::UpsampleProcessedImage(const cv::Mat& small, const cv::Size& target_size) {

@@ -19,6 +19,20 @@ void DebugPanel::Render() {
         RenderPerformanceStats();
         RenderAdvancedSettings();
     }
+
+    // Blendshapes Debug Panel
+    if (state_.show_blendshapes_debug && state_.last_blendshapes) {
+        if (ImGui::Begin("Blendshapes Debug", &state_.show_blendshapes_debug)) {
+            ImGui::Text("Blendshape Scores (last frame):");
+            ImGui::Separator();
+            const auto& blendshapes = *state_.last_blendshapes;
+            for (int i = 0; i < blendshapes.classification_size(); ++i) {
+                const auto& c = blendshapes.classification(i);
+                ImGui::Text("%s: %.3f", c.label().c_str(), c.score());
+            }
+        }
+        ImGui::End();
+    }
 }
 
 void DebugPanel::RenderOverlayControls() {
@@ -27,17 +41,18 @@ void DebugPanel::RenderOverlayControls() {
     
     ImGui::Checkbox("Show Face Landmarks", &state_.show_landmarks);
     ImGui::Checkbox("Show Segmentation Mask", &state_.show_mask);
-    
+
     // Mesh visualization
     ImGui::Checkbox("Show Face Mesh", &state_.show_mesh);
     if (state_.show_mesh) {
         ImGui::SameLine();
         ImGui::Checkbox("Dense", &state_.show_mesh_dense);
         ImGui::SameLine();
-        if (ImGui::Button("?##mesh_dense")) {
-            ImGui::SetTooltip("Show all 468 landmarks vs reduced set");
-        }
+        ImGui::Button("?##mesh_dense");
     }
+
+    // Blendshapes debug overlay
+    ImGui::Checkbox("Show Blendshapes Debug", &state_.show_blendshapes_debug);
 }
 
 

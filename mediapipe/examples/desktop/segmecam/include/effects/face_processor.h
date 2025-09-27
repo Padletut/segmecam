@@ -25,7 +25,8 @@ public:
     // Advanced skin smoothing with processing scale
     void ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, const FaceRegions& regions,
                                              const mediapipe::NormalizedLandmarkList& landmarks,
-                                             const BeautyState& beauty_state);
+                                             const BeautyState& beauty_state,
+                                             const mediapipe::ClassificationList* blendshapes = nullptr);
 
 private:
     // Helper method to setup skin smoothing config with scaling
@@ -35,7 +36,8 @@ private:
     cv::Rect CalculateProcessingROI(const FaceRegions& regions, const cv::Size& frame_size);
     void ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions,
                                         const mediapipe::NormalizedLandmarkList& landmarks,
-                                        const BeautyState& beauty_state);
+                                        const BeautyState& beauty_state,
+                                        const mediapipe::ClassificationList* blendshapes = nullptr);
     FaceRegions TransformFaceRegionsToScaledROI(const FaceRegions& regions, const cv::Rect& roi, float scale);
     FaceRegions ShiftFaceRegionsToROI(const FaceRegions& regions, const cv::Rect& roi);
     FaceRegions ScaleFaceRegions(const FaceRegions& regions, float scale);
@@ -44,11 +46,13 @@ private:
     mediapipe::NormalizedLandmarkList TransformLandmarksToROI(const mediapipe::NormalizedLandmarkList& landmarks,
                                                             const cv::Rect& roi, const cv::Size& frame_size);
     void ProcessAndUpsampleROI(cv::Mat& frame_bgr, const cv::Rect& roi, const FaceRegions& fr_small,
-                             const mediapipe::NormalizedLandmarkList& lms_roi, const BeautyState& beauty_state, float scale);
+                             const mediapipe::NormalizedLandmarkList& lms_roi, const BeautyState& beauty_state, float scale,
+                             const mediapipe::ClassificationList* blendshapes = nullptr);
     cv::Mat DownscaleROI(const cv::Mat& roi_bgr, float scale);
     void ApplySkinSmoothingToScaledImage(cv::Mat& small, const FaceRegions& fr_small,
                                        const mediapipe::NormalizedLandmarkList& lms_roi,
-                                       const BeautyState& beauty_state, float scale);
+                                       const BeautyState& beauty_state, float scale,
+                                       const mediapipe::ClassificationList* blendshapes = nullptr);
     cv::Mat UpsampleProcessedImage(const cv::Mat& small, const cv::Size& target_size);
     void ApplyDetailPreservationIfNeeded(cv::Mat& up, const cv::Mat& roi_bgr, const FaceRegions& fr_roi,
                                        const BeautyState& beauty_state);

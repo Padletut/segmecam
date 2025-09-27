@@ -22,6 +22,7 @@ void MediaPipeProcessor::ProcessMediaPipeOutputs(
     std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
     std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
     std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& face_blendshapes_poller,
     AppState& app_state,
     int frame_count,
     bool has_landmarks
@@ -32,6 +33,11 @@ void MediaPipeProcessor::ProcessMediaPipeOutputs(
     // Process face landmarks if available
     if (has_landmarks && multi_face_landmarks_poller) {
         ProcessFaceLandmarks(output_data, multi_face_landmarks_poller, face_rects_poller, frame_count);
+    }
+
+    // Process face blendshapes if available
+    if (has_landmarks && face_blendshapes_poller) {
+        ProcessFaceBlendshapes(app_state, face_blendshapes_poller, frame_count);
     }
 }
 
@@ -121,6 +127,23 @@ void MediaPipeProcessor::ProcessFaceRects(
     mediapipe::Packet rp;
     while (face_rects_poller->QueueSize() > 0 && face_rects_poller->Next(&rp)) {
         output_data.latest_rects = rp.Get<std::vector<mediapipe::NormalizedRect>>();
+    }
+}
+
+void MediaPipeProcessor::ProcessFaceBlendshapes(
+    AppState& app_state,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& face_blendshapes_poller,
+    int frame_count
+) {
+    mediapipe::Packet pkt;
+    while (face_blendshapes_poller->QueueSize() > 0 && face_blendshapes_poller->Next(&pkt)) {
+        try {
+            const auto& blendshapes = pkt.Get<mediapipe::ClassificationList>();
+            app_state.last_blendshapes = std::make_unique<mediapipe::ClassificationList>(blendshapes);
+            
+        } catch (const std::exception& e) {
+            std::cerr << "[Blendshapes] ❌ Error extracting blendshapes: " << e.what() << std::endl;
+        }
     }
 }
 

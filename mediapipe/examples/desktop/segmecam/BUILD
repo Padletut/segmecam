@@ -6,8 +6,9 @@ cc_library( # type: ignore
     hdrs = ["include/compositing_utils.h"],
     includes = ["."],
     deps = [
-        "//mediapipe/framework/port:opencv_core",
-        "//mediapipe/framework/port:opencv_imgproc",
+    "//mediapipe/framework/port:opencv_core",
+    "//mediapipe/framework/port:opencv_imgproc",
+    "//mediapipe/framework/port:opencv_photo",
     ],
     copts = ["-I/usr/include/opencv4"],
 )
@@ -78,6 +79,7 @@ cc_library( # type: ignore
     includes = ["."],
     deps = [
         ":vcam",
+        "//mediapipe/framework/formats:classification_cc_proto",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
         "//mediapipe/framework/port:opencv_imgcodecs",
@@ -616,6 +618,7 @@ cc_library( # type: ignore
         ":face_regions",
         ":skin_effects",
         "//mediapipe/framework/formats:landmark_cc_proto",
+        "//mediapipe/framework/formats:classification_cc_proto",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
     ],
@@ -795,5 +798,6 @@ cc_binary( # pyright: ignore[reportUndefinedVariable]
         "-lGL",
         "-lGLU",
         "-lSDL2",
+        "-lopencv_photo",
     ],
 )

@@ -304,6 +304,7 @@ void ManagerCoordination::ApplyBeautySettingsFromProfile(segmecam::AppState& app
     app_state.fx_skin_squint_boost = config_data.beauty.fx_skin_squint_boost;
     app_state.fx_skin_forehead_boost = config_data.beauty.fx_skin_forehead_boost;
     app_state.fx_skin_wrinkle_gain = config_data.beauty.fx_skin_wrinkle_gain;
+    app_state.fx_skin_smile_wrinkle_gain = config_data.beauty.fx_skin_smile_wrinkle_gain;
     app_state.fx_wrinkle_suppress_lower = config_data.beauty.fx_wrinkle_suppress_lower;
     app_state.fx_wrinkle_lower_ratio = config_data.beauty.fx_wrinkle_lower_ratio;
     app_state.fx_wrinkle_ignore_glasses = config_data.beauty.fx_wrinkle_ignore_glasses;

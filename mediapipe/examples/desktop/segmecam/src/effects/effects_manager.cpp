@@ -42,7 +42,9 @@ SkinSmoothingConfig EffectsManager::CreateSkinSmoothingConfig(float scale) const
     config.expression.squint_boost = beauty_state_.fx_skin_squint_boost;
     config.expression.forehead_boost = beauty_state_.fx_skin_forehead_boost;
     config.expression.forehead_margin_px = 10.0f * scale;
-    config.boost_gain = beauty_state_.fx_skin_wrinkle_gain;
+    // Disable global wrinkle gain for testing smile-only effect
+    config.boost_gain = 0.0f;
+    config.smile_wrinkle_gain = beauty_state_.fx_skin_smile_wrinkle_gain;
     config.wrinkle_enabled = beauty_state_.fx_skin_wrinkle;
     config.wrinkle.region_gates.suppress_lower_face = beauty_state_.fx_wrinkle_suppress_lower;
     config.wrinkle.region_gates.lower_face_ratio = beauty_state_.fx_wrinkle_lower_ratio;
@@ -51,6 +53,7 @@ SkinSmoothingConfig EffectsManager::CreateSkinSmoothingConfig(float scale) const
     config.wrinkle.keep_ratio = beauty_state_.fx_wrinkle_keep_ratio;
     config.wrinkle.line_min_px = beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_min_px * scale : 1.5f;
     config.wrinkle.line_max_px = beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_max_px * scale : 3.0f;
+    config.wrinkle.smile_wrinkle_gain = beauty_state_.fx_skin_smile_wrinkle_gain;
     config.wrinkle_preview = beauty_state_.fx_wrinkle_preview;
     config.baseline_boost = beauty_state_.fx_wrinkle_baseline;
     config.wrinkle.use_skin_gate = beauty_state_.fx_wrinkle_use_skin_gate;
@@ -128,7 +131,8 @@ void EffectsManager::LogDebugInputFrame(int frame_count, const cv::Mat& frame_bg
 
 cv::Mat EffectsManager::ProcessFrame(const cv::Mat& frame_bgr,
                                     const cv::Mat& segmentation_mask,
-                                    const mediapipe::NormalizedLandmarkList* face_landmarks) {
+                                    const mediapipe::NormalizedLandmarkList* face_landmarks,
+                                    const mediapipe::ClassificationList* blendshapes) {
     if (!state_.is_initialized) {
         cv::Mat result_rgb;
         cv::cvtColor(frame_bgr, result_rgb, cv::COLOR_BGR2RGB);
@@ -147,7 +151,7 @@ cv::Mat EffectsManager::ProcessFrame(const cv::Mat& frame_bgr,
     cv::Mat processed_frame = frame_bgr.clone();
     
     try {
-        ProcessFaceEffects(processed_frame, face_landmarks);
+        ProcessFaceEffects(processed_frame, face_landmarks, blendshapes);
         cv::Mat result = ProcessBackgroundEffects(processed_frame, segmentation_mask);
         
         performance_monitor_->UpdatePerformanceTracking(start_time, state_.last_smoothing_time_ms,
@@ -186,11 +190,11 @@ cv::Mat EffectsManager::ProcessFrame(const cv::Mat& frame_bgr,
     }
 }
 
-void EffectsManager::ProcessFaceEffects(cv::Mat& processed_frame, const mediapipe::NormalizedLandmarkList* face_landmarks) {
+void EffectsManager::ProcessFaceEffects(cv::Mat& processed_frame, const mediapipe::NormalizedLandmarkList* face_landmarks, const mediapipe::ClassificationList* blendshapes) {
     if (config_.enable_face_effects && face_landmarks && face_landmarks->landmark_size() > 0) {
         try {
             auto smooth_start = std::chrono::steady_clock::now();
-            ApplyFaceEffects(processed_frame, *face_landmarks);
+            ApplyFaceEffects(processed_frame, *face_landmarks, blendshapes);
             auto smooth_end = std::chrono::steady_clock::now();
             state_.last_smoothing_time_ms = std::chrono::duration<double, std::milli>(smooth_end - smooth_start).count();
         } catch (const cv::Exception& e) {
@@ -247,7 +251,7 @@ void EffectsManager::LogDebugOutputFrame(int frame_count, const cv::Mat& result)
 
 
 
-void EffectsManager::ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks) {
+void EffectsManager::ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks, const mediapipe::ClassificationList* blendshapes) {
     // Extract face regions from landmarks
     FaceRegions regions = face_processor_->ExtractFaceRegionsFromLandmarks(landmarks, frame_bgr.size());
     
@@ -264,7 +268,7 @@ void EffectsManager::ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::Norma
     // Apply skin smoothing
     if (beauty_state_.fx_skin) {
         if (beauty_state_.fx_skin_adv || beauty_state_.fx_wrinkle_preview) {
-            ApplySkinSmoothingAdvanced(frame_bgr, regions, landmarks);
+            ApplySkinSmoothingAdvanced(frame_bgr, regions, landmarks, blendshapes);
         } else {
             ApplySkinSmoothing(frame_bgr, regions);
         }
@@ -286,17 +290,18 @@ void EffectsManager::ApplySkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& r
 }
 
 void EffectsManager::ApplySkinSmoothingAdvanced(cv::Mat& frame_bgr, const FaceRegions& regions, 
-                                               const mediapipe::NormalizedLandmarkList& landmarks) {
+                                               const mediapipe::NormalizedLandmarkList& landmarks,
+                                               const mediapipe::ClassificationList* blendshapes) {
     // Use user-configured processing scale directly for stability
     float effective_scale = beauty_state_.fx_adv_scale;
     
     // Check if processing scale optimization should be used
     if (effective_scale < 1.000f) {
-        ApplySkinSmoothingWithProcessingScale(frame_bgr, regions, landmarks);
+        ApplySkinSmoothingWithProcessingScale(frame_bgr, regions, landmarks, blendshapes);
     } else {
         // Full resolution processing
         SkinSmoothingConfig config = CreateSkinSmoothingConfig();
-        ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks);
+        ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks, blendshapes);
     }
 }
 
@@ -339,9 +344,10 @@ void EffectsManager::Cleanup() {
 
 // Processing scale optimization for skin smoothing
 void EffectsManager::ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, const FaceRegions& regions, 
-                                                          const mediapipe::NormalizedLandmarkList& landmarks) {
+                                                          const mediapipe::NormalizedLandmarkList& landmarks,
+                                                          const mediapipe::ClassificationList* blendshapes) {
     // Delegate to face processor with current beauty state
-    face_processor_->ApplySkinSmoothingWithProcessingScale(frame_bgr, regions, landmarks, beauty_state_);
+    face_processor_->ApplySkinSmoothingWithProcessingScale(frame_bgr, regions, landmarks, beauty_state_, blendshapes);
 }
 
 

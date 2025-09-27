@@ -302,6 +302,7 @@ void ConfigManager::writeBeautyEffectsSettings(cv::FileStorage& fs, const Config
     fs << "fx_skin_squint_boost" << config.beauty.fx_skin_squint_boost;
     fs << "fx_skin_forehead_boost" << config.beauty.fx_skin_forehead_boost;
     fs << "fx_skin_wrinkle_gain" << config.beauty.fx_skin_wrinkle_gain;
+    fs << "fx_skin_smile_wrinkle_gain" << config.beauty.fx_skin_smile_wrinkle_gain;
     fs << "fx_wrinkle_suppress_lower" << (int)config.beauty.fx_wrinkle_suppress_lower;
     fs << "fx_wrinkle_lower_ratio" << config.beauty.fx_wrinkle_lower_ratio;
     fs << "fx_wrinkle_ignore_glasses" << (int)config.beauty.fx_wrinkle_ignore_glasses;
@@ -443,6 +444,7 @@ void ConfigManager::readBeautyEffectsSettings(const cv::FileNode& root, ConfigDa
     config.beauty.fx_skin_squint_boost = ReadFloat(root["fx_skin_squint_boost"], 0.5f);
     config.beauty.fx_skin_forehead_boost = ReadFloat(root["fx_skin_forehead_boost"], 0.8f);
     config.beauty.fx_skin_wrinkle_gain = ReadFloat(root["fx_skin_wrinkle_gain"], 1.5f);
+    config.beauty.fx_skin_smile_wrinkle_gain = ReadFloat(root["fx_skin_smile_wrinkle_gain"], 2.0f);
     config.beauty.fx_wrinkle_suppress_lower = ReadInt(root["fx_wrinkle_suppress_lower"], 1) != 0;
     config.beauty.fx_wrinkle_lower_ratio = ReadFloat(root["fx_wrinkle_lower_ratio"], 0.45f);
     config.beauty.fx_wrinkle_ignore_glasses = ReadInt(root["fx_wrinkle_ignore_glasses"], 1) != 0;
@@ -534,6 +536,7 @@ void ConfigData::CopyBeautySettingsToState(BeautyState& state) const {
     state.fx_skin_squint_boost = beauty.fx_skin_squint_boost;
     state.fx_skin_forehead_boost = beauty.fx_skin_forehead_boost;
     state.fx_skin_wrinkle_gain = beauty.fx_skin_wrinkle_gain;
+    state.fx_skin_smile_wrinkle_gain = beauty.fx_skin_smile_wrinkle_gain;
     state.fx_wrinkle_suppress_lower = beauty.fx_wrinkle_suppress_lower;
     state.fx_wrinkle_lower_ratio = beauty.fx_wrinkle_lower_ratio;
     state.fx_wrinkle_ignore_glasses = beauty.fx_wrinkle_ignore_glasses;
@@ -583,6 +586,7 @@ void ConfigData::CopyBeautySettingsFromState(const BeautyState& state) {
     beauty.fx_skin_squint_boost = state.fx_skin_squint_boost;
     beauty.fx_skin_forehead_boost = state.fx_skin_forehead_boost;
     beauty.fx_skin_wrinkle_gain = state.fx_skin_wrinkle_gain;
+    beauty.fx_skin_smile_wrinkle_gain = state.fx_skin_smile_wrinkle_gain;
     beauty.fx_wrinkle_suppress_lower = state.fx_wrinkle_suppress_lower;
     beauty.fx_wrinkle_lower_ratio = state.fx_wrinkle_lower_ratio;
     beauty.fx_wrinkle_ignore_glasses = state.fx_wrinkle_ignore_glasses;

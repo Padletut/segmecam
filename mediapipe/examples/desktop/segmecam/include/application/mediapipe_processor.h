@@ -30,11 +30,13 @@ struct MediaPipeOutputData {
 class MediaPipeProcessor {
 public:
     /**
-     * Process all MediaPipe outputs (mask and face landmarks)
+     * Process all MediaPipe output streams
+     * 
      * @param output_data Structure to store processed output data
      * @param mask_poller Poller for segmentation mask output
      * @param multi_face_landmarks_poller Poller for face landmarks output
      * @param face_rects_poller Poller for face rectangles output
+     * @param face_blendshapes_poller Poller for face blendshapes output
      * @param app_state Current application state
      * @param frame_count Current frame count for debugging
      * @param has_landmarks Whether face landmarks are available
@@ -44,12 +46,11 @@ public:
         std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
         std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
         std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+        std::unique_ptr<mediapipe::OutputStreamPoller>& face_blendshapes_poller,
         AppState& app_state,
         int frame_count,
         bool has_landmarks
-    );
-
-    /**
+    );    /**
      * Process segmentation mask output from MediaPipe
      * @param output_data Structure to store processed output data
      * @param mask_poller Poller for segmentation mask output
@@ -74,6 +75,18 @@ public:
         MediaPipeOutputData& output_data,
         std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
         std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+        int frame_count
+    );
+
+    /**
+     * Process face blendshapes output from MediaPipe
+     * @param app_state Application state to store blendshapes
+     * @param face_blendshapes_poller Poller for face blendshapes output
+     * @param frame_count Current frame count for debugging
+     */
+    static void ProcessFaceBlendshapes(
+        AppState& app_state,
+        std::unique_ptr<mediapipe::OutputStreamPoller>& face_blendshapes_poller,
         int frame_count
     );
 

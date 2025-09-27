@@ -64,7 +64,8 @@ public:
     // Main processing pipeline
     cv::Mat ProcessFrame(const cv::Mat& frame_bgr, 
                         const cv::Mat& segmentation_mask,
-                        const mediapipe::NormalizedLandmarkList* face_landmarks = nullptr);
+                        const mediapipe::NormalizedLandmarkList* face_landmarks = nullptr,
+                        const mediapipe::ClassificationList* blendshapes = nullptr);
     
     // Background effects - delegated to BackgroundEffects module
     cv::Mat ApplyBackgroundEffect(const cv::Mat& frame_bgr, const cv::Mat& mask) {
@@ -81,10 +82,10 @@ public:
     }
     
     // Face effects
-    void ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks);
+    void ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks, const mediapipe::ClassificationList* blendshapes = nullptr);
     void ApplySkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions);
     void ApplySkinSmoothingAdvanced(cv::Mat& frame_bgr, const FaceRegions& regions, 
-                                   const mediapipe::NormalizedLandmarkList& landmarks);
+                                   const mediapipe::NormalizedLandmarkList& landmarks, const mediapipe::ClassificationList* blendshapes = nullptr);
     void ApplyLipEffects(cv::Mat& frame_bgr, const FaceRegions& regions, 
                         const mediapipe::NormalizedLandmarkList& landmarks, const cv::Size& frame_size);
     void ApplyTeethWhitening(cv::Mat& frame_bgr, const FaceRegions& regions);
@@ -161,6 +162,9 @@ public:
     }
     void SetWrinkleGain(float gain) {
         effects_config_->SetWrinkleGain(gain);
+    }
+    void SetSmileWrinkleGain(float gain) {
+        effects_config_->SetSmileWrinkleGain(gain);
     }
     void SetSmileBoost(float boost) {
         effects_config_->SetSmileBoost(boost);
@@ -357,7 +361,7 @@ private:
     
     // ProcessFrame helper methods
     void LogDebugInputFrame(int frame_count, const cv::Mat& frame_bgr);
-    void ProcessFaceEffects(cv::Mat& processed_frame, const mediapipe::NormalizedLandmarkList* face_landmarks);
+    void ProcessFaceEffects(cv::Mat& processed_frame, const mediapipe::NormalizedLandmarkList* face_landmarks, const mediapipe::ClassificationList* blendshapes = nullptr);
     cv::Mat ProcessBackgroundEffects(const cv::Mat& processed_frame, const cv::Mat& segmentation_mask);
     void UpdatePerformanceTracking(const std::chrono::steady_clock::time_point& start_time);
     void LogDebugOutputFrame(int frame_count, const cv::Mat& result);
@@ -369,7 +373,7 @@ private:
     
     // Processing scale optimization for skin smoothing
     void ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, const FaceRegions& regions, 
-                                              const mediapipe::NormalizedLandmarkList& landmarks);
+                                              const mediapipe::NormalizedLandmarkList& landmarks, const mediapipe::ClassificationList* blendshapes = nullptr);
     cv::Rect CalculateProcessingROI(const FaceRegions& regions, const cv::Size& frame_size);
     void ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions, 
                                          const mediapipe::NormalizedLandmarkList& landmarks);

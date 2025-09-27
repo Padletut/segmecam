@@ -167,6 +167,11 @@ modules:
       - cp source/models/face_landmark_with_attention.tflite /app/mediapipe_runfiles/mediapipe/modules/face_landmark/face_landmark_with_attention.tflite
       - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/face_detection
       - cp source/models/face_detection_short_range.tflite /app/mediapipe_runfiles/mediapipe/modules/face_detection/face_detection_short_range.tflite
+      - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/face_blendshapes
+      - cp source/models/face_blendshapes.tflite /app/mediapipe_runfiles/mediapipe/modules/face_blendshapes/face_blendshapes.tflite
+      # Also copy to the expected models/ directory for blendshapes
+      - mkdir -p /app/mediapipe_runfiles/models
+      - cp source/models/face_blendshapes.tflite /app/mediapipe_runfiles/models/face_blendshapes.tflite
 
       # Install desktop integration
       - install -Dm644 source/org.segmecam.SegmeCam.desktop /app/share/applications/org.segmecam.SegmeCam.desktop

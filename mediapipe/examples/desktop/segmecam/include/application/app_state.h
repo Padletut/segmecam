@@ -6,6 +6,7 @@
 #include <vector>
 #include <cstdint>
 #include "include/camera/vcam.h"
+#include "mediapipe/framework/formats/classification.pb.h"
 
 namespace segmecam {
 
@@ -50,6 +51,9 @@ struct AppState {
   cv::Mat last_mask_u8;  // cache latest mask to avoid blocking
   cv::Mat last_display_rgb;
   
+  // Latest blendshapes for facial expression analysis
+  std::unique_ptr<mediapipe::ClassificationList> last_blendshapes;
+  
   // Beauty controls
   bool fx_skin = false;
   float fx_skin_strength = 0.4f;
@@ -69,6 +73,7 @@ struct AppState {
   float fx_skin_squint_boost = 0.5f;
   float fx_skin_forehead_boost = 0.8f;
   float fx_skin_wrinkle_gain = 0.3f;
+  float fx_skin_smile_wrinkle_gain = 1.0f;
   bool fx_wrinkle_suppress_lower = false;
   float fx_wrinkle_lower_ratio = 0.45f;
   bool fx_wrinkle_ignore_glasses = false;
@@ -96,10 +101,11 @@ struct AppState {
   float fx_teeth_strength = 0.5f;
   float fx_teeth_margin = 3.0f;
   
-  // Landmark display
+  // Landmark and debug overlay display
   bool show_landmarks = false;
   bool show_mesh = false;
   bool show_mesh_dense = false;
+  bool show_blendshapes_debug = false; // Show blendshape debug overlay
   bool lm_roi_mode = false;
   bool lm_apply_rot = true;
   bool lm_flip_x = false;

@@ -1,5 +1,10 @@
+
 #include "include/effects/advanced_skin_effects.h"
 #include <cmath>
+#include "include/effects/advanced_skin_effects.h"
+#include <cmath>
+#include <opencv2/photo.hpp>
+
 
 // Helper functions - defined first to avoid forward declaration issues
 cv::Mat ApplyLowerFaceSuppression(cv::Size sz, const FaceRegions& fr, float lower_face_ratio) {
@@ -297,10 +302,21 @@ cv::Mat ApplyPercentileThreshold(cv::Mat wr, const cv::Mat& base_f, const cv::Ma
   return wr; // CV_32F [0,1]
 }
 
-// Helper struct for facial expression analysis
 // Helper functions for ApplySkinSmoothingAdvBGR
-FacialExpressionMetrics ExtractFacialExpressions(const mediapipe::NormalizedLandmarkList* lms, int width, int height) {
-  FacialExpressionMetrics metrics = {0.0f, 0.0f};
+FacialExpressionMetrics ExtractFacialExpressions(const mediapipe::NormalizedLandmarkList* lms, 
+                                               int width, int height,
+                                               const mediapipe::ClassificationList* blendshapes) {
+  FacialExpressionMetrics metrics = {
+    0.0f, 0.0f,  // smile_factor, squint_factor
+    {0,0}, {0,0}, // mouth_left, mouth_right
+    {0,0}, {0,0}, // nose_left, nose_right
+    {0,0}, {0,0}, // eye_left_outer, eye_left_inner
+    {0,0}, {0,0}, // eye_right_outer, eye_right_inner
+    {0,0}, {0,0}, // eye_left_top, eye_left_bottom
+    {0,0}, {0,0}, // eye_right_top, eye_right_bottom
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, // brow_furrow_factor, eye_squint_left, eye_squint_right, eye_blink_left, eye_blink_right
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f  // cheek_squint_left, cheek_squint_right, brow_inner_up, brow_outer_up_left, brow_outer_up_right
+  };
 
   if (!lms) return metrics;
 
@@ -318,6 +334,8 @@ FacialExpressionMetrics ExtractFacialExpressions(const mediapipe::NormalizedLand
   // Key points
   metrics.mouth_left = pt(61);
   metrics.mouth_right = pt(291);
+  metrics.nose_left = pt(98);
+  metrics.nose_right = pt(327);
   metrics.eye_left_outer = pt(33);
   metrics.eye_left_inner = pt(133);
   metrics.eye_right_outer = pt(263);
@@ -341,6 +359,36 @@ FacialExpressionMetrics ExtractFacialExpressions(const mediapipe::NormalizedLand
 
   // Squint factor: lower aperture => higher value; neutral ~0.22
   metrics.squint_factor = (float)std::clamp((0.22 - aperture) / 0.12, 0.0, 1.0);
+
+  // Extract blendshape values if available
+  if (blendshapes) {
+    auto get_blendshape = [&](const std::string& name) -> float {
+      for (int i = 0; i < blendshapes->classification_size(); ++i) {
+        const auto& c = blendshapes->classification(i);
+        if (c.label() == name) {
+          return c.score();
+        }
+      }
+      return 0.0f;
+    };
+
+  // Brow expressions for forehead wrinkles
+  metrics.brow_furrow_factor = get_blendshape("browDownLeft") + get_blendshape("browDownRight");
+  metrics.brow_inner_up = get_blendshape("browInnerUp");
+  metrics.brow_outer_up_left = get_blendshape("browOuterUpLeft");
+  metrics.brow_outer_up_right = get_blendshape("browOuterUpRight");
+
+  // Eye expressions for eye wrinkles
+  metrics.eye_squint_left = get_blendshape("eyeSquintLeft");
+  metrics.eye_squint_right = get_blendshape("eyeSquintRight");
+  metrics.eye_blink_left = get_blendshape("eyeBlinkLeft");
+  metrics.eye_blink_right = get_blendshape("eyeBlinkRight");
+
+  // Cheek expressions for nasolabial folds
+  // Use mouthUpperUpLeft/Right as proxy for cheek activity (more responsive than cheekSquint)
+  metrics.cheek_squint_left = get_blendshape("mouthUpperUpLeft");
+  metrics.cheek_squint_right = get_blendshape("mouthUpperUpRight");
+  }
 
   return metrics;
 }
@@ -394,15 +442,149 @@ cv::Mat BuildWrinkleBoostMap(const cv::Mat& frame_bgr, const FaceRegions& fr,
                                   config.region_gates.glasses_margin_px, config.keep_ratio, config.use_skin_gate, config.mask_gain};
   cv::Mat wrinkle_line = BuildWrinkleLineMask(frame_bgr, fr, wrinkle_config);
 
+  // 3) Blendshape-guided wrinkle enhancement
+  cv::Mat blendshape_boost = cv::Mat::zeros(frame_bgr.size(), CV_32F);
+
+  // Eye wrinkles: boost around eyes when squinting or blinking
+  float eye_expression = std::max({metrics.eye_squint_left, metrics.eye_squint_right,
+                                  metrics.eye_blink_left, metrics.eye_blink_right});
+  if (eye_expression > 0.1f && !fr.left_eye.empty() && !fr.right_eye.empty()) {
+    // Create circular boosts around eye regions
+    cv::Rect left_eye_rect = cv::boundingRect(fr.left_eye);
+    cv::Rect right_eye_rect = cv::boundingRect(fr.right_eye);
+
+    cv::Point left_center(left_eye_rect.x + left_eye_rect.width/2, left_eye_rect.y + left_eye_rect.height/2);
+    cv::Point right_center(right_eye_rect.x + right_eye_rect.width/2, right_eye_rect.y + right_eye_rect.height/2);
+
+    int radius = std::max(left_eye_rect.width, left_eye_rect.height) * 2;
+    cv::circle(blendshape_boost, left_center, radius, cv::Scalar(eye_expression * 0.8f), cv::FILLED);
+    cv::circle(blendshape_boost, right_center, radius, cv::Scalar(eye_expression * 0.8f), cv::FILLED);
+    cv::GaussianBlur(blendshape_boost, blendshape_boost, cv::Size(0,0), radius * 0.3f);
+  }
+
+  // Brow wrinkles: boost forehead when frowning or raising brows
+  float brow_expression = std::max({metrics.brow_furrow_factor, metrics.brow_inner_up,
+                                   metrics.brow_outer_up_left, metrics.brow_outer_up_right});
+  if (brow_expression > 0.1f && !fr.face_oval.empty()) {
+    // Create forehead region boost
+    cv::Rect face_rect = cv::boundingRect(fr.face_oval);
+    cv::Rect forehead_rect(face_rect.x + face_rect.width/4, face_rect.y,
+                          face_rect.width/2, face_rect.height/3);
+    cv::rectangle(blendshape_boost, forehead_rect, cv::Scalar(brow_expression * 0.6f), cv::FILLED);
+    cv::GaussianBlur(blendshape_boost, blendshape_boost, cv::Size(0,0), forehead_rect.height * 0.2f);
+  }
+
+  // Cheek wrinkles: boost nasolabial folds when smiling or squinting cheeks
+  float cheek_expression = std::max({metrics.cheek_squint_left, metrics.cheek_squint_right, metrics.smile_factor});
+  // Inpaint nasolabial fold (cheek wrinkle) only when smiling strongly
+  if (cheek_expression > 0.5f && !fr.face_oval.empty()) {
+    float smile_gain = std::max(0.0f, config.smile_wrinkle_gain);
+    float boost_val = cheek_expression * (2.0f + 10.0f * smile_gain); // 2.0 base, up to 12x
+
+    // Use metrics for nose edge and mouth corners
+    cv::Point nose_left = metrics.nose_left;
+    cv::Point nose_right = metrics.nose_right;
+    cv::Point mouth_left = metrics.mouth_left;
+    cv::Point mouth_right = metrics.mouth_right;
+
+    // Build mask for inpainting
+    cv::Mat wrinkle_mask = cv::Mat::zeros(frame_bgr.size(), CV_8U);
+    std::vector<cv::Point> naso_left, naso_right;
+    for (float t = 0.0f; t <= 1.0f; t += 0.1f) {
+      int x = static_cast<int>(nose_left.x * (1-t) + mouth_left.x * t);
+      int y = static_cast<int>(nose_left.y * (1-t) + mouth_left.y * t);
+      naso_left.push_back(cv::Point(x, y));
+      x = static_cast<int>(nose_right.x * (1-t) + mouth_right.x * t);
+      y = static_cast<int>(nose_right.y * (1-t) + mouth_right.y * t);
+      naso_right.push_back(cv::Point(x, y));
+    }
+    for (const auto& pt : naso_left) {
+      cv::circle(wrinkle_mask, pt, 6, cv::Scalar(255), cv::FILLED);
+    }
+    for (const auto& pt : naso_right) {
+      cv::circle(wrinkle_mask, pt, 6, cv::Scalar(255), cv::FILLED);
+    }
+    cv::GaussianBlur(wrinkle_mask, wrinkle_mask, cv::Size(0,0), 3.0f);
+
+    // Inpaint only the wrinkle mask region
+    cv::Mat inpainted;
+    auto dump = [](const char* n, const cv::Mat& m){
+      std::cout << "[DEBUG] " << n << " size=" << m.cols << "x" << m.rows
+                << " ch=" << m.channels() << " type=" << m.type() << std::endl;
+    };
+    dump("inpaint input", frame_bgr);
+    dump("inpaint mask", wrinkle_mask);
+    cv::inpaint(frame_bgr, wrinkle_mask, inpainted, 7.0, cv::INPAINT_TELEA);
+    dump("inpaint output", inpainted);
+
+    // Ensure mask and inpainted are same size as frame_bgr (for process scaling)
+    if (wrinkle_mask.size() != frame_bgr.size()) {
+      cv::resize(wrinkle_mask, wrinkle_mask, frame_bgr.size(), 0, 0, cv::INTER_NEAREST);
+    }
+    if (inpainted.size() != frame_bgr.size()) {
+      cv::resize(inpainted, inpainted, frame_bgr.size(), 0, 0, cv::INTER_LINEAR);
+    }
+    // Convert mask to float and expand to 3 channels
+    cv::Mat mask_f;
+    wrinkle_mask.convertTo(mask_f, CV_32F, 1.0/255.0);
+    cv::Mat mask3;
+    cv::Mat mask_channels[] = {mask_f, mask_f, mask_f};
+    cv::merge(mask_channels, 3, mask3);
+
+    // Ensure mask values are in valid range [0,1]
+    cv::max(mask3, 0.0f, mask3);
+    cv::min(mask3, 1.0f, mask3);
+
+    // Convert images to float and 3 channels
+    cv::Mat orig, inp;
+    if (frame_bgr.type() != CV_32FC3) frame_bgr.convertTo(orig, CV_32F, 1.0/255.0);
+    else orig = frame_bgr;
+    if (inpainted.type() != CV_32FC3) inpainted.convertTo(inp, CV_32F, 1.0/255.0);
+    else inp = inpainted;
+
+    // Sanity check: all must be same size and 3 channels
+    CV_Assert(orig.size() == inp.size() && orig.size() == mask3.size());
+    CV_Assert(orig.channels() == 3 && inp.channels() == 3 && mask3.channels() == 3);
+
+    // Blend using the 3-channel mask - use explicit operations to avoid type issues
+    cv::Mat inv_mask;
+    cv::subtract(cv::Scalar(1.0f, 1.0f, 1.0f), mask3, inv_mask);
+    cv::Mat blended;
+    cv::add(orig.mul(inv_mask), inp.mul(mask3), blended);
+
+    // Convert back to float (or 8-bit if needed)
+    blended.convertTo(blendshape_boost, CV_32F, 1.0);
+    // Optionally, scale the effect by boost_val if needed
+  }
+
   // Combine local and line masks with sensitivity: higher keep_ratio favors line mask
   float s = std::clamp(config.keep_ratio, 0.02f, 0.80f);
   float s_norm = (s - 0.02f) / (0.78f); // 0..1
   float w_line = 0.4f + 0.9f * s_norm;   // 0.4 .. 1.3
   float w_local = 0.6f * (1.0f - s_norm); // 0.6 .. 0
-  cv::Mat wrinkle_mask = cv::min(1.0f, wrinkle_line * w_line + wrinkle_local * w_local);
+  float w_blendshape = 0.3f; // Weight for blendshape-guided enhancement
 
+  // EXTREME: Increase blendshape boost weight for smile suppression
+  float w_blendshape_extreme = 1.0f;
+  // Ensure all masks are CV_32F and same size
+  cv::Mat wrinkle_line_f, wrinkle_local_f, blendshape_boost_f;
+  if (wrinkle_line.type() != CV_32F) wrinkle_line.convertTo(wrinkle_line_f, CV_32F);
+  else wrinkle_line_f = wrinkle_line;
+  if (wrinkle_local.type() != CV_32F) wrinkle_local.convertTo(wrinkle_local_f, CV_32F);
+  else wrinkle_local_f = wrinkle_local;
+  if (blendshape_boost.type() != CV_32F) blendshape_boost.convertTo(blendshape_boost_f, CV_32F);
+  else blendshape_boost_f = blendshape_boost;
+  // Resize if needed
+  if (wrinkle_line_f.size() != frame_bgr.size()) cv::resize(wrinkle_line_f, wrinkle_line_f, frame_bgr.size(), 0, 0, cv::INTER_LINEAR);
+  if (wrinkle_local_f.size() != frame_bgr.size()) cv::resize(wrinkle_local_f, wrinkle_local_f, frame_bgr.size(), 0, 0, cv::INTER_LINEAR);
+  if (blendshape_boost_f.size() != frame_bgr.size()) cv::resize(blendshape_boost_f, blendshape_boost_f, frame_bgr.size(), 0, 0, cv::INTER_LINEAR);
+  cv::Mat wrinkle_mask = cv::min(1.0f, wrinkle_line_f * w_line + wrinkle_local_f * w_local + blendshape_boost_f * w_blendshape_extreme);
+  
   return wrinkle_mask;
+  
 }
+
+
 
 void ApplyFrequencySeparation(cv::Mat& Lf, const cv::Mat& weight, float amount, float boost_gain,
                              const cv::Mat& boost_final, bool wrinkle_preview, float neg_atten_cap) {
@@ -532,9 +714,15 @@ cv::Mat BuildWrinkleLineMask(const cv::Mat& frame_bgr, const FaceRegions& fr, co
   return ApplyPercentileThreshold(wr, base_f, skin_f, extra_gate, config.keep_ratio, config.mask_gain);
 }
 
-void ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceRegions& fr,
-                              const SkinSmoothingConfig& config, const mediapipe::NormalizedLandmarkList* lms) {
 
+void ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceRegions& fr,
+                              const SkinSmoothingConfig& config, const mediapipe::NormalizedLandmarkList* lms,
+                              const mediapipe::ClassificationList* blendshapes) {
+
+
+  // Debug print for config values
+  std::cout << "[DEBUG] boost_gain: " << config.boost_gain
+            << " smile_wrinkle_gain: " << config.smile_wrinkle_gain << std::endl;
 
   float amount = std::clamp(config.amount, 0.0f, 1.0f);
   if (amount <= 0.0f || fr.face_oval.empty()) return;
@@ -546,7 +734,7 @@ void ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceRegions& fr,
   cv::Mat base = CreateGaussianBase(Lf, config.radius_px);
 
   // Phase 2: Extract expressions and build boosts
-  FacialExpressionMetrics metrics = ExtractFacialExpressions(lms, frame_bgr.cols, frame_bgr.rows);
+  FacialExpressionMetrics metrics = ExtractFacialExpressions(lms, frame_bgr.cols, frame_bgr.rows, blendshapes);
   cv::Mat expression_boost = BuildExpressionBoostMap(metrics, frame_bgr.size(), config.expression, fr, frame_bgr);
   cv::Mat wrinkle_boost = config.wrinkle_enabled ? 
     BuildWrinkleBoostMap(frame_bgr, fr, metrics, config.wrinkle, Lf, base) : 
@@ -561,9 +749,86 @@ void ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceRegions& fr,
   float effective_baseline = config.wrinkle_enabled ? config.baseline_boost : 0.0f;
   cv::Mat boost_final = CombineBoostMaps(expression_boost, wrinkle_boost, effective_baseline, face_gate);
 
-  // Phase 4: Apply frequency separation
+
+  // Phase 4: Apply frequency separation as usual
   ApplyFrequencySeparation(Lf, weight, amount, config.boost_gain, boost_final,
                           config.wrinkle_enabled && config.wrinkle_preview, config.neg_atten_cap);
+
+  // --- Smile wrinkle inpainting (Snapchat-style cheek wrinkle removal) ---
+  if (config.smile_wrinkle_gain > 0.01f && config.wrinkle_enabled && lms) {
+    FacialExpressionMetrics metrics = ExtractFacialExpressions(lms, frame_bgr.cols, frame_bgr.rows, blendshapes);
+    float cheek_expression = std::max({metrics.cheek_squint_left, metrics.cheek_squint_right, metrics.smile_factor});
+    if (cheek_expression > 0.2f && !fr.face_oval.empty()) {
+      std::cout << "[DEBUG] Inpainting triggered: cheek_expression=" << cheek_expression << std::endl;
+      // Build nasolabial fold mask (thick for debug)
+      cv::Point nose_left = metrics.nose_left;
+      cv::Point nose_right = metrics.nose_right;
+      cv::Point mouth_left = metrics.mouth_left;
+      cv::Point mouth_right = metrics.mouth_right;
+      cv::Mat wrinkle_mask = cv::Mat::zeros(frame_bgr.size(), CV_8U);
+      std::vector<cv::Point> naso_left, naso_right;
+      for (float t = 0.0f; t <= 1.0f; t += 0.05f) {
+        int x = static_cast<int>(nose_left.x * (1-t) + mouth_left.x * t);
+        int y = static_cast<int>(nose_left.y * (1-t) + mouth_left.y * t);
+        naso_left.push_back(cv::Point(x, y));
+        x = static_cast<int>(nose_right.x * (1-t) + mouth_right.x * t);
+        y = static_cast<int>(nose_right.y * (1-t) + mouth_right.y * t);
+        naso_right.push_back(cv::Point(x, y));
+      }
+      for (const auto& pt : naso_left) {
+        cv::circle(wrinkle_mask, pt, 18, cv::Scalar(255), cv::FILLED); // much thicker for debug
+      }
+      for (const auto& pt : naso_right) {
+        cv::circle(wrinkle_mask, pt, 18, cv::Scalar(255), cv::FILLED);
+      }
+      cv::GaussianBlur(wrinkle_mask, wrinkle_mask, cv::Size(0,0), 6.0f);
+
+      // Robust mask conversion: never convert in-place, always use new variables
+  cv::Mat mask_resized, mask_u8;
+      if (wrinkle_mask.size() != frame_bgr.size()) {
+        cv::resize(wrinkle_mask, mask_resized, frame_bgr.size(), 0, 0, cv::INTER_NEAREST);
+      } else {
+        mask_resized = wrinkle_mask.clone();
+      }
+      if (mask_resized.type() != CV_8UC1) {
+        mask_resized.convertTo(mask_u8, CV_8U);
+      } else {
+        mask_u8 = mask_resized;
+      }
+
+      if (mask_u8.size() != frame_bgr.size() || mask_u8.type() != CV_8UC1) {
+        return;
+      }
+
+      // Ensure mask is single-channel 8U and same size as frame
+      // Robust mask conversion: never convert in-place, always use new variables
+      // Inpaint only the wrinkle mask region
+      cv::Mat inpainted;
+      auto dump = [](const char* n, const cv::Mat& m){
+        std::cout << "[DEBUG] " << n << " size=" << m.cols << "x" << m.rows
+                  << " ch=" << m.channels() << " type=" << m.type() << std::endl;
+      };
+      dump("inpaint input", frame_bgr);
+      dump("inpaint mask", mask_u8);
+      cv::inpaint(frame_bgr, mask_u8, inpainted, 7.0, cv::INPAINT_TELEA);
+      dump("inpaint output", inpainted);
+
+      // Blend inpainted region into output frame (use mask as 0..1 float)
+      cv::Mat mask_f;
+      mask_u8.convertTo(mask_f, CV_32F, 1.0/255.0);
+      for (int y = 0; y < frame_bgr.rows; ++y) {
+        for (int x = 0; x < frame_bgr.cols; ++x) {
+          float w = mask_f.at<float>(y, x);
+          if (w > 0.01f) {
+            for (int c = 0; c < 3; ++c) {
+              frame_bgr.at<cv::Vec3b>(y, x)[c] =
+                static_cast<uchar>(frame_bgr.at<cv::Vec3b>(y, x)[c] * (1.0f - w) + inpainted.at<cv::Vec3b>(y, x)[c] * w);
+            }
+          }
+        }
+      }
+    }
+  }
 
   // Phase 5: Convert back to BGR
   cv::Mat lab;

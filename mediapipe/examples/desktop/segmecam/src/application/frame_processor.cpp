@@ -120,7 +120,7 @@ cv::Mat FrameProcessor::ProcessAndDisplayFrame(
     // Apply effects if EffectsManager is available
     if (!last_mask_u8.empty() || have_lms) {
         // Use EffectsManager to process the frame with segmentation mask and face landmarks
-        processed_frame = effects_mgr.ProcessFrame(frame_bgr, last_mask_u8, landmarks_ptr);
+        processed_frame = effects_mgr.ProcessFrame(frame_bgr, last_mask_u8, landmarks_ptr, app_state.last_blendshapes.get());
     }
 
     // EffectsManager now returns RGB directly, no conversion needed
@@ -207,7 +207,7 @@ void FrameProcessor::HandleDroppedFiles(
             app_state.bg_mode = 2; // Image mode
             // Update the background path for profile persistence
             // Safe string copy with null-termination guarantee
-            segmecam::ui_utils::SafeStringCopy(app_state.bg_path_buf, sizeof(app_state.bg_path_buf), resolved_path);
+            ui_utils::SafeStringCopy(app_state.bg_path_buf, sizeof(app_state.bg_path_buf), resolved_path);
             std::cout << "✅ Background image loaded: " << bg_image.cols << "x" << bg_image.rows
                       << " (auto-switched to Image mode)" << std::endl;
             std::cout << "🔖 Background path saved: " << app_state.bg_path_buf << std::endl;
@@ -265,10 +265,10 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
     // Process MediaPipe outputs
     MediaPipeOutputData output_data;
     MediaPipeProcessor::ProcessMediaPipeOutputs(output_data, params.mask_poller, params.multi_face_landmarks_poller, params.face_rects_poller,
-                           params.app_state, params.frame_count, params.has_landmarks);
+                           params.face_blendshapes_poller, params.app_state, params.frame_count, params.has_landmarks);
 
     // Sync UI settings to EffectsManager before processing effects
-    segmecam::ApplicationRun::SyncSettingsToEffectsManager(*params.managers.effects, params.app_state);
+    ApplicationRun::SyncSettingsToEffectsManager(*params.managers.effects, params.app_state);
 
     // Process frame effects and prepare for display
     const mediapipe::NormalizedLandmarkList* landmarks_ptr = (output_data.have_lms) ? &output_data.latest_lms : nullptr;

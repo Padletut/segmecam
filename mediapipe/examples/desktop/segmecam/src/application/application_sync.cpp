@@ -60,6 +60,7 @@ void ApplicationSync::SyncBeautySettings(EffectsManager& effects_manager, const 
 void ApplicationSync::SyncWrinkleSettings(EffectsManager& effects_manager, const AppState& app_state) {
     effects_manager.SetWrinkleAwareEnabled(app_state.fx_skin_wrinkle);
     effects_manager.SetWrinkleGain(app_state.fx_skin_wrinkle_gain);
+    effects_manager.SetSmileWrinkleGain(app_state.fx_skin_smile_wrinkle_gain);
     effects_manager.SetSmileBoost(app_state.fx_skin_smile_boost);
     effects_manager.SetSquintBoost(app_state.fx_skin_squint_boost);
     effects_manager.SetForeheadBoost(app_state.fx_skin_forehead_boost);

@@ -32,6 +32,7 @@ struct FrameProcessingParams {
     std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller;
     std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller;
     std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller;
+    std::unique_ptr<mediapipe::OutputStreamPoller>& face_blendshapes_poller;
     SDL_Window* window;
     AppState& app_state;
     UIManager& ui_manager;

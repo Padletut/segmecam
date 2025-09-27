@@ -209,6 +209,8 @@ void ProfileManager::LoadBeautySettings(const ConfigData& config) {
     state_.fx_skin_squint_boost = config.beauty.fx_skin_squint_boost;
     state_.fx_skin_forehead_boost = config.beauty.fx_skin_forehead_boost;
     state_.fx_skin_wrinkle_gain = config.beauty.fx_skin_wrinkle_gain;
+    state_.fx_skin_smile_boost = config.beauty.fx_skin_smile_boost;
+    state_.fx_skin_smile_wrinkle_gain = config.beauty.fx_skin_smile_wrinkle_gain;
     state_.fx_wrinkle_suppress_lower = config.beauty.fx_wrinkle_suppress_lower;
     state_.fx_wrinkle_lower_ratio = config.beauty.fx_wrinkle_lower_ratio;
     state_.fx_wrinkle_ignore_glasses = config.beauty.fx_wrinkle_ignore_glasses;
@@ -343,6 +345,7 @@ void ProfileManager::SaveWrinkleSettings(ConfigData& config) {
     config.beauty.fx_skin_squint_boost = state_.fx_skin_squint_boost;
     config.beauty.fx_skin_forehead_boost = state_.fx_skin_forehead_boost;
     config.beauty.fx_skin_wrinkle_gain = state_.fx_skin_wrinkle_gain;
+    config.beauty.fx_skin_smile_wrinkle_gain = state_.fx_skin_smile_wrinkle_gain;
     config.beauty.fx_wrinkle_suppress_lower = state_.fx_wrinkle_suppress_lower;
     config.beauty.fx_wrinkle_lower_ratio = state_.fx_wrinkle_lower_ratio;
     config.beauty.fx_wrinkle_ignore_glasses = state_.fx_wrinkle_ignore_glasses;
