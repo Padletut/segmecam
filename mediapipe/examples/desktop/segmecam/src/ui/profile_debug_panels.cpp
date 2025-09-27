@@ -50,6 +50,7 @@ void DebugPanel::RenderOverlayControls() {
     
     ImGui::Checkbox("Show Face Landmarks", &state_.show_landmarks);
     ImGui::Checkbox("Show Segmentation Mask", &state_.show_mask);
+    ImGui::Checkbox("Show Facemask", &state_.show_facemask);
 
     // Mesh visualization
     ImGui::Checkbox("Show Face Mesh", &state_.show_mesh);

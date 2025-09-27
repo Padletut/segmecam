@@ -266,6 +266,7 @@ void ConfigManager::writeDisplaySettings(cv::FileStorage& fs, const ConfigData& 
     fs << "show_landmarks" << (int)config.display.show_landmarks;
     fs << "show_mesh" << (int)config.display.show_mesh;
     fs << "show_mesh_dense" << (int)config.display.show_mesh_dense;
+    fs << "show_facemask" << (int)config.display.show_facemask;
 }
 
 void ConfigManager::writeBackgroundSettings(cv::FileStorage& fs, const ConfigData& config) const {
@@ -408,6 +409,7 @@ void ConfigManager::readDisplaySettings(const cv::FileNode& root, ConfigData& co
     config.display.show_landmarks = ReadInt(root["show_landmarks"], 0) != 0;
     config.display.show_mesh = ReadInt(root["show_mesh"], 0) != 0;
     config.display.show_mesh_dense = ReadInt(root["show_mesh_dense"], 0) != 0;
+    config.display.show_facemask = ReadInt(root["show_facemask"], 0) != 0;
 }
 
 void ConfigManager::readBackgroundSettings(const cv::FileNode& root, ConfigData& config) const {

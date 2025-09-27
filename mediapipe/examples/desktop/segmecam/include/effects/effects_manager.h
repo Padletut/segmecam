@@ -47,6 +47,7 @@ struct EffectsState {
     bool show_landmarks = false;
     bool show_mesh = false;
     bool show_mesh_dense = false;
+    bool show_facemask = false;
     
     // Latest facial expression metrics for debug display
     FacialExpressionMetrics last_facial_metrics;
@@ -311,6 +312,9 @@ public:
     }
     void SetShowMeshDense(bool enabled) {
         state_.show_mesh_dense = enabled;
+    }
+    void SetShowFacemask(bool enabled) {
+        state_.show_facemask = enabled;
     }
     void DrawLandmarks(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks) {
         face_processor_->DrawLandmarks(frame_bgr, landmarks);

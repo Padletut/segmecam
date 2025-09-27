@@ -764,7 +764,7 @@ cv::Mat BuildSkinWeightMap(const FaceRegions& fr,
                            float edge_feather_px,
                            float texture_thresh,
                            const cv::Mat& hint_bgr,
-                           const FacialExpressionMetrics* expr_metrics = nullptr) {
+                           const FacialExpressionMetrics* expr_metrics) {
   cv::Mat base(frame_size, CV_8UC1, cv::Scalar(0));
   
   // Start with the original face oval

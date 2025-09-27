@@ -266,6 +266,25 @@ void EffectsManager::ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::Norma
         face_processor_->DrawMesh(frame_bgr, landmarks, state_.show_mesh_dense);
     }
     
+    // Draw facemask overlay if enabled
+    if (state_.show_facemask) {
+        cv::Mat base_weight = ::BuildSkinWeightMap(regions, frame_bgr.size(), 2.0f, 0.5f, frame_bgr);
+        cv::Mat facemask = ::CreateRefinedFaceMask(regions, frame_bgr.size(), base_weight);
+        
+        // Convert to 8-bit for visualization
+        cv::Mat facemask_8u;
+        facemask.convertTo(facemask_8u, CV_8U, 255.0);
+        
+        // Apply color map to make it visible (green for face mask)
+        cv::Mat colored_mask;
+        cv::applyColorMap(facemask_8u, colored_mask, cv::COLORMAP_VIRIDIS);
+        
+        // Blend with original frame
+        cv::Mat overlay;
+        cv::addWeighted(frame_bgr, 0.7, colored_mask, 0.3, 0, overlay);
+        frame_bgr = overlay;
+    }
+
     // Apply skin smoothing
     if (beauty_state_.fx_skin) {
         if (beauty_state_.fx_skin_adv || beauty_state_.fx_wrinkle_preview) {

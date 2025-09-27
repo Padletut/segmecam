@@ -115,13 +115,17 @@ cv::Mat BuildSkinWeightMap(const FaceRegions& fr,
                            const cv::Size& frame_size,
                            float edge_feather_px,
                            float texture_thresh,
-                           const cv::Mat& hint_bgr = cv::Mat());
+                           const cv::Mat& hint_bgr = cv::Mat(),
+                           const FacialExpressionMetrics* expr_metrics = nullptr);
 
 // Build a wrinkle mask emphasizing dark, narrow, linear structures on skin.
 // Returns CV_32F in [0,1]. Only inside face region (excluding lips/eyes).
 cv::Mat BuildWrinkleLineMask(const cv::Mat& frame_bgr,
                              const FaceRegions& fr,
                              const WrinkleMaskConfig& config);
+
+// Create a more refined face mask that better excludes eyes, eyebrows, and mouth
+cv::Mat CreateRefinedFaceMask(const FaceRegions& fr, cv::Size sz, const cv::Mat& base_weight);
 
 // Advanced LAB frequency separation smoothing guided by weight map from landmarks.
 // - amount: attenuation of high-frequency detail (0..1).

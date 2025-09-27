@@ -109,6 +109,7 @@ struct AppState {
   bool show_landmarks = false;
   bool show_mesh = false;
   bool show_mesh_dense = false;
+  bool show_facemask = false;
   bool show_blendshapes_debug = false; // Show blendshape debug overlay
   bool lm_roi_mode = false;
   bool lm_apply_rot = true;

@@ -637,6 +637,7 @@ cc_library( # type: ignore
         ":performance_monitor",
         ":effects_config",
         ":face_processor",
+        ":advanced_skin_effects",
         ":segmecam_composite",
         ":segmecam_face_effects",
         ":presets",
