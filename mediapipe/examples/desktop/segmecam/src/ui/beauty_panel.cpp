@@ -73,7 +73,7 @@ bool BeautyPanel::RenderAdvancedSkinControls() {
     bool changed = false;
     changed |= ImGui::SliderFloat("Amount##skin", &state_.fx_skin_amount, 0.0f, 1.0f);
     changed |= ImGui::SliderFloat("Radius (px)", &state_.fx_skin_radius, 1.0f, 20.0f);
-    changed |= ImGui::SliderFloat("Texture keep (0..1)", &state_.fx_skin_tex, 0.05f, 1.0f);
+    changed |= ImGui::SliderFloat("Texture keep (0..1)", &state_.fx_skin_tex, 0.0f, 1.0f);
     changed |= ImGui::SliderFloat("Edge feather (px)", &state_.fx_skin_edge, 2.0f, 40.0f);
 
     ImGui::Separator();
