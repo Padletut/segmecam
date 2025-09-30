@@ -74,20 +74,3 @@ node {
     }
   }
 }
-
-# --- FaceBlendshapesGraph node ---
-node {
-  calculator: "mediapipe.tasks.vision.face_landmarker.FaceBlendshapesGraph"
-  input_stream: "LANDMARKS:single_face_landmarks"
-  input_stream: "IMAGE_SIZE:image_size"
-  output_stream: "BLENDSHAPES:face_blendshapes"
-  options: {
-    [mediapipe.tasks.vision.face_landmarker.proto.FaceBlendshapesGraphOptions.ext] {
-      base_options {
-        model_asset {
-          file_name: "models/face_blendshapes.tflite"
-        }
-      }
-    }
-  }
-}

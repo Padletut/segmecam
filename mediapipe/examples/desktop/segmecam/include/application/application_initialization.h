@@ -23,7 +23,6 @@ struct MediaPipeInitParams {
     std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller;
     std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller;
     std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller;
-    std::unique_ptr<mediapipe::OutputStreamPoller>& face_blendshapes_poller;
 };
 
 /**
@@ -81,8 +80,7 @@ private:
         std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph,
         std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
         std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
-        std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
-        std::unique_ptr<mediapipe::OutputStreamPoller>& face_blendshapes_poller
+        std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller
     );
     
     /**

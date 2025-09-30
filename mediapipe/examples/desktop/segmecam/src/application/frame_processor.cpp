@@ -120,7 +120,7 @@ cv::Mat FrameProcessor::ProcessAndDisplayFrame(
     // Apply effects if EffectsManager is available
     if (!last_mask_u8.empty() || have_lms) {
         // Use EffectsManager to process the frame with segmentation mask and face landmarks
-        processed_frame = effects_mgr.ProcessFrame(frame_bgr, last_mask_u8, landmarks_ptr, app_state.last_blendshapes.get());
+        processed_frame = effects_mgr.ProcessFrame(frame_bgr, last_mask_u8, landmarks_ptr);
         
         // Copy facial metrics for debug display
         app_state.last_facial_metrics = effects_mgr.GetLastFacialMetrics();
@@ -268,7 +268,7 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
     // Process MediaPipe outputs
     MediaPipeOutputData output_data;
     MediaPipeProcessor::ProcessMediaPipeOutputs(output_data, params.mask_poller, params.multi_face_landmarks_poller, params.face_rects_poller,
-                           params.face_blendshapes_poller, params.app_state, params.frame_count, params.has_landmarks);
+                           params.app_state, params.frame_count, params.has_landmarks);
 
     // Sync UI settings to EffectsManager before processing effects
     ApplicationRun::SyncSettingsToEffectsManager(*params.managers.effects, params.app_state);

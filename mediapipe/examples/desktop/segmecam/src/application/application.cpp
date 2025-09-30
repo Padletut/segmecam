@@ -52,7 +52,7 @@ int SegmeCamApplication::Initialize(const ApplicationConfig& config) {
     
     // Create parameter structs to reduce method parameter count
     MediaPipeInitParams mediapipe_params = {
-        mediapipe_graph_, mask_poller_, multi_face_landmarks_poller_, face_rects_poller_, face_blendshapes_poller_
+        mediapipe_graph_, mask_poller_, multi_face_landmarks_poller_, face_rects_poller_
     };
     
     SDLInitParams sdl_params = {
@@ -69,7 +69,7 @@ int SegmeCamApplication::Run() {
     // Use the extracted run module for main application loop
     return ApplicationRun::ExecuteMainLoop(managers_, mediapipe_graph_, mask_poller_, 
                                           multi_face_landmarks_poller_, face_rects_poller_,
-                                          face_blendshapes_poller_, window_, app_state_);
+                                          window_, app_state_);
 }
 
 void SegmeCamApplication::Cleanup() {

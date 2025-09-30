@@ -142,7 +142,7 @@ void EffectsConfiguration::SetGlassesMargin(float margin_px) {
 }
 
 void EffectsConfiguration::SetWrinkleSensitivity(float keep_ratio) {
-    beauty_state_.fx_wrinkle_keep_ratio = std::clamp(keep_ratio, 0.01f, 1.0f);
+    beauty_state_.fx_wrinkle_keep_ratio = std::clamp(keep_ratio, 0.01f, 10.6f);
 }
 
 void EffectsConfiguration::SetCustomWrinkleScales(bool enabled) {

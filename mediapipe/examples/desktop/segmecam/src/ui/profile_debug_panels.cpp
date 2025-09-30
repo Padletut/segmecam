@@ -20,28 +20,6 @@ void DebugPanel::Render() {
         RenderAdvancedSettings();
     }
 
-    // Blendshapes Debug Panel
-    if (state_.show_blendshapes_debug && state_.last_blendshapes) {
-        if (ImGui::Begin("Blendshapes Debug", &state_.show_blendshapes_debug)) {
-            // Smile detection status
-            ImGui::Text("Smile Detection:");
-            ImGui::SameLine();
-            bool is_smiling = state_.last_facial_metrics.smile_factor > 0.1f;
-            ImGui::TextColored(is_smiling ? ImVec4(0.0f, 1.0f, 0.0f, 1.0f) : ImVec4(1.0f, 0.0f, 0.0f, 1.0f), 
-                              is_smiling ? "SMILING" : "NOT SMILING");
-            ImGui::Text("Smile Factor: %.3f", state_.last_facial_metrics.smile_factor);
-            ImGui::Separator();
-            
-            ImGui::Text("Blendshape Scores (last frame):");
-            ImGui::Separator();
-            const auto& blendshapes = *state_.last_blendshapes;
-            for (int i = 0; i < blendshapes.classification_size(); ++i) {
-                const auto& c = blendshapes.classification(i);
-                ImGui::Text("%s: %.3f", c.label().c_str(), c.score());
-            }
-        }
-        ImGui::End();
-    }
 }
 
 void DebugPanel::RenderOverlayControls() {
@@ -51,6 +29,7 @@ void DebugPanel::RenderOverlayControls() {
     ImGui::Checkbox("Show Face Landmarks", &state_.show_landmarks);
     ImGui::Checkbox("Show Segmentation Mask", &state_.show_mask);
     ImGui::Checkbox("Show Facemask", &state_.show_facemask);
+    ImGui::Checkbox("Show Wrinkle Segmentation", &state_.show_wrinkle_segmentation);
 
     // Mesh visualization
     ImGui::Checkbox("Show Face Mesh", &state_.show_mesh);
@@ -61,8 +40,6 @@ void DebugPanel::RenderOverlayControls() {
         ImGui::Button("?##mesh_dense");
     }
 
-    // Blendshapes debug overlay
-    ImGui::Checkbox("Show Blendshapes Debug", &state_.show_blendshapes_debug);
 }
 
 

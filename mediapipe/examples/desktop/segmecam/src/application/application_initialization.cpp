@@ -35,8 +35,7 @@ int ApplicationInitialization::SetupMediaPipePollers(
     std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph,
     std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
     std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
-    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
-    std::unique_ptr<mediapipe::OutputStreamPoller>& face_blendshapes_poller
+    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller
 ) {
     // Setup basic output stream poller (required before StartRun to prevent deadlock)
     std::cout << "📡 Setting up MediaPipe output stream pollers..." << std::endl;
@@ -76,22 +75,11 @@ int ApplicationInitialization::SetupMediaPipePollers(
             std::cout << "✅ Face rects poller attached successfully" << std::endl;
         }
         
-        // Setup face_blendshapes poller (optional - may not exist in all face graphs)
-        auto face_blendshapes_poller_or = mediapipe_graph->AddOutputStreamPoller("face_blendshapes");
-        if (!face_blendshapes_poller_or.ok()) {
-            std::cout << "ℹ️  face_blendshapes stream not available in this graph (this is normal for some face graphs)" << std::endl;
-            face_blendshapes_poller = nullptr;
-        } else {
-            face_blendshapes_poller = std::make_unique<mediapipe::OutputStreamPoller>(std::move(face_blendshapes_poller_or.value()));
-            std::cout << "✅ Face blendshapes poller attached successfully" << std::endl;
-        }
-        
         std::cout << "✅ Face landmarks pollers ready" << std::endl;
     } else {
         // Set to null if not using face landmarks
         multi_face_landmarks_poller = nullptr;
         face_rects_poller = nullptr;
-        face_blendshapes_poller = nullptr;
     }
     
     return 0;
@@ -188,8 +176,7 @@ int ApplicationInitialization::InitializeApplication(
     
     mediapipe_result = SetupMediaPipePollers(config, mediapipe_params.graph, mediapipe_params.mask_poller,
                                             mediapipe_params.multi_face_landmarks_poller,
-                                            mediapipe_params.face_rects_poller,
-                                            mediapipe_params.face_blendshapes_poller);
+                                            mediapipe_params.face_rects_poller);
     if (mediapipe_result != 0) {
         return mediapipe_result;
     }

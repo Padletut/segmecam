@@ -16,6 +16,8 @@
 
 namespace segmecam {
 
+class WrinkleSegmenter;
+
 // Configuration for effects system
 struct EffectsConfig {
     bool enable_opencl = true; // Default to enabled if available
@@ -48,6 +50,7 @@ struct EffectsState {
     bool show_mesh = false;
     bool show_mesh_dense = false;
     bool show_facemask = false;
+    bool show_wrinkle_segmentation = false;
     
     // Latest facial expression metrics for debug display
     FacialExpressionMetrics last_facial_metrics;
@@ -69,10 +72,9 @@ public:
     void Cleanup();
     
     // Main processing pipeline
-    cv::Mat ProcessFrame(const cv::Mat& frame_bgr, 
+    cv::Mat ProcessFrame(const cv::Mat& frame_bgr,
                         const cv::Mat& segmentation_mask,
-                        const mediapipe::NormalizedLandmarkList* face_landmarks = nullptr,
-                        const mediapipe::ClassificationList* blendshapes = nullptr);
+                        const mediapipe::NormalizedLandmarkList* face_landmarks = nullptr);
     
     // Background effects - delegated to BackgroundEffects module
     cv::Mat ApplyBackgroundEffect(const cv::Mat& frame_bgr, const cv::Mat& mask) {
@@ -89,10 +91,11 @@ public:
     }
     
     // Face effects
-    void ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks, const mediapipe::ClassificationList* blendshapes = nullptr);
+    void ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks);
     void ApplySkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions);
     void ApplySkinSmoothingAdvanced(cv::Mat& frame_bgr, const FaceRegions& regions, 
-                                   const mediapipe::NormalizedLandmarkList& landmarks, const mediapipe::ClassificationList* blendshapes = nullptr);
+                                   const mediapipe::NormalizedLandmarkList& landmarks,
+                                   const cv::Mat& wrinkle_mask = cv::Mat());
     void ApplyLipEffects(cv::Mat& frame_bgr, const FaceRegions& regions, 
                         const mediapipe::NormalizedLandmarkList& landmarks, const cv::Size& frame_size);
     void ApplyTeethWhitening(cv::Mat& frame_bgr, const FaceRegions& regions);
@@ -316,6 +319,9 @@ public:
     void SetShowFacemask(bool enabled) {
         state_.show_facemask = enabled;
     }
+    void SetShowWrinkleSegmentation(bool enabled) {
+        state_.show_wrinkle_segmentation = enabled;
+    }
     void DrawLandmarks(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks) {
         face_processor_->DrawLandmarks(frame_bgr, landmarks);
     }
@@ -360,6 +366,7 @@ private:
     std::unique_ptr<PerformanceMonitor> performance_monitor_;
     std::unique_ptr<EffectsConfiguration> effects_config_;
     std::unique_ptr<FaceProcessor> face_processor_;
+    std::unique_ptr<WrinkleSegmenter> wrinkle_segmenter_;
     
     // Helper methods
     FaceRegions ExtractFaceRegionsFromLandmarks(const mediapipe::NormalizedLandmarkList& landmarks, 
@@ -371,7 +378,7 @@ private:
     
     // ProcessFrame helper methods
     void LogDebugInputFrame(int frame_count, const cv::Mat& frame_bgr);
-    void ProcessFaceEffects(cv::Mat& processed_frame, const mediapipe::NormalizedLandmarkList* face_landmarks, const mediapipe::ClassificationList* blendshapes = nullptr);
+    void ProcessFaceEffects(cv::Mat& processed_frame, const mediapipe::NormalizedLandmarkList* face_landmarks);
     cv::Mat ProcessBackgroundEffects(const cv::Mat& processed_frame, const cv::Mat& segmentation_mask);
     void UpdatePerformanceTracking(const std::chrono::steady_clock::time_point& start_time);
     void LogDebugOutputFrame(int frame_count, const cv::Mat& result);
@@ -382,8 +389,9 @@ private:
                         const std::array<std::array<int, 2>, N>& connections, const cv::Scalar& color);
     
     // Processing scale optimization for skin smoothing
-    void ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, const FaceRegions& regions, 
-                                              const mediapipe::NormalizedLandmarkList& landmarks, const mediapipe::ClassificationList* blendshapes = nullptr);
+    void ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, const FaceRegions& regions,
+                                              const mediapipe::NormalizedLandmarkList& landmarks,
+                                              const cv::Mat& wrinkle_mask = cv::Mat());
     cv::Rect CalculateProcessingROI(const FaceRegions& regions, const cv::Size& frame_size);
     void ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions, 
                                          const mediapipe::NormalizedLandmarkList& landmarks);

@@ -4,7 +4,6 @@
 #include <opencv2/imgproc.hpp>
 #include "include/effects/face_regions.h"
 #include "mediapipe/framework/formats/landmark.pb.h"
-#include "mediapipe/framework/formats/classification.pb.h"
 
 // Configuration structs to reduce parameter count
 struct RegionGatesConfig {
@@ -103,10 +102,9 @@ cv::Mat BuildWrinkleBoostMap(const cv::Mat& frame_bgr, const FaceRegions& fr,
                             const cv::Mat& Lf, const cv::Mat& base);
 cv::Mat BuildWrinkleLineMask(const cv::Mat& frame_bgr, const FaceRegions& fr, const WrinkleMaskConfig& config);
 
-// Enhanced facial expression extraction with blendshape support
-FacialExpressionMetrics ExtractFacialExpressions(const mediapipe::NormalizedLandmarkList* lms, 
-                                               int width, int height,
-                                               const mediapipe::ClassificationList* blendshapes = nullptr);
+// Enhanced facial expression extraction using face mesh landmarks
+FacialExpressionMetrics ExtractFacialExpressions(const mediapipe::NormalizedLandmarkList* lms,
+                                               int width, int height);
 
 // Build a high-quality skin weight map (0..1 float) using landmarks.
 // - edge_feather_px: width of the falloff near face contour in pixels.
@@ -136,4 +134,4 @@ FacialExpressionMetrics ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr,
                               const FaceRegions& fr,
                               const SkinSmoothingConfig& config,
                               const mediapipe::NormalizedLandmarkList* lms,
-                              const mediapipe::ClassificationList* blendshapes = nullptr);
+                              const cv::Mat& wrinkle_mask = cv::Mat());

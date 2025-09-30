@@ -4,6 +4,7 @@
 #include "effects/config/effects_config.h"
 #include "effects/face_processor.h"
 #include "effects/advanced_skin_effects.h"
+#include "effects/wrinkle_segmenter.h"
 #include "render/segmecam_composite.h"
 #include "mediapipe/tasks/cc/vision/face_landmarker/face_landmarks_connections.h"
 
@@ -24,6 +25,7 @@ EffectsManager::EffectsManager() {
     performance_monitor_ = std::make_unique<PerformanceMonitor>();
     effects_config_ = std::make_unique<EffectsConfiguration>(beauty_state_);
     face_processor_ = std::make_unique<FaceProcessor>();
+    wrinkle_segmenter_ = std::make_unique<WrinkleSegmenter>();
     // Wire up auto-scaling callback
     WireAutoScaleCallback();
 }
@@ -43,8 +45,8 @@ SkinSmoothingConfig EffectsManager::CreateSkinSmoothingConfig(float scale) const
     config.expression.squint_boost = beauty_state_.fx_skin_squint_boost;
     config.expression.forehead_boost = beauty_state_.fx_skin_forehead_boost;
     config.expression.forehead_margin_px = 10.0f * scale;
-    // Disable global wrinkle gain for testing smile-only effect
-    config.boost_gain = 0.0f;
+    // Use user-configured wrinkle gain to drive frequency-separation boosting
+    config.boost_gain = beauty_state_.fx_skin_wrinkle_gain;
     config.smile_wrinkle_gain = beauty_state_.fx_skin_smile_wrinkle_gain;
     config.wrinkle_enabled = beauty_state_.fx_skin_wrinkle;
     config.wrinkle.region_gates.suppress_lower_face = beauty_state_.fx_wrinkle_suppress_lower;
@@ -115,10 +117,18 @@ int EffectsManager::Initialize(const EffectsConfig& config) {
     std::cout << "   • OpenCL acceleration: " << (state_.opencl_enabled ? "✅" : "❌") << std::endl;
     std::cout << "   • Adaptive resolution scaling: ✅" << std::endl;
     std::cout << "   • Optimized operations: ✅" << std::endl;
-    
+
+    if (wrinkle_segmenter_ && !wrinkle_segmenter_->IsLoaded()) {
+        if (!wrinkle_segmenter_->Initialize()) {
+            std::cout << "⚠️  Wrinkle segmentation model failed to load. Falling back to analytical wrinkle mask." << std::endl;
+        } else {
+            std::cout << "✅ Wrinkle segmentation model loaded successfully." << std::endl;
+        }
+    }
+
     state_.is_initialized = true;
     std::cout << "✅ Effects Manager initialized successfully!" << std::endl;
-    
+
     return 0;
 }
 
@@ -132,8 +142,7 @@ void EffectsManager::LogDebugInputFrame(int frame_count, const cv::Mat& frame_bg
 
 cv::Mat EffectsManager::ProcessFrame(const cv::Mat& frame_bgr,
                                     const cv::Mat& segmentation_mask,
-                                    const mediapipe::NormalizedLandmarkList* face_landmarks,
-                                    const mediapipe::ClassificationList* blendshapes) {
+                                    const mediapipe::NormalizedLandmarkList* face_landmarks) {
     if (!state_.is_initialized) {
         cv::Mat result_rgb;
         cv::cvtColor(frame_bgr, result_rgb, cv::COLOR_BGR2RGB);
@@ -152,7 +161,7 @@ cv::Mat EffectsManager::ProcessFrame(const cv::Mat& frame_bgr,
     cv::Mat processed_frame = frame_bgr.clone();
     
     try {
-        ProcessFaceEffects(processed_frame, face_landmarks, blendshapes);
+        ProcessFaceEffects(processed_frame, face_landmarks);
         cv::Mat result = ProcessBackgroundEffects(processed_frame, segmentation_mask);
         
         performance_monitor_->UpdatePerformanceTracking(start_time, state_.last_smoothing_time_ms,
@@ -191,11 +200,11 @@ cv::Mat EffectsManager::ProcessFrame(const cv::Mat& frame_bgr,
     }
 }
 
-void EffectsManager::ProcessFaceEffects(cv::Mat& processed_frame, const mediapipe::NormalizedLandmarkList* face_landmarks, const mediapipe::ClassificationList* blendshapes) {
+void EffectsManager::ProcessFaceEffects(cv::Mat& processed_frame, const mediapipe::NormalizedLandmarkList* face_landmarks) {
     if (config_.enable_face_effects && face_landmarks && face_landmarks->landmark_size() > 0) {
         try {
             auto smooth_start = std::chrono::steady_clock::now();
-            ApplyFaceEffects(processed_frame, *face_landmarks, blendshapes);
+            ApplyFaceEffects(processed_frame, *face_landmarks);
             auto smooth_end = std::chrono::steady_clock::now();
             state_.last_smoothing_time_ms = std::chrono::duration<double, std::milli>(smooth_end - smooth_start).count();
         } catch (const cv::Exception& e) {
@@ -252,7 +261,7 @@ void EffectsManager::LogDebugOutputFrame(int frame_count, const cv::Mat& result)
 
 
 
-void EffectsManager::ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks, const mediapipe::ClassificationList* blendshapes) {
+void EffectsManager::ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks) {
     // Extract face regions from landmarks
     FaceRegions regions = face_processor_->ExtractFaceRegionsFromLandmarks(landmarks, frame_bgr.size());
     
@@ -285,10 +294,40 @@ void EffectsManager::ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::Norma
         frame_bgr = overlay;
     }
 
+    cv::Mat wrinkle_mask;
+    cv::Mat wrinkle_mask_for_display;
+    const bool segmentation_requested = state_.show_wrinkle_segmentation;
+    bool need_wrinkle_mask = segmentation_requested ||
+                             (beauty_state_.fx_skin && (beauty_state_.fx_skin_adv || beauty_state_.fx_wrinkle_preview) &&
+                              (beauty_state_.fx_skin_wrinkle || beauty_state_.fx_wrinkle_preview));
+    if (need_wrinkle_mask) {
+        if (wrinkle_segmenter_ && wrinkle_segmenter_->IsLoaded()) {
+            wrinkle_mask = wrinkle_segmenter_->PredictMask(frame_bgr, regions);
+        }
+
+        if (wrinkle_mask.empty()) {
+            WrinkleMaskConfig mask_config;
+            mask_config.min_scale_px = beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_min_px : 1.5f;
+            mask_config.max_scale_px = beauty_state_.fx_wrinkle_custom_scales ? beauty_state_.fx_wrinkle_max_px : 3.0f;
+            mask_config.suppress_lower_face = beauty_state_.fx_wrinkle_suppress_lower;
+            mask_config.lower_face_ratio = beauty_state_.fx_wrinkle_lower_ratio;
+            mask_config.ignore_glasses = beauty_state_.fx_wrinkle_ignore_glasses;
+            mask_config.glasses_margin_px = beauty_state_.fx_wrinkle_glasses_margin;
+            mask_config.keep_ratio = beauty_state_.fx_wrinkle_keep_ratio;
+            mask_config.use_skin_gate = beauty_state_.fx_wrinkle_use_skin_gate;
+            mask_config.mask_gain = beauty_state_.fx_wrinkle_mask_gain;
+            wrinkle_mask = BuildWrinkleLineMask(frame_bgr, regions, mask_config);
+        }
+
+        if (segmentation_requested && !wrinkle_mask.empty()) {
+            wrinkle_mask_for_display = wrinkle_mask.clone();
+        }
+    }
+
     // Apply skin smoothing
     if (beauty_state_.fx_skin) {
         if (beauty_state_.fx_skin_adv || beauty_state_.fx_wrinkle_preview) {
-            ApplySkinSmoothingAdvanced(frame_bgr, regions, landmarks, blendshapes);
+            ApplySkinSmoothingAdvanced(frame_bgr, regions, landmarks, wrinkle_mask);
         } else {
             ApplySkinSmoothing(frame_bgr, regions);
         }
@@ -303,25 +342,53 @@ void EffectsManager::ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::Norma
     if (beauty_state_.fx_teeth) {
         ApplyTeethWhitening(frame_bgr, regions);
     }
+
+    const cv::Mat& overlay_mask = !wrinkle_mask_for_display.empty() ? wrinkle_mask_for_display : wrinkle_mask;
+    if (state_.show_wrinkle_segmentation && !overlay_mask.empty()) {
+        double min_val = 0.0, max_val = 0.0;
+        cv::minMaxLoc(overlay_mask, &min_val, &max_val);
+
+        if (max_val - min_val > 1e-6) {
+            double cutoff = min_val + (max_val - min_val) * 0.4;  // keep only stronger responses
+
+            cv::Mat mask_binary_float;
+            cv::threshold(overlay_mask, mask_binary_float, cutoff, 1.0, cv::THRESH_BINARY);
+
+            cv::Mat mask_binary_u8;
+            mask_binary_float.convertTo(mask_binary_u8, CV_8U, 255.0);
+
+            if (cv::countNonZero(mask_binary_u8) > 0) {
+                cv::Mat normalized_u8;
+                overlay_mask.convertTo(normalized_u8, CV_8U, 255.0 / (max_val - min_val), -min_val * 255.0 / (max_val - min_val));
+
+                cv::Mat colored;
+                cv::applyColorMap(normalized_u8, colored, cv::COLORMAP_MAGMA);
+
+                cv::Mat highlight;
+                cv::addWeighted(frame_bgr, 1.0, colored, 0.35, 0.0, highlight);
+                highlight.copyTo(frame_bgr, mask_binary_u8);
+            }
+        }
+    }
 }
 
 void EffectsManager::ApplySkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions) {
     ApplySkinSmoothingBGR(frame_bgr, regions, beauty_state_.fx_skin_amount, state_.opencl_enabled);
 }
 
-void EffectsManager::ApplySkinSmoothingAdvanced(cv::Mat& frame_bgr, const FaceRegions& regions, 
+void EffectsManager::ApplySkinSmoothingAdvanced(cv::Mat& frame_bgr, const FaceRegions& regions,
                                                const mediapipe::NormalizedLandmarkList& landmarks,
-                                               const mediapipe::ClassificationList* blendshapes) {
+                                               const cv::Mat& wrinkle_mask) {
     // Use user-configured processing scale directly for stability
     float effective_scale = beauty_state_.fx_adv_scale;
     
     // Check if processing scale optimization should be used
     if (effective_scale < 1.000f) {
-        ApplySkinSmoothingWithProcessingScale(frame_bgr, regions, landmarks, blendshapes);
+        ApplySkinSmoothingWithProcessingScale(frame_bgr, regions, landmarks, wrinkle_mask);
     } else {
         // Full resolution processing
         SkinSmoothingConfig config = CreateSkinSmoothingConfig();
-        FacialExpressionMetrics metrics = ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks, blendshapes);
+        FacialExpressionMetrics metrics = ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks, wrinkle_mask);
         // Store metrics for debug display
         state_.last_facial_metrics = metrics;
     }
@@ -360,19 +427,22 @@ void EffectsManager::Cleanup() {
     // Reset state
     state_ = EffectsState{};
     beauty_state_ = BeautyState{};
-    
+    if (wrinkle_segmenter_) {
+        wrinkle_segmenter_ = std::make_unique<WrinkleSegmenter>();
+    }
+
     std::cout << "✅ Effects Manager cleanup completed" << std::endl;
 }
 
 // Processing scale optimization for skin smoothing
-void EffectsManager::ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, const FaceRegions& regions, 
+void EffectsManager::ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, const FaceRegions& regions,
                                                           const mediapipe::NormalizedLandmarkList& landmarks,
-                                                          const mediapipe::ClassificationList* blendshapes) {
+                                                          const cv::Mat& wrinkle_mask) {
     // Delegate to face processor with current beauty state
-    face_processor_->ApplySkinSmoothingWithProcessingScale(frame_bgr, regions, landmarks, beauty_state_, blendshapes);
+    face_processor_->ApplySkinSmoothingWithProcessingScale(frame_bgr, regions, landmarks, beauty_state_, wrinkle_mask);
     
     // Extract and store facial metrics for debug display
-    FacialExpressionMetrics metrics = ExtractFacialExpressions(&landmarks, frame_bgr.cols, frame_bgr.rows, blendshapes);
+    FacialExpressionMetrics metrics = ExtractFacialExpressions(&landmarks, frame_bgr.cols, frame_bgr.rows);
     state_.last_facial_metrics = metrics;
 }
 

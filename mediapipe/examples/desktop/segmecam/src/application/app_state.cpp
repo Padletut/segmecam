@@ -13,7 +13,8 @@ void AppState::SaveToProfile(cv::FileStorage& fs) const {
   fs << "bg_path" << bg_path_buf;
   fs << "show_landmarks" << (int)show_landmarks << "lm_roi_mode" << (int)lm_roi_mode << "lm_apply_rot" << (int)lm_apply_rot
       << "lm_flip_x" << (int)lm_flip_x << "lm_flip_y" << (int)lm_flip_y << "lm_swap_xy" << (int)lm_swap_xy
-      << "show_mesh" << (int)show_mesh << "show_mesh_dense" << (int)show_mesh_dense << "show_facemask" << (int)show_facemask;
+      << "show_mesh" << (int)show_mesh << "show_mesh_dense" << (int)show_mesh_dense
+      << "show_facemask" << (int)show_facemask << "show_wrinkle_segmentation" << (int)show_wrinkle_segmentation;
   fs << "fx_skin" << (int)fx_skin << "fx_skin_adv" << (int)fx_skin_adv << "fx_skin_strength" << fx_skin_strength
       << "fx_skin_amount" << fx_skin_amount << "fx_skin_radius" << fx_skin_radius << "fx_skin_tex" << fx_skin_tex << "fx_skin_edge" << fx_skin_edge
       << "fx_adv_scale" << fx_adv_scale << "fx_adv_detail_preserve" << fx_adv_detail_preserve;
@@ -48,6 +49,7 @@ void AppState::LoadDisplaySettings(const cv::FileNode& root) {
   vsync_on = ReadInt(root["vsync_on"], vsync_on);
   show_mask = ReadInt(root["show_mask"], show_mask);
   show_facemask = ReadInt(root["show_facemask"], show_facemask);
+  show_wrinkle_segmentation = ReadInt(root["show_wrinkle_segmentation"], show_wrinkle_segmentation);
 }
 
 void AppState::LoadBackgroundSettings(const cv::FileNode& root) {

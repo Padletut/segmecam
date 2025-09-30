@@ -6,7 +6,6 @@
 #include <vector>
 #include <cstdint>
 #include "include/camera/vcam.h"
-#include "mediapipe/framework/formats/classification.pb.h"
 #include "effects/advanced_skin_effects.h"
 
 namespace segmecam {
@@ -52,9 +51,6 @@ struct AppState {
   cv::Mat last_mask_u8;  // cache latest mask to avoid blocking
   cv::Mat last_display_rgb;
   
-  // Latest blendshapes for facial expression analysis
-  std::unique_ptr<mediapipe::ClassificationList> last_blendshapes;
-  
   // Latest facial expression metrics for debug display
   FacialExpressionMetrics last_facial_metrics;
   
@@ -76,7 +72,7 @@ struct AppState {
   float fx_skin_smile_boost = 0.6f;
   float fx_skin_squint_boost = 0.5f;
   float fx_skin_forehead_boost = 0.8f;
-  float fx_skin_wrinkle_gain = 0.3f;
+  float fx_skin_wrinkle_gain = 1.5f;
   float fx_skin_smile_wrinkle_gain = 1.0f;
   bool fx_wrinkle_suppress_lower = false;
   float fx_wrinkle_lower_ratio = 0.45f;
@@ -110,7 +106,7 @@ struct AppState {
   bool show_mesh = false;
   bool show_mesh_dense = false;
   bool show_facemask = false;
-  bool show_blendshapes_debug = false; // Show blendshape debug overlay
+  bool show_wrinkle_segmentation = false;
   bool lm_roi_mode = false;
   bool lm_apply_rot = true;
   bool lm_flip_x = false;

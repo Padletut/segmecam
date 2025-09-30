@@ -139,6 +139,7 @@ struct ConfigData {
         bool show_mesh = false;
         bool show_mesh_dense = false;
         bool show_facemask = false;
+        bool show_wrinkle_segmentation = false;
     } display;
     
     // Background settings

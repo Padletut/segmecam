@@ -89,7 +89,7 @@ bool BeautyPanel::RenderWrinkleControls() {
         ImGui::Indent();
 
         // Sensitivity & boosts
-        changed |= ImGui::SliderFloat("Wrinkle gain", &state_.fx_skin_wrinkle_gain, 0.0f, 1.0f);
+        changed |= ImGui::SliderFloat("Wrinkle gain", &state_.fx_skin_wrinkle_gain, 0.0f, 8.0f);
         changed |= ImGui::SliderFloat("Smile Wrinkle Suppression", &state_.fx_skin_smile_wrinkle_gain, 0.0f, 1.0f);
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             std::cout << "[DEBUG] UI: Smile Wrinkle Suppression changed to " << state_.fx_skin_smile_wrinkle_gain << std::endl;

@@ -160,6 +160,7 @@ void ProfileManager::LoadDisplaySettings(const ConfigData& config) {
     state_.show_mesh = config.display.show_mesh;
     state_.show_mesh_dense = config.display.show_mesh_dense;
     state_.show_facemask = config.display.show_facemask;
+    state_.show_wrinkle_segmentation = config.display.show_wrinkle_segmentation;
 }
 
 void ProfileManager::LoadBackgroundSettings(const ConfigData& config) {
@@ -298,6 +299,7 @@ void ProfileManager::SaveDisplaySettings(ConfigData& config) {
     config.display.show_mesh = state_.show_mesh;
     config.display.show_mesh_dense = state_.show_mesh_dense;
     config.display.show_facemask = state_.show_facemask;
+    config.display.show_wrinkle_segmentation = state_.show_wrinkle_segmentation;
 }
 
 void ProfileManager::SaveBackgroundSettings(ConfigData& config) {

@@ -67,7 +67,6 @@ private:
     std::unique_ptr<mediapipe::OutputStreamPoller> mask_poller_;   // Output stream poller for masks
     std::unique_ptr<mediapipe::OutputStreamPoller> multi_face_landmarks_poller_;  // Face landmarks poller
     std::unique_ptr<mediapipe::OutputStreamPoller> face_rects_poller_;             // Face rects poller
-    std::unique_ptr<mediapipe::OutputStreamPoller> face_blendshapes_poller_;       // Face blendshapes poller
     ManagerCoordination::Managers managers_;
     AppState app_state_;  // Shared app state for manager coordination
 

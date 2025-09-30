@@ -238,7 +238,6 @@ cc_library( # type: ignore
         "//third_party/imgui:imgui_lib",
         "//third_party/imgui:imgui_impl_sdl2",
         "//third_party/imgui:imgui_impl_opengl3",
-        "//mediapipe/tasks/cc/vision/face_landmarker:face_blendshapes_graph",
         "//mediapipe/calculators/core:split_vector_calculator",
         "//mediapipe/calculators/core:split_vector_calculator_cc_proto",
     ],
@@ -626,6 +625,19 @@ cc_library( # type: ignore
     copts = ["-I/usr/include/opencv4"],
 )
 
+cc_library( # type: ignore
+    name = "wrinkle_segmenter",
+    srcs = ["src/effects/wrinkle_segmenter.cpp"],
+    hdrs = ["include/effects/wrinkle_segmenter.h"],
+    includes = [".", "include"],
+    deps = [
+        ":face_regions",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+    ],
+    copts = ["-I/usr/include/opencv4"],
+)
+
 # Face Effects Manager Library (Phase 5 Refactoring)
 cc_library( # type: ignore
     name = "effects_manager",
@@ -638,6 +650,7 @@ cc_library( # type: ignore
         ":effects_config",
         ":face_processor",
         ":advanced_skin_effects",
+        ":wrinkle_segmenter",
         ":segmecam_composite",
         ":segmecam_face_effects",
         ":presets",
@@ -646,7 +659,6 @@ cc_library( # type: ignore
         "//mediapipe/framework/port:opencv_imgproc",
         "//mediapipe/framework/port:opencv_highgui",
         "//mediapipe/tasks/cc/vision/face_landmarker:face_landmarks_connections",
-        "//mediapipe/tasks/cc/vision/face_landmarker:face_blendshapes_graph",
     ],
     copts = [
         "-I/usr/include/opencv4",
@@ -655,6 +667,7 @@ cc_library( # type: ignore
         "-lopencv_core",
         "-lopencv_imgproc",
         "-lopencv_highgui",
+        "-lopencv_dnn",
     ],
 )
 
@@ -714,7 +727,6 @@ cc_library( # type: ignore
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
         "//mediapipe/tasks/cc/vision/face_landmarker:face_landmarks_connections",
-        "//mediapipe/tasks/cc/vision/face_landmarker:face_blendshapes_graph",
     ],
     copts = ["-I/usr/include/opencv4"],
 )

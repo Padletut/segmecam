@@ -97,23 +97,109 @@ cv::Rect GetEyesBoundingRect(const FaceRegions& fr) {
 void AddNasolabialBoost(cv::Mat& boost, const FacialExpressionMetrics& metrics, float smile_boost) {
   if (smile_boost <= 0.0f) return;
 
+  float smile = std::clamp(metrics.smile_factor, 0.0f, 1.0f);
+  float left_energy = std::clamp(std::max(smile, metrics.cheek_squint_left), 0.0f, 1.0f);
+  float right_energy = std::clamp(std::max(smile, metrics.cheek_squint_right), 0.0f, 1.0f);
+  if (left_energy <= 0.0f && right_energy <= 0.0f) return;
+
   cv::Mat mask = cv::Mat::zeros(boost.size(), CV_32F);
-  // Use mouth corners as nasolabial fold approximation
-  cv::circle(mask, metrics.mouth_left, 12, cv::Scalar(smile_boost), cv::FILLED);
-  cv::circle(mask, metrics.mouth_right, 12, cv::Scalar(smile_boost), cv::FILLED);
-  cv::GaussianBlur(mask, mask, cv::Size(0,0), 8.0);
+  float mouth_width = (float)std::hypot((double)metrics.mouth_left.x - metrics.mouth_right.x,
+                                       (double)metrics.mouth_left.y - metrics.mouth_right.y);
+  if (mouth_width < 1.0f) {
+    mouth_width = boost.cols * 0.18f; // fall back to proportional width when landmarks are degenerate
+  }
+
+  auto draw_cheek = [&](const cv::Point& mouth_corner,
+                        const cv::Point& reference,
+                        float energy) {
+    if (energy <= 0.0f) return;
+
+    cv::Point2f dir = cv::Point2f((float)mouth_corner.x - reference.x,
+                                  (float)mouth_corner.y - reference.y);
+    float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+    if (len < 1.0f) {
+      dir = cv::Point2f((mouth_corner.x < boost.cols / 2) ? -1.0f : 1.0f, 0.25f);
+      len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+    }
+    dir *= 1.0f / len;
+
+    float reach = mouth_width * (0.45f + 0.35f * energy);
+    cv::Point2f center = cv::Point2f((float)mouth_corner.x, (float)mouth_corner.y) + dir * reach * 0.75f;
+
+    cv::Point2f normal(-dir.y, dir.x);
+    center += normal * mouth_width * (0.10f + 0.12f * energy);
+
+    cv::Size axes(
+        (int)std::max(12.0f, reach * (0.9f + 0.4f * energy)),
+        (int)std::max(10.0f, mouth_width * (0.35f + 0.35f * energy)));
+
+    double angle = std::atan2(dir.y, dir.x) * 180.0 / CV_PI;
+    float amplitude = smile_boost * (0.7f + 0.3f * energy);
+
+    auto draw_ellipse = [&](cv::Point2f c, cv::Size ellipse_axes, float amp, double angle_deg) {
+      cv::Point center_pt((int)std::round(std::clamp(c.x, 0.0f, (float)(boost.cols - 1))),
+                          (int)std::round(std::clamp(c.y, 0.0f, (float)(boost.rows - 1))));
+      ellipse_axes.width = std::max(1, ellipse_axes.width);
+      ellipse_axes.height = std::max(1, ellipse_axes.height);
+      cv::ellipse(mask, center_pt, ellipse_axes, angle_deg, 0.0, 360.0, cv::Scalar(amp), cv::FILLED);
+    };
+
+    draw_ellipse(center, axes, amplitude, angle);
+
+    cv::Point2f center_lower = center + cv::Point2f(0.0f, mouth_width * (0.18f + 0.12f * energy));
+    cv::Size lower_axes(axes.width, (int)std::max(6.0f, axes.height * 0.75f));
+    draw_ellipse(center_lower, lower_axes, amplitude * 0.85f, angle);
+  };
+
+  draw_cheek(metrics.mouth_left, metrics.nose_left, left_energy);
+  draw_cheek(metrics.mouth_right, metrics.nose_right, right_energy);
+
+  cv::GaussianBlur(mask, mask, cv::Size(0,0), 9.0);
   boost = cv::max(boost, mask);
 }
 
 void AddSquintBoost(cv::Mat& boost, const FacialExpressionMetrics& metrics, float squint_boost, float eff_squint) {
   if (squint_boost <= 0.0f || eff_squint <= 0.0f) return;
 
-  cv::Mat mask = cv::Mat::zeros(boost.size(), CV_32F);
-  // Boost outer eye corners when squinting
-  cv::circle(mask, metrics.eye_left_outer, 8, cv::Scalar(squint_boost * eff_squint), cv::FILLED);
-  cv::circle(mask, metrics.eye_right_outer, 8, cv::Scalar(squint_boost * eff_squint), cv::FILLED);
-  cv::GaussianBlur(mask, mask, cv::Size(0,0), 6.0);
-  boost = cv::max(boost, mask);
+  auto draw_crows_feet = [&](const cv::Point& outer, const cv::Point& inner, float cheeki) {
+    cv::Mat mask = cv::Mat::zeros(boost.size(), CV_32F);
+    cv::Point2f dir = cv::Point2f((float)outer.x - inner.x, (float)outer.y - inner.y);
+    float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+    if (len < 1.0f) len = 1.0f;
+    dir *= (1.0f / len);
+    cv::Point2f normal(-dir.y, dir.x);
+
+    float base_major = len * 0.9f;
+    float base_minor = len * 0.4f;
+    float energy = std::clamp(eff_squint + cheeki * 0.7f, 0.0f, 1.0f);
+
+    cv::Point2f center = cv::Point2f((float)outer.x, (float)outer.y) + dir * (len * (0.35f + 0.25f * energy))
+                         + normal * (len * (0.10f + 0.15f * energy));
+
+    cv::Size axes(
+        std::max(6, (int)std::round(base_major * (0.8f + 0.6f * energy))),
+        std::max(4, (int)std::round(base_minor * (0.7f + 0.5f * energy))));
+
+    double angle = std::atan2(dir.y, dir.x) * 180.0 / CV_PI;
+    float amplitude = squint_boost * (0.8f + 0.5f * energy);
+
+    cv::Point center_pt((int)std::round(std::clamp(center.x, 0.0f, (float)(boost.cols - 1))),
+                        (int)std::round(std::clamp(center.y, 0.0f, (float)(boost.rows - 1))));
+    cv::ellipse(mask, center_pt, axes, angle, -40.0, 40.0, cv::Scalar(amplitude), cv::FILLED);
+
+    // Secondary flare slightly lower to cover cheek transition
+    cv::Point2f center_lower = center + normal * (len * (0.08f + 0.08f * energy)) + cv::Point2f(0.0f, len * 0.15f);
+    cv::Size axes_lower(std::max(5, (int)(axes.width * 0.9f)), std::max(4, (int)(axes.height * 0.9f)));
+    cv::Point center_lower_pt((int)std::round(std::clamp(center_lower.x, 0.0f, (float)(boost.cols - 1))),
+                              (int)std::round(std::clamp(center_lower.y, 0.0f, (float)(boost.rows - 1))));
+    cv::ellipse(mask, center_lower_pt, axes_lower, angle + 12.0, -30.0, 50.0, cv::Scalar(amplitude * 0.75f), cv::FILLED);
+
+    cv::GaussianBlur(mask, mask, cv::Size(0,0), 5.0);
+    boost = cv::max(boost, mask);
+  };
+
+  draw_crows_feet(metrics.eye_left_outer, metrics.eye_left_inner, metrics.cheek_squint_left);
+  draw_crows_feet(metrics.eye_right_outer, metrics.eye_right_inner, metrics.cheek_squint_right);
 }
 
 void AddForeheadBoost(cv::Mat& boost, const cv::Mat& frame_bgr, const FaceRegions& fr,
@@ -148,6 +234,62 @@ void AddForeheadBoost(cv::Mat& boost, const cv::Mat& frame_bgr, const FaceRegion
   // Scale by boost factor and place in boost map
   cv::Mat scaled_grad; grad_y.convertTo(scaled_grad, CV_32F, forehead_boost);
   scaled_grad.copyTo(boost(forehead_rect));
+}
+
+void ApplyCheekWrinkleInpaint(cv::Mat& Lf,
+                              const cv::Mat& boost_final,
+                              const cv::Mat& wrinkle_mask,
+                              float strength) {
+  strength = std::clamp(strength, 0.0f, 1.0f);
+  if (strength <= 0.05f) return;
+  if (Lf.empty() || boost_final.empty() || wrinkle_mask.empty()) return;
+
+  cv::Mat combined;
+  cv::multiply(boost_final, wrinkle_mask, combined);
+  double max_val = 0.0;
+  cv::minMaxLoc(combined, nullptr, &max_val);
+  if (max_val < 1e-4) return;
+
+  cv::Mat combined_norm;
+  combined.convertTo(combined_norm, CV_32F, 1.0f / (float)max_val);
+  cv::GaussianBlur(combined_norm, combined_norm, cv::Size(0,0), 1.4);
+  cv::pow(combined_norm, 0.8, combined_norm);
+  cv::Mat binary;
+  cv::threshold(combined_norm, binary, 0.18f, 1.0f, cv::THRESH_BINARY);
+  binary.convertTo(binary, CV_8U, 255.0);
+
+  int dilate_radius = std::max(1, (int)std::round(4 + strength * 6));
+  cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(dilate_radius * 2 + 1, dilate_radius * 2 + 1));
+  cv::dilate(binary, binary, kernel);
+  cv::GaussianBlur(binary, binary, cv::Size(0, 0), 2.0);
+  cv::threshold(binary, binary, 18, 255, cv::THRESH_BINARY);
+
+  if (cv::countNonZero(binary) == 0) return;
+
+  cv::Rect roi = cv::boundingRect(binary);
+  if (roi.width <= 0 || roi.height <= 0) return;
+
+  cv::Mat L8;
+  Lf.convertTo(L8, CV_8U, 255.0);
+  cv::Mat L_roi = L8(roi).clone();
+  cv::Mat mask_roi = binary(roi).clone();
+  cv::Mat inpaint_roi;
+  double radius = 4.0 + strength * 8.0;
+  cv::inpaint(L_roi, mask_roi, inpaint_roi, radius, cv::INPAINT_TELEA);
+
+  cv::Mat inpaint_float;
+  inpaint_roi.convertTo(inpaint_float, CV_32F, 1.0f/255.0f);
+  cv::Mat Lf_roi = Lf(roi);
+  cv::Mat mask_f;
+  mask_roi.convertTo(mask_f, CV_32F, 1.0f/255.0f);
+  cv::GaussianBlur(mask_f, mask_f, cv::Size(0,0), 1.7);
+  cv::Mat blend_mask;
+  float blend_gain = std::clamp(0.55f + strength * 0.45f, 0.55f, 1.1f);
+  cv::multiply(mask_f, cv::Scalar(blend_gain), blend_mask);
+  cv::Mat inv_mask;
+  cv::subtract(1.0f, blend_mask, inv_mask);
+  cv::Mat blended = Lf_roi.mul(inv_mask) + inpaint_float.mul(blend_mask);
+  blended.copyTo(Lf_roi);
 }
 
 // Helper functions for BuildWrinkleLineMask
@@ -410,9 +552,8 @@ cv::Mat ApplyPercentileThreshold(cv::Mat wr, const cv::Mat& base_f, const cv::Ma
 }
 
 // Helper functions for ApplySkinSmoothingAdvBGR
-FacialExpressionMetrics ExtractFacialExpressions(const mediapipe::NormalizedLandmarkList* lms, 
-                                               int width, int height,
-                                               const mediapipe::ClassificationList* blendshapes) {
+FacialExpressionMetrics ExtractFacialExpressions(const mediapipe::NormalizedLandmarkList* lms,
+                                               int width, int height) {
   FacialExpressionMetrics metrics = {
     0.0f, 0.0f,  // smile_factor, squint_factor
     {0,0}, {0,0}, // mouth_left, mouth_right
@@ -465,46 +606,47 @@ FacialExpressionMetrics ExtractFacialExpressions(const mediapipe::NormalizedLand
   double smile_ratio = (eyeSpan > 1.0) ? (mouthW/eyeSpan) : 0.0;
   metrics.smile_factor = (float)std::clamp((smile_ratio - 0.35) / 0.20, 0.0, 1.0);
 
-  // Extract blendshape values if available
-  if (blendshapes) {
-    auto get_blendshape = [&](const std::string& name) -> float {
-      for (int i = 0; i < blendshapes->classification_size(); ++i) {
-        const auto& c = blendshapes->classification(i);
-        if (c.label() == name) {
-          return c.score();
-        }
-      }
-      return 0.0f;
-    };
+  // Heuristic expression estimation derived from face geometry only.
+  auto normalized_eye_ratio = [](double h, double w) -> float {
+    if (w <= 0.0) return 0.0f;
+    float ratio = static_cast<float>(h / w);
+    // Typical neutral eye ratio ~0.3, squinting reduces height.
+    float squint = 1.0f - std::clamp((ratio - 0.12f) / 0.28f, 0.0f, 1.0f);
+    return std::clamp(squint, 0.0f, 1.0f);
+  };
 
-  // Brow expressions for forehead wrinkles
-  metrics.brow_furrow_factor = get_blendshape("browDownLeft") + get_blendshape("browDownRight");
-  metrics.brow_inner_up = get_blendshape("browInnerUp");
-  metrics.brow_outer_up_left = get_blendshape("browOuterUpLeft");
-  metrics.brow_outer_up_right = get_blendshape("browOuterUpRight");
+  metrics.eye_squint_left = normalized_eye_ratio(leftH, leftW);
+  metrics.eye_squint_right = normalized_eye_ratio(rightH, rightW);
+  metrics.eye_blink_left = metrics.eye_squint_left;
+  metrics.eye_blink_right = metrics.eye_squint_right;
+  metrics.squint_factor = 0.5f * (metrics.eye_squint_left + metrics.eye_squint_right);
 
-  // Eye expressions for eye wrinkles
-  metrics.eye_squint_left = get_blendshape("eyeSquintLeft");
-  metrics.eye_squint_right = get_blendshape("eyeSquintRight");
-  metrics.eye_blink_left = get_blendshape("eyeBlinkLeft");
-  metrics.eye_blink_right = get_blendshape("eyeBlinkRight");
+  // Approximate cheek engagement from smile amount.
+  metrics.cheek_squint_left = metrics.smile_factor;
+  metrics.cheek_squint_right = metrics.smile_factor;
 
-  // Cheek expressions for nasolabial folds
-  metrics.cheek_squint_left = get_blendshape("cheekSquintLeft");
-  metrics.cheek_squint_right = get_blendshape("cheekSquintRight");
+  // Brow heuristics derived from vertical offsets between brow and eye landmarks.
+  auto brow_height = [&](int brow_idx, int eye_idx) {
+    cv::Point brow = pt(brow_idx);
+    cv::Point eye = pt(eye_idx);
+    return static_cast<float>(std::clamp(eye.y - brow.y, -height, height)) / std::max(1, height);
+  };
 
-  // Mouth expressions for additional cheek wrinkle detection
-  metrics.mouth_pucker = get_blendshape("mouthPucker");
-  metrics.mouth_left_expr = get_blendshape("mouthLeft");
-  metrics.mouth_right_expr = get_blendshape("mouthRight");
-  metrics.mouth_upper_up_left = get_blendshape("mouthUpperUpLeft");
-  metrics.mouth_upper_up_right = get_blendshape("mouthUpperUpRight");
+  float inner_brow_delta = brow_height(67, 159);  // approximate inner brow vs left eye top
+  float outer_brow_left_delta = brow_height(52, 133);
+  float outer_brow_right_delta = brow_height(282, 362);
 
-  // Use blendshape-based smile detection (more accurate than geometric)
-  // mouthUpperUpLeft and mouthUpperUpRight are strong indicators of smiling
-  float mouth_upper_avg = (metrics.mouth_upper_up_left + metrics.mouth_upper_up_right) * 0.5f;
-  metrics.smile_factor = std::clamp(mouth_upper_avg, 0.0f, 1.0f);
-  }
+  metrics.brow_inner_up = std::clamp(-inner_brow_delta * 4.0f, 0.0f, 1.0f);
+  metrics.brow_outer_up_left = std::clamp(-outer_brow_left_delta * 4.0f, 0.0f, 1.0f);
+  metrics.brow_outer_up_right = std::clamp(-outer_brow_right_delta * 4.0f, 0.0f, 1.0f);
+  metrics.brow_furrow_factor = std::clamp((metrics.brow_inner_up * 0.6f) - metrics.smile_factor * 0.2f, 0.0f, 1.0f);
+
+  // Mouth expression heuristics from mouth corners movement.
+  metrics.mouth_left_expr = std::clamp((float)(metrics.mouth_left.x - metrics.nose_left.x) / std::max(1.0f, (float)width) + 0.5f, 0.0f, 1.0f);
+  metrics.mouth_right_expr = std::clamp((float)(metrics.nose_right.x - metrics.mouth_right.x) / std::max(1.0f, (float)width) + 0.5f, 0.0f, 1.0f);
+  metrics.mouth_pucker = std::clamp(1.0f - metrics.smile_factor, 0.0f, 1.0f);
+  metrics.mouth_upper_up_left = metrics.smile_factor;
+  metrics.mouth_upper_up_right = metrics.smile_factor;
 
   return metrics;
 }
@@ -702,6 +844,7 @@ void ApplyFrequencySeparation(cv::Mat& Lf, const cv::Mat& weight, float amount, 
   }
 
   // Create low-frequency base via Gaussian blur
+  cv::Mat Lf_original = Lf.clone();
   cv::Mat base_blur;
   cv::GaussianBlur(Lf, base_blur, cv::Size(0, 0), 3.0); // 3px sigma for low-frequency base
 
@@ -719,7 +862,15 @@ void ApplyFrequencySeparation(cv::Mat& Lf, const cv::Mat& weight, float amount, 
 
   // Attenuate detail by amount * weight, with optional wrinkle-aware boost
   cv::Mat atten;
-  cv::multiply(weight, cv::Scalar(amount), atten); // CV_32F (base smoothing)
+  cv::Mat base_strength;
+  cv::multiply(weight, cv::Scalar(amount * 0.25f), base_strength);
+  if (!boost_final.empty()) {
+    cv::Mat selective_strength;
+    cv::multiply(boost_final, cv::Scalar(amount * 0.75f), selective_strength);
+    cv::add(base_strength, selective_strength, atten);
+  } else {
+    base_strength.copyTo(atten);
+  }
   if (wrinkle_preview) {
     // In preview: show only wrinkle attenuation, no base smoothing
     cv::multiply(boost_final, cv::Scalar(boost_gain), atten);
@@ -738,22 +889,77 @@ void ApplyFrequencySeparation(cv::Mat& Lf, const cv::Mat& weight, float amount, 
   } else {
     cv::multiply(weight, cv::Scalar(amount * 0.15f), pos_atten);
   }
-  // Stronger attenuation on negative detail (wrinkle shadows), clamped to user cap
-  float cap = std::clamp(neg_atten_cap, 0.4f, 1.0f);
+  // Stronger attenuation on negative detail (wrinkle shadows), with dynamic per-pixel cap
+  float cap_scalar = std::clamp(neg_atten_cap, 0.4f, 1.0f);
+  cv::Mat cap_map(atten.size(), CV_32F, cv::Scalar(cap_scalar));
+  if (!boost_final.empty()) {
+    cv::Mat cap_boost;
+    cv::multiply(boost_final, cv::Scalar(1.0f - cap_scalar), cap_boost);
+    cv::add(cap_map, cap_boost, cap_map);
+  }
   cv::Mat neg_atten;
-  cv::min(atten, cap, neg_atten);
+  cv::min(atten, cap_map, neg_atten);
 
   // Type-safe combination: base + attenuated positive detail + attenuated negative detail
   cv::Mat pos_contrib, neg_contrib;
   cv::Mat pos_atten_inv, neg_atten_inv;
   cv::subtract(1.0f, pos_atten, pos_atten_inv);
-  cv::subtract(1.0f, neg_atten, neg_atten_inv);
+  float retention_floor = std::clamp(0.03f + (1.0f - amount) * 0.05f, 0.03f, 0.10f);
+  float retention_ceiling = std::clamp(0.18f + (1.0f - amount) * 0.25f, 0.18f, 0.45f);
+  cv::Mat retention_map;
+  if (!boost_final.empty()) {
+    cv::Mat inv_boost;
+    cv::subtract(cv::Scalar(1.0f), boost_final, inv_boost);
+    cv::Mat span;
+    cv::multiply(inv_boost, cv::Scalar(retention_ceiling - retention_floor), span);
+    cv::add(span, cv::Scalar(retention_floor), retention_map);
+  } else {
+    retention_map = cv::Mat(neg_atten.size(), CV_32F, cv::Scalar(retention_ceiling));
+  }
+  cv::Mat ones = cv::Mat::ones(retention_map.size(), CV_32F);
+  cv::Mat one_minus_retention;
+  cv::subtract(ones, retention_map, one_minus_retention);
+  cv::Mat scaled_neg_atten;
+  cv::multiply(neg_atten, one_minus_retention, scaled_neg_atten);
+  cv::subtract(ones, scaled_neg_atten, neg_atten_inv);
+  cv::max(neg_atten_inv, retention_map, neg_atten_inv);
   cv::multiply(detail_pos, pos_atten_inv, pos_contrib);
   cv::multiply(detail_neg, neg_atten_inv, neg_contrib);
   
   cv::Mat outL;
   cv::add(base_blur, pos_contrib, outL);
   cv::add(outL, neg_contrib, outL);
+
+  // Restore a portion of original highlight detail to avoid flat, plastic look
+  float highlight_restore = std::clamp(0.15f + (1.0f - amount) * 0.25f, 0.15f, 0.4f);
+  if (!weight.empty() && highlight_restore > 0.0f) {
+    cv::Mat orig_detail;
+    cv::subtract(Lf_original, base_blur, orig_detail);
+    cv::Mat orig_highlights = cv::max(orig_detail, 0.0f);
+    cv::Mat highlight_masked;
+    cv::multiply(orig_highlights, weight, highlight_masked);
+    if (!boost_final.empty()) {
+      cv::multiply(highlight_masked, boost_final, highlight_masked);
+    }
+    cv::Mat highlight_contrib;
+    cv::multiply(highlight_masked, cv::Scalar(highlight_restore), highlight_contrib);
+    cv::add(outL, highlight_contrib, outL);
+  }
+
+  if (!boost_final.empty()) {
+    cv::Mat orig_detail;
+    cv::subtract(Lf_original, base_blur, orig_detail);
+    cv::Mat orig_shadows = cv::max(-orig_detail, 0.0f);
+    cv::Mat shadow_mask;
+    cv::multiply(orig_shadows, boost_final, shadow_mask);
+    float brighten = std::clamp(amount * 0.06f, 0.0f, 0.08f);
+    if (brighten > 1e-5f) {
+      cv::Mat brighten_term;
+      cv::multiply(shadow_mask, cv::Scalar(brighten), brighten_term);
+      cv::add(outL, brighten_term, outL);
+    }
+  }
+
   cv::min(outL, 1.0f, outL);
   cv::max(outL, 0.0f, outL);
   outL.copyTo(Lf);
@@ -1165,9 +1371,15 @@ void ApplyMultiFrequencyTexturePreservation(cv::Mat& frame_bgr, const cv::Mat& s
   cv::multiply(high_freq2, inv_wrinkle_mask, high_freq2_mul_inv);
   cv::add(high_freq1_mul_wrinkle, high_freq2_mul_inv, preserved_texture);
 
-  // Reconstruct with controlled smoothing
+  // Reconstruct with controlled smoothing that respects the requested amount.
+  // When a wrinkle mask carries signal we treat it like wrinkle-aware mode.
   cv::Mat texture_weight;
-  cv::multiply(preserved_texture, cv::Scalar(0.3f + amount * 0.4f), texture_weight);
+  double wrinkle_signal = cv::sum(wrinkle_mask_f)[0];
+  bool wrinkle_guided = wrinkle_signal > 1e-5;
+  float texture_mix = wrinkle_guided ? (0.18f + amount * 0.42f)
+                                     : (amount * 0.65f);
+  texture_mix = std::clamp(texture_mix, 0.0f, 0.75f);
+  cv::multiply(preserved_texture, cv::Scalar(texture_mix), texture_weight);
   cv::Mat smoothed;
   cv::add(low_freq2, texture_weight, smoothed);
 
@@ -1235,12 +1447,12 @@ void ApplySkinToneEnhancementToLuminance(cv::Mat& Lf, const cv::Mat& skin_mask, 
 
   // Enhance luminance slightly for brighter, more even skin
   cv::Mat l_diff, l_boost;
-  cv::subtract(Lf, 128.0, l_diff);
+  cv::subtract(Lf, 0.5f, l_diff);
   cv::multiply(l_diff, cv::Scalar(amount * 0.1f), l_boost);
   cv::Mat l_enhanced;
   cv::add(Lf, l_boost, l_enhanced);
-  cv::min(l_enhanced, 255.0, l_enhanced);
-  cv::max(l_enhanced, 0.0, l_enhanced);
+  cv::min(l_enhanced, 1.0f, l_enhanced);
+  cv::max(l_enhanced, 0.0f, l_enhanced);
 
   // Apply only to skin areas
   cv::Mat skin_mask_f;
@@ -1330,9 +1542,11 @@ void ApplyMultiFrequencyTexturePreservationToLuminance(cv::Mat& Lf, const cv::Ma
 void ApplySnapchatStyleSmoothing(cv::Mat& frame_bgr, const cv::Mat& refined_face_mask,
                                 const FaceRegions& fr, const SkinSmoothingConfig& config,
                                 const FacialExpressionMetrics& metrics, cv::Mat& Lf, cv::Mat& base,
-                                const cv::Mat& weight) {
+                                const cv::Mat& weight, const cv::Mat& wrinkle_mask_override) {
 
   float amount = std::clamp(config.amount, 0.0f, 1.0f);
+  float tuned_amount = std::pow(amount, 2.2f);
+  float wrinkle_scale = config.wrinkle_enabled ? 1.0f : 0.55f;
 
   // Validate input matrices
   if (refined_face_mask.empty() || Lf.empty() || base.empty() || weight.empty()) {
@@ -1362,35 +1576,48 @@ void ApplySnapchatStyleSmoothing(cv::Mat& frame_bgr, const cv::Mat& refined_face
 
   // Layer 1: Targeted bilateral filtering for general skin smoothing
   // This provides the "polished" look Snapchat is known for
-  ApplyTargetedBilateralFilterToLuminance(Lf, refined_face_mask, amount * 0.6f);
+  ApplyTargetedBilateralFilterToLuminance(Lf, refined_face_mask, tuned_amount * 0.7f * wrinkle_scale);
 
   // Layer 2: Skin tone enhancement for more natural, even complexion
-  ApplySkinToneEnhancementToLuminance(Lf, refined_face_mask, amount * 0.3f);
+  ApplySkinToneEnhancementToLuminance(Lf, refined_face_mask, tuned_amount * 0.35f * wrinkle_scale);
 
   // Layer 3: Multi-frequency texture preservation
   // Build wrinkle mask for texture preservation
   cv::Mat wrinkle_mask = cv::Mat::zeros(frame_bgr.size(), CV_32F);
   if (config.wrinkle_enabled) {
-    WrinkleMaskConfig wrinkle_config{config.wrinkle.line_min_px * 0.4f, config.wrinkle.line_max_px * 2.0f,  // Very inclusive range for cheek wrinkles
-                                    false,  // Don't suppress lower face for cheek wrinkles
-                                    config.wrinkle.region_gates.lower_face_ratio,
-                                    config.wrinkle.region_gates.ignore_glasses,
-                                    config.wrinkle.region_gates.glasses_margin_px,
-                                    config.wrinkle.keep_ratio * 0.1f, config.wrinkle.use_skin_gate, config.wrinkle.mask_gain * 0.4f};  // Maximum suppression reduction for cheek areas
-    wrinkle_mask = BuildWrinkleLineMask(frame_bgr, fr, wrinkle_config);
-    if (wrinkle_mask.empty() || wrinkle_mask.size() != frame_bgr.size() || wrinkle_mask.type() != CV_32F) {
-      std::cerr << "ApplySnapchatStyleSmoothing: Invalid wrinkle_mask - empty:" << wrinkle_mask.empty()
-                << " size:" << wrinkle_mask.size() << " type:" << wrinkle_mask.type() << std::endl;
-      wrinkle_mask = cv::Mat::zeros(frame_bgr.size(), CV_32F);
+    if (!wrinkle_mask_override.empty()) {
+      if (wrinkle_mask_override.type() == CV_32F) {
+        wrinkle_mask = wrinkle_mask_override.clone();
+      } else {
+        wrinkle_mask_override.convertTo(wrinkle_mask, CV_32F, 1.0 / 255.0);
+      }
+      if (wrinkle_mask.size() != frame_bgr.size()) {
+        cv::resize(wrinkle_mask, wrinkle_mask, frame_bgr.size(), 0, 0, cv::INTER_LINEAR);
+      }
+    } else {
+      WrinkleMaskConfig wrinkle_config{config.wrinkle.line_min_px * 0.4f, config.wrinkle.line_max_px * 2.0f,
+                                      false,
+                                      config.wrinkle.region_gates.lower_face_ratio,
+                                      config.wrinkle.region_gates.ignore_glasses,
+                                      config.wrinkle.region_gates.glasses_margin_px,
+                                      config.wrinkle.keep_ratio * 0.1f,
+                                      config.wrinkle.use_skin_gate,
+                                      config.wrinkle.mask_gain * 0.4f};
+      wrinkle_mask = BuildWrinkleLineMask(frame_bgr, fr, wrinkle_config);
+      if (wrinkle_mask.empty() || wrinkle_mask.size() != frame_bgr.size() || wrinkle_mask.type() != CV_32F) {
+        std::cerr << "ApplySnapchatStyleSmoothing: Invalid wrinkle_mask - empty:" << wrinkle_mask.empty()
+                  << " size:" << wrinkle_mask.size() << " type:" << wrinkle_mask.type() << std::endl;
+        wrinkle_mask = cv::Mat::zeros(frame_bgr.size(), CV_32F);
+      }
     }
 
-  // Debug: Check wrinkle mask coverage
+    // Debug: Check wrinkle mask coverage
     cv::Scalar wrinkle_sum = cv::sum(wrinkle_mask);
     std::cout << "[DEBUG] Wrinkle mask total coverage: " << wrinkle_sum[0]
               << " (should be > 0 for wrinkle detection)" << std::endl;
   }
 
-  ApplyMultiFrequencyTexturePreservationToLuminance(Lf, refined_face_mask, wrinkle_mask, amount * 0.4f);
+  ApplyMultiFrequencyTexturePreservationToLuminance(Lf, refined_face_mask, wrinkle_mask, tuned_amount * 0.45f);
 
   // Layer 4: Advanced frequency separation with expression-based boosting
   // This handles the heavy wrinkle reduction while preserving overall skin quality
@@ -1422,10 +1649,15 @@ void ApplySnapchatStyleSmoothing(cv::Mat& frame_bgr, const cv::Mat& refined_face
   }
 
   float effective_baseline = config.baseline_boost > 0.0f ? config.baseline_boost : 0.8f; // Increased minimum baseline for maximum Snapchat smoothing
+  if (!config.wrinkle_enabled) {
+    // Keep baseline subtle when wrinkle reduction is disabled so the Amount slider remains gentle
+    float baseline_cap = std::clamp(amount * 0.6f, 0.0f, 0.6f);
+    effective_baseline = std::min(effective_baseline, baseline_cap);
+  }
 
   // Snapchat-style contrast reduction around wrinkles (subtle, not aggressive)
   if (config.wrinkle_enabled) {
-    float contrast_reduction = config.smile_wrinkle_gain * 0.05f; // Much more subtle
+    float contrast_reduction = config.smile_wrinkle_gain * 0.15f; // Much more subtle
     effective_baseline += contrast_reduction;
   }
 
@@ -1434,6 +1666,43 @@ void ApplySnapchatStyleSmoothing(cv::Mat& frame_bgr, const cv::Mat& refined_face
     std::cerr << "ApplySnapchatStyleSmoothing: Invalid boost_final - empty:" << boost_final.empty()
               << " size:" << boost_final.size() << " type:" << boost_final.type() << std::endl;
     boost_final = cv::Mat::zeros(frame_bgr.size(), CV_32F);
+  }
+
+  if (!config.wrinkle_enabled && !boost_final.empty()) {
+    // Dial back selective boosting when wrinkle helpers are off and scale by the requested amount
+    float boost_scale = std::clamp(amount * 0.65f + amount * amount * 0.35f, 0.0f, 0.55f);
+    cv::multiply(boost_final, cv::Scalar(boost_scale), boost_final);
+  }
+
+  if (config.wrinkle_enabled && !wrinkle_mask.empty()) {
+    cv::Mat mask_resized;
+    if (wrinkle_mask.size() != boost_final.size()) {
+      cv::resize(wrinkle_mask, mask_resized, boost_final.size(), 0, 0, cv::INTER_LINEAR);
+    } else {
+      mask_resized = wrinkle_mask;
+    }
+
+    if (mask_resized.type() != CV_32F) {
+      mask_resized.convertTo(mask_resized, CV_32F, 1.0f / 255.0f);
+    }
+
+    // Scale mask so it can override weak expression boosts when segmentation is confident
+    float mask_priority = std::max(0.4f, config.wrinkle.mask_gain * 0.4f);
+    cv::Mat mask_boost;
+    cv::multiply(mask_resized, cv::Scalar(mask_priority), mask_boost);
+    cv::max(boost_final, mask_boost, boost_final);
+  }
+
+  if (effective_baseline > 0.0f) {
+    cv::Mat baseline_mat(boost_final.size(), CV_32F, cv::Scalar(effective_baseline));
+    cv::subtract(boost_final, baseline_mat, boost_final);
+    cv::max(boost_final, 0.0f, boost_final);
+  }
+
+  if (config.wrinkle_enabled) {
+    float wrinkle_strength = std::max(tuned_amount, config.wrinkle.mask_gain * 0.08f);
+    wrinkle_strength = std::clamp(wrinkle_strength, 0.05f, 1.0f);
+    ApplyCheekWrinkleInpaint(Lf, boost_final, wrinkle_mask, wrinkle_strength);
   }
 
   // Basic wrinkle reduction logic (Snapchat-style) - keep this for visible smoothing
@@ -1453,15 +1722,23 @@ void ApplySnapchatStyleSmoothing(cv::Mat& frame_bgr, const cv::Mat& refined_face
   }
 
   // Apply the Snapchat-style frequency separation with MAXIMUM increased amount for complete wrinkle smoothing
-  float extreme_amount = std::min(amount * 5.0f, 1.0f);  // Quintuple the amount for maximum wrinkle coverage
-  ApplyFrequencySeparation(Lf, weight, extreme_amount, effective_boost_gain, boost_final,
+  if (!config.wrinkle_enabled) {
+    effective_boost_gain *= 0.6f;
+  }
+
+  float frequency_multiplier = config.wrinkle_enabled ? 1.0f : 0.65f;
+  float frequency_cap = config.wrinkle_enabled ? 1.0f : 0.6f;
+  float frequency_amount = std::min(tuned_amount * frequency_multiplier, frequency_cap);
+
+  ApplyFrequencySeparation(Lf, weight, frequency_amount, effective_boost_gain, boost_final,
                           config.wrinkle_enabled && config.wrinkle_preview, config.neg_atten_cap);
 }
 
 
 FacialExpressionMetrics ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceRegions& fr,
-                              const SkinSmoothingConfig& config, const mediapipe::NormalizedLandmarkList* lms,
-                              const mediapipe::ClassificationList* blendshapes) {
+                              const SkinSmoothingConfig& config,
+                              const mediapipe::NormalizedLandmarkList* lms,
+                              const cv::Mat& wrinkle_mask_input) {
 
   // Debug print for config values
   std::cout << "[DEBUG] Skin smoothing config: amount=" << config.amount
@@ -1479,7 +1756,7 @@ FacialExpressionMetrics ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceR
   }
 
   // Phase 2: Extract expressions (needed for both frequency separation and smile wrinkles)
-  FacialExpressionMetrics metrics = ExtractFacialExpressions(lms, frame_bgr.cols, frame_bgr.rows, blendshapes);
+  FacialExpressionMetrics metrics = ExtractFacialExpressions(lms, frame_bgr.cols, frame_bgr.rows);
 
   // Phase 1: Prepare data (only needed for frequency separation)
   cv::Mat weight, Lf, base;
@@ -1510,7 +1787,7 @@ FacialExpressionMetrics ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceR
     cv::Mat refined_face_mask = CreateRefinedFaceMask(fr, frame_bgr.size(), weight);
 
     // Apply multi-layer smoothing: combine bilateral + frequency separation
-    ApplySnapchatStyleSmoothing(frame_bgr, refined_face_mask, fr, config, metrics, Lf, base, weight);
+    ApplySnapchatStyleSmoothing(frame_bgr, refined_face_mask, fr, config, metrics, Lf, base, weight, wrinkle_mask_input);
   }
 
   // Phase 5: Convert back to BGR (only if we did frequency separation)

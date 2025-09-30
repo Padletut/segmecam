@@ -278,6 +278,7 @@ void ManagerCoordination::ApplyDisplaySettingsFromProfile(segmecam::AppState& ap
     app_state.show_mask = config_data.display.show_mask;
     app_state.show_landmarks = config_data.display.show_landmarks;
     app_state.show_facemask = config_data.display.show_facemask;
+    app_state.show_wrinkle_segmentation = config_data.display.show_wrinkle_segmentation;
 }
 
 void ManagerCoordination::ApplyBackgroundSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data) {

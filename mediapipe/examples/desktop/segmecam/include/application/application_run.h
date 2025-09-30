@@ -45,7 +45,6 @@ public:
      * @param mask_poller Segmentation mask output poller
      * @param multi_face_landmarks_poller Optional face landmarks poller
      * @param face_rects_poller Optional face rects poller
-     * @param face_blendshapes_poller Optional face blendshapes poller
      * @param window SDL window for rendering
      * @param app_state Application state for shared data
      * @return Exit code (0 for success, non-zero for error)
@@ -56,10 +55,11 @@ public:
         std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
         std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
         std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
-        std::unique_ptr<mediapipe::OutputStreamPoller>& face_blendshapes_poller,
         SDL_Window* window,
         AppState& app_state
-    );    /**
+    );
+
+    /**
      * Sync status FROM EffectsManager back TO app_state (e.g., OpenCL availability)
      */
     static void SyncStatusFromEffectsManager(const EffectsManager& effects_manager, AppState& app_state);

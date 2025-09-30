@@ -9,7 +9,6 @@
 #include "absl/flags/flag.h"
 #include "absl/flags/declare.h"
 
-#include "mediapipe/framework/formats/classification.pb.h"
 #include "mediapipe/framework/calculator_graph.h"
 #include "application/application_config.h"
 #include "include/mediapipe_manager/gpu_detector.h"

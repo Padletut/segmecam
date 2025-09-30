@@ -86,17 +86,37 @@ void FaceProcessor::DrawConnections(cv::Mat& frame_bgr, const mediapipe::Normali
 void FaceProcessor::ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, const FaceRegions& regions,
                                                         const mediapipe::NormalizedLandmarkList& landmarks,
                                                         const BeautyState& beauty_state,
-                                                        const mediapipe::ClassificationList* blendshapes) {
+                                                        const cv::Mat& wrinkle_mask) {
     cv::Rect roi = CalculateProcessingROI(regions, frame_bgr.size());
     if (roi.width < 8 || roi.height < 8) {
-        ApplyFullResolutionSkinSmoothing(frame_bgr, regions, landmarks, beauty_state, blendshapes);
+        ApplyFullResolutionSkinSmoothing(frame_bgr, regions, landmarks, beauty_state, wrinkle_mask);
         return;
     }
 
     FaceRegions fr_small = TransformFaceRegionsToScaledROI(regions, roi, beauty_state.fx_adv_scale);
     mediapipe::NormalizedLandmarkList lms_roi = TransformLandmarksToROI(landmarks, roi, frame_bgr.size());
 
-    ProcessAndUpsampleROI(frame_bgr, roi, fr_small, lms_roi, beauty_state, beauty_state.fx_adv_scale, blendshapes);
+    cv::Mat wrinkle_roi;
+    if (!wrinkle_mask.empty()) {
+        cv::Rect mask_bounds(0, 0, wrinkle_mask.cols, wrinkle_mask.rows);
+        cv::Rect roi_clamped = roi & mask_bounds;
+        wrinkle_roi = cv::Mat::zeros(roi.size(), CV_32F);
+        if (roi_clamped.width > 0 && roi_clamped.height > 0) {
+            cv::Rect dst_rect(roi_clamped.x - roi.x, roi_clamped.y - roi.y,
+                              roi_clamped.width, roi_clamped.height);
+            cv::Mat dst = wrinkle_roi(dst_rect);
+            cv::Mat src = wrinkle_mask(roi_clamped);
+            if (src.type() == CV_32F) {
+                src.copyTo(dst);
+            } else {
+                cv::Mat src_float;
+                src.convertTo(src_float, CV_32F, 1.0 / 255.0);
+                src_float.copyTo(dst);
+            }
+        }
+    }
+
+    ProcessAndUpsampleROI(frame_bgr, roi, fr_small, lms_roi, beauty_state, beauty_state.fx_adv_scale, wrinkle_roi);
 }
 
 cv::Rect FaceProcessor::CalculateProcessingROI(const FaceRegions& regions, const cv::Size& frame_size) {
@@ -138,11 +158,11 @@ void FaceProcessor::SetupSkinSmoothingConfig(SkinSmoothingConfig& config, const 
 void FaceProcessor::ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions,
                                                    const mediapipe::NormalizedLandmarkList& landmarks,
                                                    const BeautyState& beauty_state,
-                                                   const mediapipe::ClassificationList* blendshapes) {
+                                                   const cv::Mat& wrinkle_mask) {
     // Create config with scale = 1.0 for full resolution
     SkinSmoothingConfig config;
     SetupSkinSmoothingConfig(config, beauty_state, 1.0f);
-    FacialExpressionMetrics metrics = ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks, blendshapes);
+    FacialExpressionMetrics metrics = ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks, wrinkle_mask);
     // Note: metrics are not stored here as this is called from multiple places
     // The caller (EffectsManager) should store the metrics if needed
 }
@@ -209,11 +229,26 @@ mediapipe::NormalizedLandmarkList FaceProcessor::TransformLandmarksToROI(const m
 
 void FaceProcessor::ProcessAndUpsampleROI(cv::Mat& frame_bgr, const cv::Rect& roi, const FaceRegions& fr_small,
                                         const mediapipe::NormalizedLandmarkList& lms_roi, const BeautyState& beauty_state, float scale,
-                                        const mediapipe::ClassificationList* blendshapes) {
+                                        const cv::Mat& wrinkle_mask) {
     cv::Mat roi_bgr = frame_bgr(roi);
     cv::Mat small = DownscaleROI(roi_bgr, scale);
 
-    ApplySkinSmoothingToScaledImage(small, fr_small, lms_roi, beauty_state, scale, blendshapes);
+    cv::Mat wrinkle_scaled;
+    if (!wrinkle_mask.empty()) {
+        cv::Mat wrinkle_float;
+        if (wrinkle_mask.type() == CV_32F) {
+            wrinkle_float = wrinkle_mask;
+        } else {
+            wrinkle_mask.convertTo(wrinkle_float, CV_32F, 1.0 / 255.0);
+        }
+        if (wrinkle_float.size() != small.size()) {
+            cv::resize(wrinkle_float, wrinkle_scaled, small.size(), 0, 0, cv::INTER_AREA);
+        } else {
+            wrinkle_scaled = wrinkle_float;
+        }
+    }
+
+    ApplySkinSmoothingToScaledImage(small, fr_small, lms_roi, beauty_state, scale, wrinkle_scaled);
 
     cv::Mat up = UpsampleProcessedImage(small, roi.size());
     ApplyDetailPreservationIfNeeded(up, roi_bgr, fr_small, beauty_state);
@@ -232,11 +267,11 @@ cv::Mat FaceProcessor::DownscaleROI(const cv::Mat& roi_bgr, float scale) {
 void FaceProcessor::ApplySkinSmoothingToScaledImage(cv::Mat& small, const FaceRegions& fr_small,
                                                   const mediapipe::NormalizedLandmarkList& lms_roi,
                                                   const BeautyState& beauty_state, float scale,
-                                                  const mediapipe::ClassificationList* blendshapes) {
+                                                  const cv::Mat& wrinkle_mask) {
     SkinSmoothingConfig config;
     SetupSkinSmoothingConfig(config, beauty_state, scale);
     // For scaled processing, we don't need to store metrics
-    ApplySkinSmoothingAdvBGR(small, fr_small, config, &lms_roi, blendshapes);
+    ApplySkinSmoothingAdvBGR(small, fr_small, config, &lms_roi, wrinkle_mask);
 }
 
 cv::Mat FaceProcessor::UpsampleProcessedImage(const cv::Mat& small, const cv::Size& target_size) {
