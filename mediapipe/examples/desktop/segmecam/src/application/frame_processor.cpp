@@ -316,8 +316,8 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
         cv::cvtColor(display_bgr, display_rgb, cv::COLOR_BGR2RGB);
     }
     
-    // Add anchor point visualization if enabled (Phase 2 Step 3)
-    if (params.app_state.show_anchors && params.app_state.face_mesh_available) {
+    // Add anchor point visualization if enabled (Phase 2 Step 4: Requires transform data)
+    if (params.app_state.show_anchors && params.app_state.transform_data_available) {
         cv::Mat display_bgr;
         cv::cvtColor(display_rgb, display_bgr, cv::COLOR_RGB2BGR);
         
