@@ -635,7 +635,12 @@ cc_library( # type: ignore
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
     ],
-    copts = ["-I/usr/include/opencv4"],
+    copts = ["-I/usr/include/opencv4", "-I/usr/local/include"],
+    linkopts = [
+        "-L/usr/local/lib",
+        "-lonnxruntime",
+        "-Wl,-rpath,/usr/local/lib",
+    ],
 )
 
 # Face Effects Manager Library (Phase 5 Refactoring)

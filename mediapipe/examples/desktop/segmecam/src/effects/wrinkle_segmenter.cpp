@@ -1,28 +1,18 @@
 #include "include/effects/wrinkle_segmenter.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <vector>
+#include <numeric>
 
 #include <opencv2/imgproc.hpp>
-#include <google/protobuf/stubs/common.h>
 
 namespace segmecam {
 
 namespace {
 constexpr char kDefaultModelName[] = "wrinkle_model_v3_128x128.onnx";
-
-// Ensure protobuf runtime is initialised exactly once before using OpenCV's
-// ONNX importer. Without this, certain runtimes crash inside protobuf's
-// thread-local arena setup when loading large ONNX graphs.
-void EnsureProtobufInitialized() {
-    static const bool initialized = [] {
-        GOOGLE_PROTOBUF_VERIFY_VERSION;
-        return true;
-    }();
-    (void)initialized;
-}
 
 cv::Mat Sigmoid(const cv::Mat& input) {
     cv::Mat neg;
@@ -51,7 +41,13 @@ void SubtractFeatureRegion(cv::Mat& mask, const std::vector<cv::Point>& polygon)
 
 } // namespace
 
-WrinkleSegmenter::WrinkleSegmenter() : input_size_(128, 128) {}
+WrinkleSegmenter::WrinkleSegmenter() : input_size_(128, 128) {
+    try {
+        env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "WrinkleSegmenter");
+    } catch (const Ort::Exception& e) {
+        std::cerr << "❌ Failed to initialize ONNX Runtime environment: " << e.what() << std::endl;
+    }
+}
 
 bool WrinkleSegmenter::Initialize(const std::string& override_path) {
     std::filesystem::path model_path = ResolveModelPath(override_path);
@@ -63,31 +59,54 @@ bool WrinkleSegmenter::Initialize(const std::string& override_path) {
         return false;
     }
 
-    const int prev_threads = cv::getNumThreads();
-    const bool prev_opt = cv::useOptimized();
-    auto restore_flags = [&]() {
-        cv::setUseOptimized(prev_opt);
-        cv::setNumThreads(prev_threads);
-    };
+    if (!env_) {
+        std::cerr << "❌ WrinkleSegmenter: ONNX Runtime environment not initialized" << std::endl;
+        return false;
+    }
 
     try {
-        cv::setUseOptimized(false);
-        cv::setNumThreads(1);
+        session_options_ = std::make_unique<Ort::SessionOptions>();
+        session_options_->SetIntraOpNumThreads(1);
+        session_options_->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
 
-        EnsureProtobufInitialized();
+        // Try to enable CUDA provider
+        try {
+            OrtCUDAProviderOptions cuda_options;
+            cuda_options.device_id = 0;
+            cuda_options.arena_extend_strategy = 0;
+            cuda_options.gpu_mem_limit = 2ULL * 1024 * 1024 * 1024; // 2GB
+            cuda_options.cudnn_conv_algo_search = OrtCudnnConvAlgoSearchExhaustive;
+            cuda_options.do_copy_in_default_stream = 1;
+            
+            session_options_->AppendExecutionProvider_CUDA(cuda_options);
+            use_cuda_ = true;
+            std::cout << "🚀 Wrinkle segmentation using CUDA execution provider" << std::endl;
+        } catch (const Ort::Exception& cuda_error) {
+            std::cerr << "⚠️ CUDA not available for wrinkle segmentation, using CPU: " << cuda_error.what() << std::endl;
+            use_cuda_ = false;
+        }
 
-        net_ = cv::dnn::readNetFromONNX(model_path.string());
-        restore_flags();
+#ifdef _WIN32
+        std::wstring wide_path(model_path.wstring());
+        session_ = std::make_unique<Ort::Session>(*env_, wide_path.c_str(), *session_options_);
+#else
+        session_ = std::make_unique<Ort::Session>(*env_, model_path.c_str(), *session_options_);
+#endif
 
-        net_.setPreferableBackend(cv::dnn::DNN_BACKEND_DEFAULT);
-        net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+        // Get input/output names
+        Ort::AllocatorWithDefaultOptions allocator;
+        auto input_name_ptr = session_->GetInputNameAllocated(0, allocator);
+        auto output_name_ptr = session_->GetOutputNameAllocated(0, allocator);
+        input_name_ = input_name_ptr.get();
+        output_name_ = output_name_ptr.get();
+
         model_path_string_ = model_path.string();
         std::cout << "✨ Wrinkle segmentation model loaded from: " << model_path_string_ << std::endl;
+        std::cout << "   Input: " << input_name_ << ", Output: " << output_name_ << std::endl;
         return true;
-    } catch (const cv::Exception& e) {
-        restore_flags();
+    } catch (const Ort::Exception& e) {
         std::cerr << "❌ WrinkleSegmenter: Failed to load model '" << model_path.string() << "': " << e.what() << std::endl;
-        net_ = cv::dnn::Net();
+        session_.reset();
         return false;
     }
 }
@@ -141,8 +160,8 @@ FaceRegions ScaleFaceRegions(const FaceRegions& regions, float scale) {
 
 cv::Mat WrinkleSegmenter::PredictMask(const cv::Mat& frame_bgr,
                                       const FaceRegions& regions,
-                                      float processing_scale) const {
-    if (frame_bgr.empty() || !IsLoaded()) {
+                                      float processing_scale) {
+    if (!IsLoaded()) {
         return cv::Mat();
     }
 
@@ -182,31 +201,78 @@ cv::Mat WrinkleSegmenter::PredictMask(const cv::Mat& frame_bgr,
     cv::Mat face_region = inference_frame(face_roi);
 
     try {
+        // Start timing
+        auto start_time = std::chrono::high_resolution_clock::now();
+        
         cv::Mat resized;
         cv::resize(face_region, resized, input_size_);
 
-        cv::Mat blob = cv::dnn::blobFromImage(resized, 1.0 / 255.0, input_size_, cv::Scalar(), true, false, CV_32F);
-        net_.setInput(blob);
-        cv::Mat output = net_.forward();
+        // Convert BGR to RGB and normalize to [0,1]
+        cv::Mat rgb;
+        cv::cvtColor(resized, rgb, cv::COLOR_BGR2RGB);
+        rgb.convertTo(rgb, CV_32F, 1.0 / 255.0);
 
-        cv::Mat raw;
-        if (output.dims == 4 && output.size[0] == 1) {
-            int channels = output.size[1];
-            int height = output.size[2];
-            int width = output.size[3];
-            if (channels != 1) {
-                std::cerr << "⚠️  WrinkleSegmenter: Unexpected channel count " << channels << " in model output." << std::endl;
-                return cv::Mat();
+        // Create NCHW tensor (1, 3, H, W)
+        std::vector<float> input_tensor_values(1 * 3 * input_size_.height * input_size_.width);
+        for (int c = 0; c < 3; ++c) {
+            for (int h = 0; h < input_size_.height; ++h) {
+                for (int w = 0; w < input_size_.width; ++w) {
+                    int tensor_idx = c * (input_size_.height * input_size_.width) + h * input_size_.width + w;
+                    input_tensor_values[tensor_idx] = rgb.at<cv::Vec3f>(h, w)[c];
+                }
             }
-            raw = cv::Mat(height, width, CV_32F, output.ptr<float>()).clone();
-        } else if (output.dims == 3) {
-            raw = output.clone().reshape(1, output.size[1]);
-        } else {
-            std::cerr << "⚠️  WrinkleSegmenter: Unsupported output shape (dims=" << output.dims << ")." << std::endl;
-            return cv::Mat();
         }
 
-        cv::Mat prob = Sigmoid(raw);
+        // Create input tensor
+        std::vector<int64_t> input_shape = {1, 3, input_size_.height, input_size_.width};
+        auto input_tensor = Ort::Value::CreateTensor<float>(
+            memory_info_, 
+            input_tensor_values.data(), 
+            input_tensor_values.size(),
+            input_shape.data(), 
+            input_shape.size()
+        );
+
+        // Run inference
+        const char* input_names[] = {input_name_.c_str()};
+        const char* output_names[] = {output_name_.c_str()};
+        auto output_tensors = session_->Run(
+            Ort::RunOptions{nullptr},
+            input_names, &input_tensor, 1,
+            output_names, 1
+        );
+
+        // Get output tensor
+        float* output_data = output_tensors[0].GetTensorMutableData<float>();
+        auto output_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
+        
+        // Extract H, W from output shape (should be [1, 1, H, W])
+        int out_h = static_cast<int>(output_shape[2]);
+        int out_w = static_cast<int>(output_shape[3]);
+        
+        // Create cv::Mat from raw logits
+        cv::Mat raw(out_h, out_w, CV_32F, output_data);
+        cv::Mat raw_clone = raw.clone(); // Clone to own the data
+
+        // Apply sigmoid to get probabilities
+        cv::Mat prob = Sigmoid(raw_clone);
+        
+        // End timing
+        auto end_time = std::chrono::high_resolution_clock::now();
+        double inference_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+        
+        // Update performance tracking
+        inference_count_++;
+        total_inference_time_ += inference_ms;
+        double avg_inference_ms = total_inference_time_ / inference_count_;
+        
+        // Log performance every 30 inferences
+        if (inference_count_ % 30 == 0) {
+            std::cout << "🔍 Wrinkle model inference #" << inference_count_ 
+                      << ": " << inference_ms << "ms (avg: " << avg_inference_ms << "ms)"
+                      << (use_cuda_ ? " [GPU]" : " [CPU]") << std::endl;
+        }
+        
         cv::Mat prob_resized;
         cv::resize(prob, prob_resized, face_region.size(), 0, 0, cv::INTER_LINEAR);
 
@@ -224,9 +290,9 @@ cv::Mat WrinkleSegmenter::PredictMask(const cv::Mat& frame_bgr,
         }
 
         return processed;
-    } catch (const cv::Exception& e) {
+    } catch (const Ort::Exception& e) {
         if (!warned_inference_failure_) {
-            std::cerr << "❌ WrinkleSegmenter: Inference failed: " << e.what() << std::endl;
+            std::cerr << "❌ WrinkleSegmenter: ONNX Runtime inference failed: " << e.what() << std::endl;
             warned_inference_failure_ = true;
         }
         return cv::Mat();

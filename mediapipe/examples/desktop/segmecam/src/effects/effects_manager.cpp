@@ -342,21 +342,16 @@ void EffectsManager::ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::Norma
         }
 
         if (!wrinkle_mask.empty()) {
+            // Lighter temporal smoothing for faster face tracking response
             static cv::Mat prev_wrinkle_mask;
-            static cv::Mat prev_prev_wrinkle_mask;
             if (!prev_wrinkle_mask.empty() &&
                 prev_wrinkle_mask.size() == wrinkle_mask.size() &&
                 prev_wrinkle_mask.type() == wrinkle_mask.type()) {
                 cv::Mat smoothed;
-                cv::addWeighted(wrinkle_mask, 0.25, prev_wrinkle_mask, 0.50, 0.0, smoothed);
-                if (!prev_prev_wrinkle_mask.empty() &&
-                    prev_prev_wrinkle_mask.size() == wrinkle_mask.size() &&
-                    prev_prev_wrinkle_mask.type() == wrinkle_mask.type()) {
-                    cv::addWeighted(smoothed, 0.75, prev_prev_wrinkle_mask, 0.25, 0.0, smoothed);
-                }
+                // 70% current frame, 30% previous frame (faster response than old 25/50/25 split)
+                cv::addWeighted(wrinkle_mask, 0.70, prev_wrinkle_mask, 0.30, 0.0, smoothed);
                 wrinkle_mask = smoothed;
             }
-            prev_prev_wrinkle_mask = prev_wrinkle_mask.clone();
             prev_wrinkle_mask = wrinkle_mask.clone();
             cv::GaussianBlur(wrinkle_mask, wrinkle_mask, cv::Size(0, 0), 1.5);
 

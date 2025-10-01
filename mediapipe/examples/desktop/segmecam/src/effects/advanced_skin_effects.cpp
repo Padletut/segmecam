@@ -1891,8 +1891,8 @@ FacialExpressionMetrics ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceR
     cv::Mat refined_face_mask = CreateRefinedFaceMask(fr, frame_bgr.size(), weight);
 
     // Apply multi-layer smoothing: combine bilateral + frequency separation
-    // NOTE: Wrinkle processing is now handled separately above
-    ApplySnapchatStyleSmoothing(frame_bgr, refined_face_mask, fr, config, metrics, Lf, base, weight, cv::Mat(), wrinkle_color_mask_out ? &wrinkle_color_mask : nullptr);
+    // NOTE: Wrinkle processing is now handled separately above, but pass the GPU wrinkle mask if available
+    ApplySnapchatStyleSmoothing(frame_bgr, refined_face_mask, fr, config, metrics, Lf, base, weight, wrinkle_mask_input, wrinkle_color_mask_out ? &wrinkle_color_mask : nullptr);
   }
 
   // Phase 5: Convert back to BGR (only if we did frequency separation)

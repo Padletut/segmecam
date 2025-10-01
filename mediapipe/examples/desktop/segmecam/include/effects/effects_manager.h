@@ -377,7 +377,7 @@ private:
     // Frame skipping for wrinkle segmentation performance optimization
     mutable int wrinkle_frame_counter_ = 0;
     mutable cv::Mat cached_wrinkle_mask_;
-    static constexpr int kWrinkleSegmentationFrameSkip = 3; // Run inference every N frames
+    static constexpr int kWrinkleSegmentationFrameSkip = 4; // Run inference every N frames (~8 updates/sec at 30fps) - using v3 model
     
     // Helper methods
     FaceRegions ExtractFaceRegionsFromLandmarks(const mediapipe::NormalizedLandmarkList& landmarks, 
