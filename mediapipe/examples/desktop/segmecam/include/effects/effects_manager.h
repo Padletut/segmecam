@@ -51,7 +51,8 @@ struct EffectsState {
     bool show_mesh_dense = false;
     bool show_facemask = false;
     bool show_wrinkle_segmentation = false;
-    
+    bool show_wrinkle_inpaint = false;
+
     // Latest facial expression metrics for debug display
     FacialExpressionMetrics last_facial_metrics;
 };
@@ -95,7 +96,8 @@ public:
     void ApplySkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions);
     void ApplySkinSmoothingAdvanced(cv::Mat& frame_bgr, const FaceRegions& regions, 
                                    const mediapipe::NormalizedLandmarkList& landmarks,
-                                   const cv::Mat& wrinkle_mask = cv::Mat());
+                                   const cv::Mat& wrinkle_mask = cv::Mat(),
+                                   cv::Mat* wrinkle_inpaint_debug = nullptr);
     void ApplyLipEffects(cv::Mat& frame_bgr, const FaceRegions& regions, 
                         const mediapipe::NormalizedLandmarkList& landmarks, const cv::Size& frame_size);
     void ApplyTeethWhitening(cv::Mat& frame_bgr, const FaceRegions& regions);
@@ -322,6 +324,9 @@ public:
     void SetShowWrinkleSegmentation(bool enabled) {
         state_.show_wrinkle_segmentation = enabled;
     }
+    void SetShowWrinkleInpaint(bool enabled) {
+        state_.show_wrinkle_inpaint = enabled;
+    }
     void DrawLandmarks(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks) {
         face_processor_->DrawLandmarks(frame_bgr, landmarks);
     }
@@ -360,6 +365,7 @@ private:
     
     // Background image storage
     cv::Mat background_image_;
+    cv::Mat debug_wrinkle_inpaint_mask_;
     
     // New modular components
     std::unique_ptr<BackgroundEffects> background_effects_;
@@ -367,6 +373,11 @@ private:
     std::unique_ptr<EffectsConfiguration> effects_config_;
     std::unique_ptr<FaceProcessor> face_processor_;
     std::unique_ptr<WrinkleSegmenter> wrinkle_segmenter_;
+    
+    // Frame skipping for wrinkle segmentation performance optimization
+    mutable int wrinkle_frame_counter_ = 0;
+    mutable cv::Mat cached_wrinkle_mask_;
+    static constexpr int kWrinkleSegmentationFrameSkip = 3; // Run inference every N frames
     
     // Helper methods
     FaceRegions ExtractFaceRegionsFromLandmarks(const mediapipe::NormalizedLandmarkList& landmarks, 

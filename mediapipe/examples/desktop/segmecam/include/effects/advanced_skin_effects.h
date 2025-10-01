@@ -5,6 +5,11 @@
 #include "include/effects/face_regions.h"
 #include "mediapipe/framework/formats/landmark.pb.h"
 
+// Minimum slider amount required before running heavy smoothing pipelines.
+constexpr float kMinSkinSmoothingAmount = 0.05f;
+
+float NormalizeAdvancedAmount(float slider_amount);
+
 // Configuration structs to reduce parameter count
 struct RegionGatesConfig {
   bool suppress_lower_face = false;
@@ -134,4 +139,5 @@ FacialExpressionMetrics ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr,
                               const FaceRegions& fr,
                               const SkinSmoothingConfig& config,
                               const mediapipe::NormalizedLandmarkList* lms,
-                              const cv::Mat& wrinkle_mask = cv::Mat());
+                              const cv::Mat& wrinkle_mask = cv::Mat(),
+                              cv::Mat* wrinkle_color_mask_out = nullptr);

@@ -79,7 +79,6 @@ test-*.sh
 
 # Model files and large assets (customize as needed)
 *.tflite
-*.onnx
 *.pb
 
 # Allow specific Apache 2.0 licensed models

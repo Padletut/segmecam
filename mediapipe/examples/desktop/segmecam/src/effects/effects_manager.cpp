@@ -37,7 +37,7 @@ EffectsManager::~EffectsManager() {
 // Helper method to create SkinSmoothingConfig from current beauty state
 SkinSmoothingConfig EffectsManager::CreateSkinSmoothingConfig(float scale) const {
     SkinSmoothingConfig config;
-    config.amount = beauty_state_.fx_skin_amount;
+    config.amount = NormalizeAdvancedAmount(beauty_state_.fx_skin_amount);
     config.radius_px = beauty_state_.fx_skin_radius * scale;
     config.texture_thresh = beauty_state_.fx_skin_tex;
     config.edge_feather_px = beauty_state_.fx_skin_edge * scale;
@@ -302,7 +302,29 @@ void EffectsManager::ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::Norma
                               (beauty_state_.fx_skin_wrinkle || beauty_state_.fx_wrinkle_preview));
     if (need_wrinkle_mask) {
         if (wrinkle_segmenter_ && wrinkle_segmenter_->IsLoaded()) {
-            wrinkle_mask = wrinkle_segmenter_->PredictMask(frame_bgr, regions);
+            // Optimize: Only run inference every N frames to reduce lag
+            bool should_run_inference = (wrinkle_frame_counter_ % kWrinkleSegmentationFrameSkip == 0);
+            
+            if (should_run_inference || cached_wrinkle_mask_.empty()) {
+                float processing_scale = 1.0f;
+                if (beauty_state_.fx_skin && beauty_state_.fx_skin_adv) {
+                    processing_scale = std::clamp(GetProcessingScale(), 0.3f, 1.0f);
+                }
+                wrinkle_mask = wrinkle_segmenter_->PredictMask(frame_bgr, regions, processing_scale);
+                
+                // Cache the result for reuse in skipped frames
+                if (!wrinkle_mask.empty()) {
+                    cached_wrinkle_mask_ = wrinkle_mask.clone();
+                }
+            } else {
+                // Reuse cached mask from previous inference
+                if (!cached_wrinkle_mask_.empty() && 
+                    cached_wrinkle_mask_.size() == frame_bgr.size()) {
+                    wrinkle_mask = cached_wrinkle_mask_.clone();
+                }
+            }
+            
+            wrinkle_frame_counter_++;
         }
 
         if (wrinkle_mask.empty()) {
@@ -319,15 +341,76 @@ void EffectsManager::ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::Norma
             wrinkle_mask = BuildWrinkleLineMask(frame_bgr, regions, mask_config);
         }
 
+        if (!wrinkle_mask.empty()) {
+            static cv::Mat prev_wrinkle_mask;
+            static cv::Mat prev_prev_wrinkle_mask;
+            if (!prev_wrinkle_mask.empty() &&
+                prev_wrinkle_mask.size() == wrinkle_mask.size() &&
+                prev_wrinkle_mask.type() == wrinkle_mask.type()) {
+                cv::Mat smoothed;
+                cv::addWeighted(wrinkle_mask, 0.25, prev_wrinkle_mask, 0.50, 0.0, smoothed);
+                if (!prev_prev_wrinkle_mask.empty() &&
+                    prev_prev_wrinkle_mask.size() == wrinkle_mask.size() &&
+                    prev_prev_wrinkle_mask.type() == wrinkle_mask.type()) {
+                    cv::addWeighted(smoothed, 0.75, prev_prev_wrinkle_mask, 0.25, 0.0, smoothed);
+                }
+                wrinkle_mask = smoothed;
+            }
+            prev_prev_wrinkle_mask = prev_wrinkle_mask.clone();
+            prev_wrinkle_mask = wrinkle_mask.clone();
+            cv::GaussianBlur(wrinkle_mask, wrinkle_mask, cv::Size(0, 0), 1.5);
+
+            // Suppress wrinkle detections in high-risk regions (eyes, brows, mouth)
+            cv::Mat refined_regions = CreateRefinedFaceMask(regions, wrinkle_mask.size(), cv::Mat());
+            if (!refined_regions.empty()) {
+                cv::Mat refined_f32;
+                if (refined_regions.type() != CV_32F) {
+                    refined_regions.convertTo(refined_f32, CV_32F);
+                } else {
+                    refined_f32 = refined_regions;
+                }
+                if (refined_f32.size() != wrinkle_mask.size()) {
+                    cv::resize(refined_f32, refined_f32, wrinkle_mask.size(), 0, 0, cv::INTER_LINEAR);
+                }
+                cv::multiply(wrinkle_mask, refined_f32, wrinkle_mask);
+            }
+
+            // Additional eye safety margin: explicitly zero a band around the eyes
+            auto zero_eye_band = [&](const std::vector<cv::Point>& eye, float inflate_px, float drop_px) {
+                if (eye.empty()) return;
+                cv::Rect eye_rect = cv::boundingRect(eye);
+                eye_rect.x = std::max(0, (int)std::round(eye_rect.x - inflate_px));
+                eye_rect.width = std::min(wrinkle_mask.cols - eye_rect.x,
+                                          (int)std::round(eye_rect.width + 2 * inflate_px));
+                int expand_top = (int)std::round(inflate_px * 0.6f);
+                int expand_bottom = (int)std::round(drop_px);
+                eye_rect.y = std::max(0, eye_rect.y - expand_top);
+                eye_rect.height = std::min(wrinkle_mask.rows - eye_rect.y,
+                                           eye_rect.height + expand_top + expand_bottom);
+                if (eye_rect.width > 0 && eye_rect.height > 0) {
+                    cv::rectangle(wrinkle_mask, eye_rect, cv::Scalar(0.0f), cv::FILLED);
+                }
+            };
+
+            zero_eye_band(regions.left_eye, 14.0f, 18.0f);
+            zero_eye_band(regions.right_eye, 14.0f, 18.0f);
+        }
+
         if (segmentation_requested && !wrinkle_mask.empty()) {
             wrinkle_mask_for_display = wrinkle_mask.clone();
         }
     }
 
     // Apply skin smoothing
+    cv::Mat wrinkle_inpaint_debug;
+    cv::Mat* debug_mask_ptr = (state_.show_wrinkle_inpaint ? &wrinkle_inpaint_debug : nullptr);
+    if (debug_mask_ptr) {
+        debug_mask_ptr->release();
+    }
+
     if (beauty_state_.fx_skin) {
         if (beauty_state_.fx_skin_adv || beauty_state_.fx_wrinkle_preview) {
-            ApplySkinSmoothingAdvanced(frame_bgr, regions, landmarks, wrinkle_mask);
+            ApplySkinSmoothingAdvanced(frame_bgr, regions, landmarks, wrinkle_mask, debug_mask_ptr);
         } else {
             ApplySkinSmoothing(frame_bgr, regions);
         }
@@ -370,15 +453,46 @@ void EffectsManager::ApplyFaceEffects(cv::Mat& frame_bgr, const mediapipe::Norma
             }
         }
     }
+
+    if (state_.show_wrinkle_inpaint && debug_mask_ptr && !debug_mask_ptr->empty()) {
+        cv::Mat mask_display;
+        if (debug_mask_ptr->type() != CV_32F) {
+            debug_mask_ptr->convertTo(mask_display, CV_32F, 1.0 / 255.0);
+        } else {
+            mask_display = *debug_mask_ptr;
+        }
+        double min_val = 0.0, max_val = 0.0;
+        cv::minMaxLoc(mask_display, &min_val, &max_val);
+        if (max_val > min_val + 1e-6) {
+            cv::Mat normalized_u8;
+            mask_display.convertTo(normalized_u8, CV_8U, 255.0 / (max_val - min_val), -min_val * 255.0 / (max_val - min_val));
+            cv::Mat colored;
+            cv::applyColorMap(normalized_u8, colored, cv::COLORMAP_JET);
+            cv::Mat highlight;
+            cv::addWeighted(frame_bgr, 1.0, colored, 0.35, 0.0, highlight);
+            cv::Mat binary;
+            cv::threshold(mask_display, binary, 1e-3, 1.0, cv::THRESH_BINARY);
+            cv::Mat binary_u8;
+            binary.convertTo(binary_u8, CV_8U, 255.0);
+            highlight.copyTo(frame_bgr, binary_u8);
+        }
+    }
 }
 
 void EffectsManager::ApplySkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions) {
-    ApplySkinSmoothingBGR(frame_bgr, regions, beauty_state_.fx_skin_amount, state_.opencl_enabled);
+    ApplySkinSmoothingBGR(frame_bgr, regions, NormalizeAdvancedAmount(beauty_state_.fx_skin_amount), state_.opencl_enabled);
 }
 
 void EffectsManager::ApplySkinSmoothingAdvanced(cv::Mat& frame_bgr, const FaceRegions& regions,
                                                const mediapipe::NormalizedLandmarkList& landmarks,
-                                               const cv::Mat& wrinkle_mask) {
+                                               const cv::Mat& wrinkle_mask,
+                                               cv::Mat* wrinkle_inpaint_debug) {
+    const bool wrinkle_processing_requested = beauty_state_.fx_skin_wrinkle ||
+                                              beauty_state_.fx_wrinkle_preview ||
+                                              beauty_state_.fx_skin_smile_wrinkle_gain > 1e-3f;
+    if (beauty_state_.fx_skin_amount < kMinSkinSmoothingAmount && !wrinkle_processing_requested) {
+        return;
+    }
     // Use user-configured processing scale directly for stability
     float effective_scale = beauty_state_.fx_adv_scale;
     
@@ -388,7 +502,7 @@ void EffectsManager::ApplySkinSmoothingAdvanced(cv::Mat& frame_bgr, const FaceRe
     } else {
         // Full resolution processing
         SkinSmoothingConfig config = CreateSkinSmoothingConfig();
-        FacialExpressionMetrics metrics = ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks, wrinkle_mask);
+        FacialExpressionMetrics metrics = ApplySkinSmoothingAdvBGR(frame_bgr, regions, config, &landmarks, wrinkle_mask, wrinkle_inpaint_debug);
         // Store metrics for debug display
         state_.last_facial_metrics = metrics;
     }

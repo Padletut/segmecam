@@ -40,6 +40,7 @@ void ApplicationSync::SyncBackgroundSettings(EffectsManager& effects_manager, co
     effects_manager.SetShowMeshDense(app_state.show_mesh_dense);
     effects_manager.SetShowFacemask(app_state.show_facemask);
     effects_manager.SetShowWrinkleSegmentation(app_state.show_wrinkle_segmentation);
+    effects_manager.SetShowWrinkleInpaint(app_state.show_wrinkle_inpaint);
 
     // Sync background image if available
     if (!app_state.bg_image.empty()) {

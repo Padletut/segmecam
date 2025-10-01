@@ -26,7 +26,8 @@ public:
     void ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, const FaceRegions& regions,
                                              const mediapipe::NormalizedLandmarkList& landmarks,
                                              const BeautyState& beauty_state,
-                                             const cv::Mat& wrinkle_mask = cv::Mat());
+                                             const cv::Mat& wrinkle_mask = cv::Mat(),
+                                             cv::Mat* wrinkle_inpaint_debug = nullptr);
 
 private:
     // Helper method to setup skin smoothing config with scaling
@@ -37,7 +38,8 @@ private:
     void ApplyFullResolutionSkinSmoothing(cv::Mat& frame_bgr, const FaceRegions& regions,
                                         const mediapipe::NormalizedLandmarkList& landmarks,
                                         const BeautyState& beauty_state,
-                                        const cv::Mat& wrinkle_mask = cv::Mat());
+                                        const cv::Mat& wrinkle_mask = cv::Mat(),
+                                        cv::Mat* wrinkle_inpaint_debug = nullptr);
     FaceRegions TransformFaceRegionsToScaledROI(const FaceRegions& regions, const cv::Rect& roi, float scale);
     FaceRegions ShiftFaceRegionsToROI(const FaceRegions& regions, const cv::Rect& roi);
     FaceRegions ScaleFaceRegions(const FaceRegions& regions, float scale);
@@ -47,12 +49,14 @@ private:
                                                             const cv::Rect& roi, const cv::Size& frame_size);
     void ProcessAndUpsampleROI(cv::Mat& frame_bgr, const cv::Rect& roi, const FaceRegions& fr_small,
                              const mediapipe::NormalizedLandmarkList& lms_roi, const BeautyState& beauty_state, float scale,
-                             const cv::Mat& wrinkle_mask = cv::Mat());
+                             const cv::Mat& wrinkle_mask = cv::Mat(),
+                             cv::Mat* wrinkle_inpaint_debug = nullptr);
     cv::Mat DownscaleROI(const cv::Mat& roi_bgr, float scale);
     void ApplySkinSmoothingToScaledImage(cv::Mat& small, const FaceRegions& fr_small,
                                        const mediapipe::NormalizedLandmarkList& lms_roi,
                                        const BeautyState& beauty_state, float scale,
-                                       const cv::Mat& wrinkle_mask = cv::Mat());
+                                       const cv::Mat& wrinkle_mask = cv::Mat(),
+                                       cv::Mat* wrinkle_inpaint_debug = nullptr);
     cv::Mat UpsampleProcessedImage(const cv::Mat& small, const cv::Size& target_size);
     void ApplyDetailPreservationIfNeeded(cv::Mat& up, const cv::Mat& roi_bgr, const FaceRegions& fr_roi,
                                        const BeautyState& beauty_state);

@@ -1,5 +1,7 @@
 #include "include/effects/wrinkle_segmenter.h"
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <vector>
 
@@ -113,32 +115,71 @@ std::filesystem::path WrinkleSegmenter::ResolveModelPath(const std::string& over
     return {};
 }
 
-cv::Mat WrinkleSegmenter::PredictMask(const cv::Mat& frame_bgr, const FaceRegions& regions) const {
+namespace {
+
+FaceRegions ScaleFaceRegions(const FaceRegions& regions, float scale) {
+    FaceRegions scaled;
+    auto scale_poly = [&](const std::vector<cv::Point>& in) {
+        std::vector<cv::Point> out;
+        out.reserve(in.size());
+        for (const auto& p : in) {
+            out.emplace_back(static_cast<int>(std::round(p.x * scale)),
+                             static_cast<int>(std::round(p.y * scale)));
+        }
+        return out;
+    };
+
+    scaled.face_oval = scale_poly(regions.face_oval);
+    scaled.lips_outer = scale_poly(regions.lips_outer);
+    scaled.lips_inner = scale_poly(regions.lips_inner);
+    scaled.left_eye = scale_poly(regions.left_eye);
+    scaled.right_eye = scale_poly(regions.right_eye);
+    return scaled;
+}
+
+} // namespace
+
+cv::Mat WrinkleSegmenter::PredictMask(const cv::Mat& frame_bgr,
+                                      const FaceRegions& regions,
+                                      float processing_scale) const {
     if (frame_bgr.empty() || !IsLoaded()) {
         return cv::Mat();
     }
 
-    auto compute_face_roi = [&]() -> cv::Rect {
-        if (regions.face_oval.empty()) {
-            return cv::Rect(0, 0, frame_bgr.cols, frame_bgr.rows);
+    float scale = std::clamp(processing_scale, 0.3f, 1.0f);
+    bool use_scaled_path = scale < 0.999f;
+
+    cv::Mat scaled_frame;
+    FaceRegions scaled_regions = regions;
+    if (use_scaled_path) {
+        cv::resize(frame_bgr, scaled_frame, cv::Size(), scale, scale, cv::INTER_AREA);
+        scaled_regions = ScaleFaceRegions(regions, scale);
+    }
+
+    const cv::Mat& inference_frame = use_scaled_path ? scaled_frame : frame_bgr;
+    const FaceRegions& inference_regions = use_scaled_path ? scaled_regions : regions;
+
+    auto compute_face_roi = [&](const FaceRegions& regs, const cv::Size& frame_size) -> cv::Rect {
+        if (regs.face_oval.empty()) {
+            return cv::Rect(0, 0, frame_size.width, frame_size.height);
         }
 
-        cv::Rect base = cv::boundingRect(regions.face_oval);
+        cv::Rect base = cv::boundingRect(regs.face_oval);
         int margin = static_cast<int>(std::round(std::max(base.width, base.height) * 0.15f));
 
         base.x = std::max(0, base.x - margin);
         base.y = std::max(0, base.y - margin);
-        base.width = std::min(frame_bgr.cols - base.x, base.width + margin * 2);
-        base.height = std::min(frame_bgr.rows - base.y, base.height + margin * 2);
+        base.width = std::min(frame_size.width - base.x, base.width + margin * 2);
+        base.height = std::min(frame_size.height - base.y, base.height + margin * 2);
 
         if (base.width <= 0 || base.height <= 0) {
-            return cv::Rect(0, 0, frame_bgr.cols, frame_bgr.rows);
+            return cv::Rect(0, 0, frame_size.width, frame_size.height);
         }
         return base;
     };
 
-    const cv::Rect face_roi = compute_face_roi();
-    cv::Mat face_region = frame_bgr(face_roi);
+    const cv::Rect face_roi = compute_face_roi(inference_regions, inference_frame.size());
+    cv::Mat face_region = inference_frame(face_roi);
 
     try {
         cv::Mat resized;
@@ -169,10 +210,20 @@ cv::Mat WrinkleSegmenter::PredictMask(const cv::Mat& frame_bgr, const FaceRegion
         cv::Mat prob_resized;
         cv::resize(prob, prob_resized, face_region.size(), 0, 0, cv::INTER_LINEAR);
 
-        cv::Mat mask_full(frame_bgr.size(), CV_32F, cv::Scalar(0.0f));
+        cv::Mat mask_full(inference_frame.size(), CV_32F, cv::Scalar(0.0f));
         prob_resized.copyTo(mask_full(face_roi));
 
-        return PostProcessMask(mask_full, frame_bgr.size(), regions);
+        cv::Mat processed = PostProcessMask(mask_full, inference_frame.size(), inference_regions);
+
+        if (use_scaled_path) {
+            cv::Mat upscaled;
+            cv::resize(processed, upscaled, frame_bgr.size(), 0, 0, cv::INTER_LINEAR);
+            cv::GaussianBlur(upscaled, upscaled, cv::Size(0, 0), 1.0);
+            // Final gating at original resolution for consistency
+            return PostProcessMask(upscaled, frame_bgr.size(), regions);
+        }
+
+        return processed;
     } catch (const cv::Exception& e) {
         if (!warned_inference_failure_) {
             std::cerr << "❌ WrinkleSegmenter: Inference failed: " << e.what() << std::endl;

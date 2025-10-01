@@ -20,7 +20,8 @@ public:
     std::string ModelPath() const { return model_path_string_; }
 
     // Generate a wrinkle probability mask in CV_32F [0,1] matching frame size.
-    cv::Mat PredictMask(const cv::Mat& frame_bgr, const FaceRegions& regions) const;
+    // processing_scale allows callers to match the skin-smoothing resolution (1.0 = full size).
+    cv::Mat PredictMask(const cv::Mat& frame_bgr, const FaceRegions& regions, float processing_scale = 1.0f) const;
 
 private:
     std::filesystem::path ResolveModelPath(const std::string& override_path) const;

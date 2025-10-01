@@ -96,7 +96,7 @@ void PerformanceMonitor::SetTargetFPS(float target_fps) {
 void PerformanceMonitor::UpdateTargetFPSFromCamera(float camera_fps) {
     float target_fps;
     if (camera_fps >= 15.0f) {
-        target_fps = 15.0f - 1.0f; // Target 14 FPS for high frame rate cameras
+        target_fps = 30.0f - 1.0f; // Target 14 FPS for high frame rate cameras
     } else {
         target_fps = camera_fps - 1.0f; // Target camera_fps - 1 for lower frame rates
     }

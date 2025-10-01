@@ -59,12 +59,12 @@ struct AppState {
   float fx_skin_strength = 0.4f;
   bool fx_skin_adv = true;
   float fx_skin_amount = 0.5f;
-  float fx_skin_radius = 6.0f;
+  float fx_skin_radius = 4.0f; // Reduced from 6.0 for better real-time performance
   float fx_skin_tex = 0.35f;
   float fx_skin_edge = 12.0f;
   
   // Advanced processing scale
-  float fx_adv_scale = 0.8f; // 0.5..1.0 - Default to 0.8 for better performance
+  float fx_adv_scale = 0.8f; // 0.4..1.0 - Default to 0.8 for good balance (lower = faster)
   float fx_adv_detail_preserve = 0.18f; // 0..0.5, re-inject hi-freq after upsample
   
   // Wrinkle reduction
@@ -107,6 +107,7 @@ struct AppState {
   bool show_mesh_dense = false;
   bool show_facemask = false;
   bool show_wrinkle_segmentation = false;
+  bool show_wrinkle_inpaint = false;
   bool lm_roi_mode = false;
   bool lm_apply_rot = true;
   bool lm_flip_x = false;
