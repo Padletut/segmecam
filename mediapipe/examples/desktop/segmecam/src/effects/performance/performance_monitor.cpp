@@ -81,12 +81,11 @@ void PerformanceMonitor::SetAutoProcessingScaleEnabled(bool enabled) {
         fps_history_.clear();
         last_fps_update_ = std::chrono::steady_clock::now();
         last_scale_adjustment_ = std::chrono::steady_clock::now();
-        std::cout << "[AutoScale] Enabled with target FPS: " << target_fps_ << std::endl;
     }
 }
 
 void PerformanceMonitor::SetTargetFPS(float target_fps) {
-    float new_target = std::clamp(target_fps, 5.0f, 30.0f);
+    float new_target = std::clamp(target_fps, 5.0f, 60.0f);
     if (std::abs(target_fps_ - new_target) < 0.1f) {
         return; // No significant change
     }
@@ -95,11 +94,11 @@ void PerformanceMonitor::SetTargetFPS(float target_fps) {
 
 void PerformanceMonitor::UpdateTargetFPSFromCamera(float camera_fps) {
     float target_fps;
-    if (camera_fps >= 15.0f) {
-        target_fps = 30.0f; // Target 14 FPS for high frame rate cameras
-    } else {
+    //if (camera_fps >= 15.0f) {
+    //    target_fps = 30.0f; // Target 14 FPS for high frame rate cameras
+    //} else {
         target_fps = camera_fps - 1.0f; // Target camera_fps - 1 for lower frame rates
-    }
+    //}
 
     SetTargetFPS(target_fps);
 }
@@ -114,8 +113,12 @@ void PerformanceMonitor::UpdateAutoProcessingScale(float current_fps) {
 
     UpdateFPSHistory(current_fps);
 
-    if (!HasEnoughFPSSamples() || !ShouldAdjustScale(now)) {
-        return;
+    if (!HasEnoughFPSSamples()) {
+        return; // Still collecting samples
+    }
+    
+    if (!ShouldAdjustScale(now)) {
+        return; // Too soon since last adjustment
     }
 
     float avg_fps = CalculateAverageFPS();
@@ -140,7 +143,7 @@ bool PerformanceMonitor::HasEnoughFPSSamples() const {
 bool PerformanceMonitor::ShouldAdjustScale(const std::chrono::steady_clock::time_point& now) const {
     auto time_since_adjustment = std::chrono::duration_cast<std::chrono::milliseconds>(
         now - last_scale_adjustment_).count();
-    return time_since_adjustment >= 5000;
+    return time_since_adjustment >= 2000; // Reduced from 5000ms to 2000ms for faster response
 }
 
 float PerformanceMonitor::CalculateAverageFPS() const {
@@ -154,14 +157,18 @@ float PerformanceMonitor::CalculateAverageFPS() const {
 float PerformanceMonitor::CalculateScaleAdjustment(float avg_fps) const {
     float fps_diff = target_fps_ - avg_fps;
 
-    if (std::abs(fps_diff) <= 2.0f) {
+    // Dead zone: if FPS is within ±0.5 of target, don't adjust (reduced from ±2 for more sensitivity)
+    if (std::abs(fps_diff) <= 0.5f) {
         return 0.0f;
     }
 
-    if (fps_diff > 3.0f) {
-        return fps_diff > 6.0f ? -0.002f : -0.001f;
-    } else if (fps_diff < -3.0f) {
-        return fps_diff < -6.0f ? 0.002f : 0.001f;
+    // FPS too LOW (actual < target): scale DOWN to improve performance
+    if (fps_diff > 1.0f) {
+        return fps_diff > 3.0f ? -0.01f : -0.005f;
+    } 
+    // FPS too HIGH (actual > target): scale UP to improve quality
+    else if (fps_diff < -1.0f) {
+        return fps_diff < -3.0f ? 0.01f : 0.005f;
     }
 
     return 0.0f;
@@ -175,6 +182,8 @@ void PerformanceMonitor::ApplyScaleAdjustment(float scale_adjustment, const std:
         if (std::abs(new_scale - current_scale) > 0.0005f) {
             set_processing_scale_cb_(new_scale);
         }
+    } else {
+        std::cout << "[AutoScale] ERROR: No callback set!" << std::endl;
     }
     last_scale_adjustment_ = now;
     TrimFPSHistoryForStability();
