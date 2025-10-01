@@ -194,11 +194,29 @@ void MediaPipeProcessor::ProcessFaceMesh(
         app_state.face_mesh = app_state.face_mesh_processor.GetFaceMesh();
         app_state.face_mesh_available = app_state.face_mesh_processor.IsAvailable();
         
+        // Update transform calculator with face mesh data (Phase 2: Transform Calculation)
+        if (app_state.face_mesh_available) {
+            app_state.transform_calculator.Update(app_state.face_mesh);
+            app_state.head_pose = app_state.transform_calculator.GetHeadPose();
+            app_state.anchor_points = app_state.transform_calculator.GetAnchors();
+            app_state.transform_data_available = true;
+        } else {
+            app_state.transform_data_available = false;
+        }
+        
         if (frame_count <= 5 && app_state.face_mesh_available) {
             std::cout << "🎯 Face mesh: " << output_data.latest_lms.landmark_size() << " points, "
                       << "yaw=" << app_state.face_mesh_processor.GetYaw() << "°, "
                       << "pitch=" << app_state.face_mesh_processor.GetPitch() << "°, "
                       << "scale=" << app_state.face_mesh_processor.GetFaceScale() << std::endl;
+            
+            if (app_state.transform_data_available) {
+                std::cout << "🎯 Transform: "
+                          << "pos=[" << app_state.head_pose.position[0] << "," 
+                          << app_state.head_pose.position[1] << "," 
+                          << app_state.head_pose.position[2] << "], "
+                          << "anchors=" << app_state.anchor_points.size() << std::endl;
+            }
         }
     } catch (const std::exception& e) {
         std::cerr << "❌ Error processing face mesh: " << e.what() << std::endl;

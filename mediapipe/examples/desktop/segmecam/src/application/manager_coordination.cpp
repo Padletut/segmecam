@@ -21,6 +21,31 @@ bool InitializeManagerHelper(std::unique_ptr<T>& manager_ptr, const std::string&
     }
 }
 
+// Helper function to initialize transform calculator with camera intrinsics (Phase 2)
+void InitializeTransformCalculator(segmecam::AppState& app_state, int width, int height) {
+    try {
+        // Create simple camera intrinsics matrix (assuming standard webcam FOV ~60 degrees)
+        // focal_length = image_width / (2 * tan(FOV/2))
+        // For 60 degree horizontal FOV: focal_length ≈ image_width * 0.866
+        float focal_length_x = width * 0.866f;
+        float focal_length_y = height * 0.866f;
+        float principal_point_x = width / 2.0f;
+        float principal_point_y = height / 2.0f;
+        
+        cv::Mat camera_matrix = cv::Mat::eye(3, 3, CV_64F);
+        camera_matrix.at<double>(0, 0) = focal_length_x;  // fx
+        camera_matrix.at<double>(1, 1) = focal_length_y;  // fy
+        camera_matrix.at<double>(0, 2) = principal_point_x;  // cx
+        camera_matrix.at<double>(1, 2) = principal_point_y;  // cy
+        
+        app_state.transform_calculator.Initialize(camera_matrix, width, height);
+        std::cout << "✅ TransformCalculator initialized with " << width << "x" << height << " resolution" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Failed to initialize TransformCalculator: " << e.what() << std::endl;
+        app_state.transform_data_available = false;
+    }
+}
+
 bool ManagerCoordination::SetupManagers(Managers& managers, segmecam::AppState& app_state) {
     std::cout << "Initializing essential managers..." << std::endl;
     
@@ -190,6 +215,9 @@ bool ManagerCoordination::InitializeCameraManager(Managers& managers, segmecam::
         
         // Apply camera controls from loaded profile
         ApplyCameraControlsFromProfile(managers, config_data);
+        
+        // Initialize transform calculator with camera intrinsics (Phase 2)
+        InitializeTransformCalculator(app_state, camera_config.default_width, camera_config.default_height);
         
         std::cout << "CameraManager initialized successfully" << std::endl;
         return true;

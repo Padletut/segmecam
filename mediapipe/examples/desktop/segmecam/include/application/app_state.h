@@ -9,6 +9,7 @@
 #include "effects/advanced_skin_effects.h"
 #include "src/ar_filters/blendshape_processor.h"
 #include "src/ar_filters/face_mesh_processor.h"
+#include "src/ar_filters/transform_calculator.h"
 
 namespace segmecam {
 
@@ -33,6 +34,12 @@ struct AppState {
   FaceMeshProcessor face_mesh_processor; // Processor for 478 3D landmarks
   FaceMesh face_mesh; // Current face mesh with pose data
   bool face_mesh_available = false; // Whether face mesh is being tracked
+  
+  // Transform calculator (head pose & AR anchor points)
+  TransformCalculator transform_calculator; // Phase 2: 3D transforms for AR objects
+  HeadPose head_pose; // Current smoothed head pose (position, rotation, scale)
+  std::vector<AnchorPoint> anchor_points; // 7 attachment points for AR filters
+  bool transform_data_available = false; // Whether transform data is available
   
   // Performance logging
   bool perf_log = false;

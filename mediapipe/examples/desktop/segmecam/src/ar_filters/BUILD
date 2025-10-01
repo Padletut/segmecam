@@ -30,7 +30,7 @@ cc_library(
 cc_library(
     name = "transform_calculator",
     srcs = ["transform_calculator.cpp"],
-    hdrs = ["//mediapipe/examples/desktop/segmecam/include/ar_filters:transform_calculator.h"],
+    hdrs = ["transform_calculator.h"],
     visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
     deps = [
         ":face_mesh_processor",

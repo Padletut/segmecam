@@ -1,8 +1,8 @@
 // Copyright 2025 SegmeCam Contributors
 // Licensed under the Apache License, Version 2.0
 
-#include "mediapipe/examples/desktop/segmecam/include/ar_filters/transform_calculator.h"
-#include "mediapipe/examples/desktop/segmecam/include/ar_filters/face_mesh_processor.h"
+#include "transform_calculator.h"
+#include "face_mesh_processor.h"
 
 #include <chrono>
 #include <cmath>
@@ -110,12 +110,8 @@ void TransformCalculator::Reset() {
 HeadPose TransformCalculator::CalculatePose(const FaceMesh& face_mesh) {
     HeadPose pose;
     
-    // 1. Use Phase 1's Euler angles as starting point
-    pose.euler_angles = cv::Vec3f(
-        face_mesh.pose.yaw,
-        face_mesh.pose.pitch,
-        face_mesh.pose.roll
-    );
+    // 1. Use Phase 1's Euler angles as starting point (yaw, pitch, roll)
+    pose.euler_angles = face_mesh.euler_angles;
     
     // 2. Convert to quaternion for smooth interpolation
     pose.rotation_quat = EulerToQuaternion(pose.euler_angles);
@@ -350,10 +346,10 @@ AnchorPoint TransformCalculator::CalculateNoseBridge(const HeadPose& pose, const
     anchor.name = "nose_bridge";
     
     // Average of landmarks 6, 197, 195 (nose bridge area)
-    if (face_mesh.landmarks_pixel.size() > 195) {
-        cv::Point2f p1 = face_mesh.landmarks_pixel[6];
-        cv::Point2f p2 = face_mesh.landmarks_pixel[197];
-        cv::Point2f p3 = face_mesh.landmarks_pixel[195];
+    if (face_mesh.landmarks_2d.size() > 195) {
+        cv::Point2f p1 = face_mesh.landmarks_2d[6];
+        cv::Point2f p2 = face_mesh.landmarks_2d[197];
+        cv::Point2f p3 = face_mesh.landmarks_2d[195];
         
         anchor.position_local = cv::Vec3f(
             (p1.x + p2.x + p3.x) / 3.0f,
@@ -389,10 +385,10 @@ AnchorPoint TransformCalculator::CalculateForehead(const HeadPose& pose, const F
     anchor.name = "forehead";
     
     // Landmark 10 is forehead center, with nearby landmarks for orientation
-    if (face_mesh.landmarks_pixel.size() > 297) {
-        cv::Point2f center = face_mesh.landmarks_pixel[10];
-        cv::Point2f left = face_mesh.landmarks_pixel[67];
-        cv::Point2f right = face_mesh.landmarks_pixel[297];
+    if (face_mesh.landmarks_2d.size() > 297) {
+        cv::Point2f center = face_mesh.landmarks_2d[10];
+        cv::Point2f left = face_mesh.landmarks_2d[67];
+        cv::Point2f right = face_mesh.landmarks_2d[297];
         
         anchor.position_local = cv::Vec3f(center.x, center.y, 0.0f);
         anchor.position_world = anchor.position_local;
@@ -420,10 +416,10 @@ AnchorPoint TransformCalculator::CalculateLeftEar(const HeadPose& pose, const Fa
     anchor.name = "left_ear";
     
     // Landmarks 234, 127, 162 define left ear area
-    if (face_mesh.landmarks_pixel.size() > 234) {
-        cv::Point2f p1 = face_mesh.landmarks_pixel[234];
-        cv::Point2f p2 = face_mesh.landmarks_pixel[127];
-        cv::Point2f p3 = face_mesh.landmarks_pixel[162];
+    if (face_mesh.landmarks_2d.size() > 234) {
+        cv::Point2f p1 = face_mesh.landmarks_2d[234];
+        cv::Point2f p2 = face_mesh.landmarks_2d[127];
+        cv::Point2f p3 = face_mesh.landmarks_2d[162];
         
         anchor.position_local = cv::Vec3f(
             (p1.x + p2.x + p3.x) / 3.0f,
@@ -456,10 +452,10 @@ AnchorPoint TransformCalculator::CalculateRightEar(const HeadPose& pose, const F
     anchor.name = "right_ear";
     
     // Landmarks 454, 356, 389 define right ear area
-    if (face_mesh.landmarks_pixel.size() > 454) {
-        cv::Point2f p1 = face_mesh.landmarks_pixel[454];
-        cv::Point2f p2 = face_mesh.landmarks_pixel[356];
-        cv::Point2f p3 = face_mesh.landmarks_pixel[389];
+    if (face_mesh.landmarks_2d.size() > 454) {
+        cv::Point2f p1 = face_mesh.landmarks_2d[454];
+        cv::Point2f p2 = face_mesh.landmarks_2d[356];
+        cv::Point2f p3 = face_mesh.landmarks_2d[389];
         
         anchor.position_local = cv::Vec3f(
             (p1.x + p2.x + p3.x) / 3.0f,
@@ -492,10 +488,10 @@ AnchorPoint TransformCalculator::CalculateChin(const HeadPose& pose, const FaceM
     anchor.name = "chin";
     
     // Landmarks 152, 199, 175 define chin area
-    if (face_mesh.landmarks_pixel.size() > 199) {
-        cv::Point2f center = face_mesh.landmarks_pixel[152];
-        cv::Point2f left = face_mesh.landmarks_pixel[199];
-        cv::Point2f right = face_mesh.landmarks_pixel[175];
+    if (face_mesh.landmarks_2d.size() > 199) {
+        cv::Point2f center = face_mesh.landmarks_2d[152];
+        cv::Point2f left = face_mesh.landmarks_2d[199];
+        cv::Point2f right = face_mesh.landmarks_2d[175];
         
         anchor.position_local = cv::Vec3f(
             (center.x + left.x + right.x) / 3.0f,
@@ -528,10 +524,10 @@ AnchorPoint TransformCalculator::CalculateLeftTemple(const HeadPose& pose, const
     anchor.name = "left_temple";
     
     // Use same landmarks as left ear but with different orientation
-    if (face_mesh.landmarks_pixel.size() > 162) {
-        cv::Point2f p1 = face_mesh.landmarks_pixel[139];
-        cv::Point2f p2 = face_mesh.landmarks_pixel[127];
-        cv::Point2f p3 = face_mesh.landmarks_pixel[162];
+    if (face_mesh.landmarks_2d.size() > 162) {
+        cv::Point2f p1 = face_mesh.landmarks_2d[139];
+        cv::Point2f p2 = face_mesh.landmarks_2d[127];
+        cv::Point2f p3 = face_mesh.landmarks_2d[162];
         
         anchor.position_local = cv::Vec3f(
             (p1.x + p2.x + p3.x) / 3.0f,
@@ -564,10 +560,10 @@ AnchorPoint TransformCalculator::CalculateRightTemple(const HeadPose& pose, cons
     anchor.name = "right_temple";
     
     // Use same landmarks as right ear but with different orientation
-    if (face_mesh.landmarks_pixel.size() > 389) {
-        cv::Point2f p1 = face_mesh.landmarks_pixel[368];
-        cv::Point2f p2 = face_mesh.landmarks_pixel[356];
-        cv::Point2f p3 = face_mesh.landmarks_pixel[389];
+    if (face_mesh.landmarks_2d.size() > 389) {
+        cv::Point2f p1 = face_mesh.landmarks_2d[368];
+        cv::Point2f p2 = face_mesh.landmarks_2d[356];
+        cv::Point2f p3 = face_mesh.landmarks_2d[389];
         
         anchor.position_local = cv::Vec3f(
             (p1.x + p2.x + p3.x) / 3.0f,
@@ -602,10 +598,10 @@ AnchorPoint TransformCalculator::CalculateRightTemple(const HeadPose& pose, cons
 cv::Vec3f TransformCalculator::CalculateHeadCenter(const FaceMesh& face_mesh) {
     // Use key landmarks to estimate head center
     // Simplified: average of nose tip, forehead, chin
-    if (face_mesh.landmarks_pixel.size() > 152) {
-        cv::Point2f nose = face_mesh.landmarks_pixel[1];   // Nose tip
-        cv::Point2f forehead = face_mesh.landmarks_pixel[10];  // Forehead
-        cv::Point2f chin = face_mesh.landmarks_pixel[152];  // Chin
+    if (face_mesh.landmarks_2d.size() > 152) {
+        cv::Point2f nose = face_mesh.landmarks_2d[1];   // Nose tip
+        cv::Point2f forehead = face_mesh.landmarks_2d[10];  // Forehead
+        cv::Point2f chin = face_mesh.landmarks_2d[152];  // Chin
         
         return cv::Vec3f(
             (nose.x + forehead.x + chin.x) / 3.0f,
