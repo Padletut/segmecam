@@ -1,8 +1,8 @@
 // Copyright 2025 SegmeCam Contributors
 // Licensed under the Apache License, Version 2.0
 
-#include "transform_calculator.h"
-#include "face_mesh_processor.h"
+#include "include/ar_filters/transform_calculator.h"
+#include "include/ar_filters/face_mesh_processor.h"
 
 #include <chrono>
 #include <cmath>

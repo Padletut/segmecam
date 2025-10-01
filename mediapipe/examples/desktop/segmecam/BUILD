@@ -1,5 +1,12 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library") # type: ignore
 
+# Export ar_filters headers for use by subdirectory BUILD files
+exports_files([
+    "include/ar_filters/blendshape_processor.h",
+    "include/ar_filters/face_mesh_processor.h",
+    "include/ar_filters/transform_calculator.h",
+])
+
 cc_library( # type: ignore
     name = "compositing_utils",
     srcs = ["src/compositing_utils.cpp"],

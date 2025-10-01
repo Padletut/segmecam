@@ -2,7 +2,7 @@
 #include "include/effects/face_regions.h"
 #include "include/effects/segmecam_face_effects.h"
 #include "include/effects/advanced_skin_effects.h"
-#include "mediapipe/examples/desktop/segmecam/src/ar_filters/face_mesh_processor.h"
+#include "include/ar_filters/face_mesh_processor.h"
 #include "mediapipe/tasks/cc/vision/face_landmarker/face_landmarks_connections.h"
 #include <iostream>
 #include <opencv2/core.hpp>

@@ -7,9 +7,9 @@
 #include <cstdint>
 #include "include/camera/vcam.h"
 #include "effects/advanced_skin_effects.h"
-#include "src/ar_filters/blendshape_processor.h"
-#include "src/ar_filters/face_mesh_processor.h"
-#include "src/ar_filters/transform_calculator.h"
+#include "include/ar_filters/blendshape_processor.h"
+#include "include/ar_filters/face_mesh_processor.h"
+#include "include/ar_filters/transform_calculator.h"
 
 namespace segmecam {
 

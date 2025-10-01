@@ -1,7 +1,8 @@
 cc_library(
     name = "blendshape_processor",
     srcs = ["blendshape_processor.cpp"],
-    hdrs = ["blendshape_processor.h"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/blendshape_processor.h"],
+    includes = ["../.."],
     visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
     deps = [
         "//mediapipe/framework/formats:classification_cc_proto",
@@ -15,7 +16,8 @@ cc_library(
 cc_library(
     name = "face_mesh_processor",
     srcs = ["face_mesh_processor.cpp"],
-    hdrs = ["face_mesh_processor.h"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/face_mesh_processor.h"],
+    includes = ["../.."],
     visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
     deps = [
         "//mediapipe/framework/formats:landmark_cc_proto",
@@ -30,7 +32,8 @@ cc_library(
 cc_library(
     name = "transform_calculator",
     srcs = ["transform_calculator.cpp"],
-    hdrs = ["transform_calculator.h"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/transform_calculator.h"],
+    includes = ["../.."],
     visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
     deps = [
         ":face_mesh_processor",
