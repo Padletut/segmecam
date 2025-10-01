@@ -26,3 +26,19 @@ cc_library(
         "-std=c++17",
     ],
 )
+
+cc_library(
+    name = "transform_calculator",
+    srcs = ["transform_calculator.cpp"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam/include/ar_filters:transform_calculator.h"],
+    visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
+    deps = [
+        ":face_mesh_processor",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_calib3d",
+        "@com_google_absl//absl/log",
+    ],
+    copts = [
+        "-std=c++17",
+    ],
+)
