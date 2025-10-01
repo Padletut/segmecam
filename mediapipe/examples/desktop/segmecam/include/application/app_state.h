@@ -8,6 +8,7 @@
 #include "include/camera/vcam.h"
 #include "effects/advanced_skin_effects.h"
 #include "src/ar_filters/blendshape_processor.h"
+#include "src/ar_filters/face_mesh_processor.h"
 
 namespace segmecam {
 
@@ -27,6 +28,11 @@ struct AppState {
   BlendshapeProcessor blendshapes_processor; // Processor for 52 expression coefficients
   BlendshapeData blendshapes; // Current smoothed blendshape values (0.0-1.0)
   bool blendshapes_available = false; // Whether blendshapes are being tracked
+  
+  // Face mesh (478-point 3D face model)
+  FaceMeshProcessor face_mesh_processor; // Processor for 478 3D landmarks
+  FaceMesh face_mesh; // Current face mesh with pose data
+  bool face_mesh_available = false; // Whether face mesh is being tracked
   
   // Performance logging
   bool perf_log = false;

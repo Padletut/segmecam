@@ -81,6 +81,7 @@ cc_library( # type: ignore
         ":vcam",
         ":advanced_skin_effects",
         "//mediapipe/examples/desktop/segmecam/src/ar_filters:blendshape_processor",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:face_mesh_processor",
         "//mediapipe/framework/formats:classification_cc_proto",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",

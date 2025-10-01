@@ -172,4 +172,38 @@ void MediaPipeProcessor::ProcessBlendshapes(
     }
 }
 
+void MediaPipeProcessor::ProcessFaceMesh(
+    MediaPipeOutputData& output_data,
+    AppState& app_state,
+    int frame_count
+) {
+    if (!output_data.have_lms || output_data.latest_lms.landmark_size() != 478) {
+        app_state.face_mesh_available = false;
+        return;
+    }
+    
+    try {
+        // Update face mesh processor with 478 landmarks
+        app_state.face_mesh_processor.Update(
+            output_data.latest_lms,
+            app_state.camera_width,
+            app_state.camera_height
+        );
+        
+        // Get processed face mesh data
+        app_state.face_mesh = app_state.face_mesh_processor.GetFaceMesh();
+        app_state.face_mesh_available = app_state.face_mesh_processor.IsAvailable();
+        
+        if (frame_count <= 5 && app_state.face_mesh_available) {
+            std::cout << "🎯 Face mesh: " << output_data.latest_lms.landmark_size() << " points, "
+                      << "yaw=" << app_state.face_mesh_processor.GetYaw() << "°, "
+                      << "pitch=" << app_state.face_mesh_processor.GetPitch() << "°, "
+                      << "scale=" << app_state.face_mesh_processor.GetFaceScale() << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Error processing face mesh: " << e.what() << std::endl;
+        app_state.face_mesh_available = false;
+    }
+}
+
 } // namespace segmecam

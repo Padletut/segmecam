@@ -126,6 +126,18 @@ public:
         AppState& app_state,
         int frame_count
     );
+
+    /**
+     * Process face mesh from MediaPipe
+     * @param output_data Structure containing latest landmarks
+     * @param app_state Current application state
+     * @param frame_count Current frame count for debugging
+     */
+    static void ProcessFaceMesh(
+        MediaPipeOutputData& output_data,
+        AppState& app_state,
+        int frame_count
+    );
 };
 
 } // namespace segmecam
