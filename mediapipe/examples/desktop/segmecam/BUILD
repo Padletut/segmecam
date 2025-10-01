@@ -5,6 +5,10 @@ exports_files([
     "include/ar_filters/blendshape_processor.h",
     "include/ar_filters/face_mesh_processor.h",
     "include/ar_filters/transform_calculator.h",
+    "include/ar_filters/filter_object.h",
+    "include/ar_filters/attachment_controller.h",
+    "include/ar_filters/filter_test_demo.h",
+    "include/ar_filters/filter_presets.h",
 ])
 
 cc_library( # type: ignore
@@ -87,9 +91,12 @@ cc_library( # type: ignore
     deps = [
         ":vcam",
         ":advanced_skin_effects",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:attachment_controller",
         "//mediapipe/examples/desktop/segmecam/src/ar_filters:blendshape_processor",
         "//mediapipe/examples/desktop/segmecam/src/ar_filters:face_mesh_processor",
         "//mediapipe/examples/desktop/segmecam/src/ar_filters:transform_calculator",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:filter_test_demo",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:filter_presets",
         "//mediapipe/framework/formats:classification_cc_proto",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
@@ -796,6 +803,7 @@ cc_binary( # pyright: ignore[reportUndefinedVariable]
         ":effects_manager",
         "//mediapipe/examples/desktop/segmecam/src/config:config_manager",
         "//mediapipe/examples/desktop/segmecam/src/ar_filters:blendshape_processor",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:attachment_controller",
         "//mediapipe/framework:calculator_graph",
         "//mediapipe/framework/port:file_helpers",
         "//mediapipe/framework/port:opencv_core",

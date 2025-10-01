@@ -183,6 +183,82 @@ void FrameProcessor::handle_frame_output(
     }
 }
 
+void FrameProcessor::RenderFilterPrimitives(cv::Mat& display_bgr, AppState& app_state) {
+    // Phase 2 Step 5: Simple 2D visualization of filter primitives
+    // This renders filter objects as colored circles/shapes at their calculated positions
+    
+    if (!app_state.ar_filters_enabled) {
+        return;
+    }
+    
+    const auto& filters = app_state.attachment_controller.GetActiveFilters();
+    if (filters.empty()) {
+        return;
+    }
+    
+    // Render each visible filter
+    for (const auto& filter : filters) {
+        if (!filter.visible || !filter.enabled) {
+            continue;
+        }
+        
+        // Get filter 2D position (x, y are already in pixel coordinates)
+        cv::Point2f pos(filter.position[0], filter.position[1]);
+        
+        // Check if position is within frame bounds
+        if (pos.x < 0 || pos.y < 0 || pos.x >= display_bgr.cols || pos.y >= display_bgr.rows) {
+            continue;
+        }
+        
+        // Convert filter color (RGBA 0-1) to OpenCV BGR (0-255)
+        cv::Scalar color(
+            static_cast<int>(filter.color[2] * 255),  // B
+            static_cast<int>(filter.color[1] * 255),  // G
+            static_cast<int>(filter.color[0] * 255)   // R
+        );
+        
+        // Calculate radius based on scale (simple heuristic)
+        float avg_scale = (filter.scale[0] + filter.scale[1] + filter.scale[2]) / 3.0f;
+        int radius = static_cast<int>(avg_scale * filter.local_scale * 500.0f);  // Scale to screen space
+        radius = std::max(5, std::min(50, radius));  // Clamp to reasonable range
+        
+        // Draw the filter as a filled circle
+        cv::circle(display_bgr, pos, radius, color, -1, cv::LINE_AA);
+        
+        // Draw border
+        cv::circle(display_bgr, pos, radius, cv::Scalar(255, 255, 255), 2, cv::LINE_AA);
+        
+        // Draw filter name and info
+        std::string label = filter.name;
+        if (!filter.anchor_name.empty()) {
+            label += " → " + filter.anchor_name;
+        }
+        
+        cv::Point2f text_pos = pos + cv::Point2f(radius + 5, 5);
+        cv::putText(display_bgr, label, text_pos,
+                   cv::FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv::LINE_AA);
+        
+        // Draw frame count for debugging
+        std::string frame_info = "f:" + std::to_string(filter.frame_count);
+        cv::Point2f frame_info_pos = pos + cv::Point2f(radius + 5, -10);
+        cv::putText(display_bgr, frame_info, frame_info_pos,
+                   cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
+    }
+    
+    // Draw statistics in corner
+    auto stats = app_state.attachment_controller.GetStatistics();
+    if (stats.total_filters > 0) {
+        std::string info = "AR Filters: " + std::to_string(stats.visible_filters) + "/" + 
+                          std::to_string(stats.total_filters) + " visible";
+        cv::putText(display_bgr, info, cv::Point(10, display_bgr.rows - 30),
+                   cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
+        
+        std::string perf = "Update: " + std::to_string(stats.average_update_time_ms).substr(0, 4) + "ms";
+        cv::putText(display_bgr, perf, cv::Point(10, display_bgr.rows - 10),
+                   cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
+    }
+}
+
 void FrameProcessor::HandleVirtualCameraOutput(
     CameraManager& camera_mgr,
     AppState& app_state,
@@ -323,6 +399,17 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
         
         // Draw anchor points using FaceProcessor
         params.managers.effects->GetFaceProcessor().DrawAnchorPoints(display_bgr, params.app_state, true);
+        
+        cv::cvtColor(display_bgr, display_rgb, cv::COLOR_BGR2RGB);
+    }
+    
+    // Render AR filter primitives (Phase 2 Step 5)
+    if (params.app_state.ar_filters_enabled && params.app_state.transform_data_available) {
+        cv::Mat display_bgr;
+        cv::cvtColor(display_rgb, display_bgr, cv::COLOR_RGB2BGR);
+        
+        // Draw filter primitives at their calculated positions
+        RenderFilterPrimitives(display_bgr, params.app_state);
         
         cv::cvtColor(display_bgr, display_rgb, cv::COLOR_BGR2RGB);
     }

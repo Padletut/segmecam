@@ -203,6 +203,14 @@ void MediaPipeProcessor::ProcessFaceMesh(
             app_state.head_pose = app_state.transform_calculator.GetHeadPose();
             app_state.anchor_points = app_state.transform_calculator.GetAnchors();
             app_state.transform_data_available = true;
+            
+            // Update AR filter transforms (Phase 2 Step 5: Filter Attachment)
+            if (app_state.ar_filters_enabled && app_state.attachment_controller.GetFilterCount() > 0) {
+                app_state.attachment_controller.UpdateFilterTransforms(
+                    app_state.anchor_points,
+                    app_state.head_pose
+                );
+            }
         } else {
             app_state.transform_data_available = false;
         }
@@ -219,6 +227,15 @@ void MediaPipeProcessor::ProcessFaceMesh(
                           << app_state.head_pose.position[1] << "," 
                           << app_state.head_pose.position[2] << "], "
                           << "anchors=" << app_state.anchor_points.size() << std::endl;
+                
+                // Debug AR filters (Phase 2 Step 5)
+                if (app_state.ar_filters_enabled && app_state.attachment_controller.GetFilterCount() > 0) {
+                    auto stats = app_state.attachment_controller.GetStatistics();
+                    std::cout << "🎭 AR Filters: "
+                              << "total=" << stats.total_filters << ", "
+                              << "visible=" << stats.visible_filters << ", "
+                              << "update_time=" << stats.average_update_time_ms << "ms" << std::endl;
+                }
             }
         }
     } catch (const std::exception& e) {

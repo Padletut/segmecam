@@ -172,6 +172,15 @@ public:
         AppState& app_state);
 
     /**
+     * Render AR filter primitives (Phase 2 Step 5)
+     * @param display_bgr Display frame in BGR format
+     * @param app_state Application state with filter data
+     */
+    static void RenderFilterPrimitives(
+        cv::Mat& display_bgr,
+        AppState& app_state);
+
+    /**
      * Main frame processing orchestration
      * @param params Frame processing parameters
      * @return true to continue, false to exit

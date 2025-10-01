@@ -72,3 +72,34 @@ cc_library(
         "-std=c++17",
     ],
 )
+
+cc_library(
+    name = "filter_test_demo",
+    srcs = ["filter_test_demo.cpp"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/filter_test_demo.h"],
+    includes = ["../.."],
+    visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
+    deps = [
+        ":filter_object",
+        ":attachment_controller",
+    ],
+    copts = [
+        "-std=c++17",
+    ],
+)
+
+cc_library(
+    name = "filter_presets",
+    srcs = ["filter_presets.cpp"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/filter_presets.h"],
+    includes = ["../.."],
+    visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
+    deps = [
+        ":filter_object",
+        ":attachment_controller",
+    ],
+    copts = [
+        "-std=c++17",
+    ],
+)
+

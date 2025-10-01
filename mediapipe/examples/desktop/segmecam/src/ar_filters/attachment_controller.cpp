@@ -9,8 +9,6 @@
 #include <algorithm>
 #include <chrono>
 
-#include "mediapipe/examples/desktop/segmecam/third_party/glm/gtx/euler_angles.hpp"
-
 namespace segmecam {
 
 AttachmentController::AttachmentController()
@@ -93,15 +91,16 @@ void AttachmentController::UpdateFilterTransforms(
       continue;
     }
     
-    // Calculate transform matrix
-    glm::mat4 transform = CalculateFilterTransform(filter, *anchor, head_pose);
+    // For Phase 2 Step 5, we use simple 2D positioning
+    // The anchor's position_2d is already in pixel coordinates
+    // We apply the filter's offset directly
+    filter.position[0] = anchor->position_2d.x + filter.offset[0];
+    filter.position[1] = anchor->position_2d.y + filter.offset[1];
+    filter.position[2] = filter.offset[2];  // Z offset
     
-    // Extract position from transform
-    filter.position = glm::vec3(transform[3]);
-    
-    // Extract rotation (approximate - assumes no scale/shear in rotation part)
-    glm::mat3 rotation_matrix(transform);
-    filter.rotation = glm::quat_cast(rotation_matrix);
+    // For rotation, we use identity for now (Phase 2)
+    // Phase 3+ will implement proper 3D rotation from head pose
+    filter.rotation = cv::Vec4f(1.0f, 0.0f, 0.0f, 0.0f);  // Identity quaternion
     
     // Ensure filter is visible if anchor is valid
     filter.visible = filter.enabled;
@@ -166,47 +165,6 @@ AttachmentController::Statistics AttachmentController::GetStatistics() const {
 
 // ===== Helper Methods =====
 
-// Calculate filter transform from anchor and head pose
-glm::mat4 AttachmentController::CalculateFilterTransform(
-    const FilterObject& filter,
-    const AnchorPoint& anchor,
-    const HeadPose& head_pose) const {
-  
-  // Start with identity matrix
-  glm::mat4 transform(1.0f);
-  
-  // For Phase 2, we use anchor's 2D position directly
-  // Phase 3+ will use proper 3D projection with camera matrix
-  
-  // Convert anchor 2D position to 3D (using z=0 for now)
-  glm::vec3 anchor_pos_3d(anchor.position_2d.x, anchor.position_2d.y, 0.0f);
-  
-  // Apply anchor position
-  transform = glm::translate(transform, anchor_pos_3d);
-  
-  // Apply anchor rotation (if available)
-  // For Phase 2, we'll use head pose rotation as anchor rotation
-  transform = transform * glm::mat4_cast(head_pose.rotation);
-  
-  // Apply filter's local offset (in anchor's rotated space)
-  if (glm::length(filter.offset) > 0.0f) {
-    transform = glm::translate(transform, filter.offset);
-  }
-  
-  // Apply filter's local rotation
-  if (glm::length(filter.local_rotation_euler) > 0.0f) {
-    glm::quat local_rot = CombineRotations(glm::quat(1.0f, 0.0f, 0.0f, 0.0f), 
-                                           filter.local_rotation_euler);
-    transform = transform * glm::mat4_cast(local_rot);
-  }
-  
-  // Apply filter's scale
-  glm::vec3 final_scale = filter.scale * filter.local_scale * global_scale_;
-  transform = glm::scale(transform, final_scale);
-  
-  return transform;
-}
-
 // Find anchor by name
 const AnchorPoint* AttachmentController::FindAnchor(
     const std::vector<AnchorPoint>& anchors,
@@ -218,32 +176,6 @@ const AnchorPoint* AttachmentController::FindAnchor(
     }
   }
   return nullptr;
-}
-
-// Apply local offset in anchor's coordinate frame
-glm::vec3 AttachmentController::ApplyLocalOffset(
-    const glm::vec3& anchor_position,
-    const glm::quat& anchor_rotation,
-    const glm::vec3& local_offset) const {
-  
-  // Rotate offset by anchor's rotation, then add to anchor position
-  glm::vec3 rotated_offset = anchor_rotation * local_offset;
-  return anchor_position + rotated_offset;
-}
-
-// Combine rotations
-glm::quat AttachmentController::CombineRotations(
-    const glm::quat& anchor_rotation,
-    const glm::vec3& local_euler_degrees) const {
-  
-  // Convert euler angles (degrees) to radians
-  glm::vec3 euler_radians = glm::radians(local_euler_degrees);
-  
-  // Create quaternion from euler angles (order: YXZ)
-  glm::quat local_quat = glm::quat(euler_radians);
-  
-  // Combine rotations (anchor rotation first, then local rotation)
-  return anchor_rotation * local_quat;
 }
 
 // Rebuild ID map after vector modification

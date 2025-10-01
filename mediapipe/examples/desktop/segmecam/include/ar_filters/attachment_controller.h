@@ -10,12 +10,10 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <opencv2/core.hpp>
 
 #include "mediapipe/examples/desktop/segmecam/include/ar_filters/filter_object.h"
 #include "mediapipe/examples/desktop/segmecam/include/ar_filters/transform_calculator.h"
-#include "mediapipe/examples/desktop/segmecam/third_party/glm/glm.hpp"
-#include "mediapipe/examples/desktop/segmecam/third_party/glm/gtc/matrix_transform.hpp"
-#include "mediapipe/examples/desktop/segmecam/third_party/glm/gtc/quaternion.hpp"
 
 namespace segmecam {
 
@@ -121,29 +119,11 @@ class AttachmentController {
   
   // ===== Helper Methods =====
   
-  // Calculate the transform matrix for a filter based on its anchor and head pose
-  // Returns: 4x4 transformation matrix (position, rotation, scale)
-  glm::mat4 CalculateFilterTransform(
-      const FilterObject& filter,
-      const AnchorPoint& anchor,
-      const HeadPose& head_pose) const;
-  
   // Find an anchor by name in the anchor list
   // Returns: Pointer to anchor if found, nullptr otherwise
   const AnchorPoint* FindAnchor(
       const std::vector<AnchorPoint>& anchors,
       const std::string& anchor_name) const;
-  
-  // Apply local offset to filter position (in anchor's local space)
-  glm::vec3 ApplyLocalOffset(
-      const glm::vec3& anchor_position,
-      const glm::quat& anchor_rotation,
-      const glm::vec3& local_offset) const;
-  
-  // Combine anchor rotation with filter's local rotation
-  glm::quat CombineRotations(
-      const glm::quat& anchor_rotation,
-      const glm::vec3& local_euler_degrees) const;
   
   // Rebuild filter_id_map after modification
   void RebuildIdMap();

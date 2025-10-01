@@ -10,6 +10,9 @@
 #include "include/ar_filters/blendshape_processor.h"
 #include "include/ar_filters/face_mesh_processor.h"
 #include "include/ar_filters/transform_calculator.h"
+#include "include/ar_filters/attachment_controller.h"
+#include "include/ar_filters/filter_test_demo.h"
+#include "include/ar_filters/filter_presets.h"
 
 namespace segmecam {
 
@@ -40,6 +43,18 @@ struct AppState {
   HeadPose head_pose; // Current smoothed head pose (position, rotation, scale)
   std::vector<AnchorPoint> anchor_points; // 7 attachment points for AR filters
   bool transform_data_available = false; // Whether transform data is available
+  
+  // Attachment controller (AR filter management) - Phase 2 Step 5
+  AttachmentController attachment_controller; // Manages filter-to-anchor bindings
+  bool ar_filters_enabled = false; // Global enable/disable for AR filters
+  
+  // Filter test demo (Phase 2 Step 5.5) - Creates 7 test filters for validation
+  FilterTestDemo filter_test_demo;
+  bool show_filter_test = false; // UI toggle for test demo
+  
+  // Filter presets (Phase 2 Step 6) - Production filter examples
+  FilterPresetManager filter_preset_manager; // Manages glasses, hat, mask presets
+  bool show_filter_presets = false; // UI toggle for preset panel
   
   // Performance logging
   bool perf_log = false;

@@ -9,9 +9,7 @@
 
 #include <string>
 #include <vector>
-
-#include "mediapipe/examples/desktop/segmecam/third_party/glm/glm.hpp"
-#include "mediapipe/examples/desktop/segmecam/third_party/glm/gtc/quaternion.hpp"
+#include <opencv2/core.hpp>
 
 namespace segmecam {
 
@@ -25,22 +23,22 @@ struct FilterObject {
   std::string anchor_name;              // Anchor point to attach to
   
   // Geometry (simple primitives for Phase 2 testing)
-  std::vector<glm::vec3> vertices;      // Vertex positions (local space)
+  std::vector<cv::Vec3f> vertices;      // Vertex positions (local space)
   std::vector<unsigned int> indices;    // Triangle indices
-  std::vector<glm::vec3> normals;       // Vertex normals (for lighting)
+  std::vector<cv::Vec3f> normals;       // Vertex normals (for lighting)
   
   // Transform (world space)
-  glm::vec3 position;                   // World position (updated each frame)
-  glm::quat rotation;                   // Orientation quaternion (updated each frame)
-  glm::vec3 scale;                      // Scale factors (x, y, z)
+  cv::Vec3f position;                   // World position (updated each frame)
+  cv::Vec4f rotation;                   // Orientation quaternion (w,x,y,z) (updated each frame)
+  cv::Vec3f scale;                      // Scale factors (x, y, z)
   
   // Attachment configuration (local space)
-  glm::vec3 offset;                     // Offset from anchor point (in anchor local space)
-  glm::vec3 local_rotation_euler;       // Local rotation in degrees (pitch, yaw, roll)
+  cv::Vec3f offset;                     // Offset from anchor point (in anchor local space)
+  cv::Vec3f local_rotation_euler;       // Local rotation in degrees (pitch, yaw, roll)
   float local_scale;                    // Uniform scale multiplier
   
   // Material properties
-  glm::vec4 color;                      // Base color (RGBA)
+  cv::Vec4f color;                      // Base color (RGBA)
   float alpha;                          // Transparency (0.0 = transparent, 1.0 = opaque)
   
   // State
@@ -57,12 +55,12 @@ struct FilterObject {
         name("Unnamed"),
         anchor_name(""),
         position(0.0f, 0.0f, 0.0f),
-        rotation(1.0f, 0.0f, 0.0f, 0.0f),  // Identity quaternion
+        rotation(1.0f, 0.0f, 0.0f, 0.0f),  // Identity quaternion (w,x,y,z)
         scale(1.0f, 1.0f, 1.0f),
         offset(0.0f, 0.0f, 0.0f),
         local_rotation_euler(0.0f, 0.0f, 0.0f),
         local_scale(1.0f),
-        color(1.0f, 1.0f, 1.0f, 1.0f),    // White
+        color(1.0f, 1.0f, 1.0f, 1.0f),    // White (R,G,B,A)
         alpha(1.0f),
         visible(true),
         enabled(true),

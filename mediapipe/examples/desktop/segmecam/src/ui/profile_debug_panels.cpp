@@ -45,6 +45,90 @@ void DebugPanel::RenderOverlayControls() {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Display 7 key attachment points for AR filters");
     }
+    
+    ImGui::Spacing();
+    ImGui::Separator();
+    
+    // AR Filter Test Demo (Phase 2 Step 5.5)
+    ImGui::Text("AR Filter Test Demo");
+    ImGui::Separator();
+    
+    bool test_changed = ImGui::Checkbox("Enable Filter Test", &state_.show_filter_test);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Creates 7 colored geometric primitives attached to face anchors");
+    }
+    
+    if (test_changed) {
+        if (state_.show_filter_test && !state_.filter_test_demo.IsInitialized()) {
+            // Initialize test on first enable
+            state_.filter_test_demo.Initialize(state_.attachment_controller, state_.ar_filters_enabled);
+            std::cout << "[DebugPanel] AR Filter test demo initialized" << std::endl;
+        }
+        state_.filter_test_demo.SetActive(state_.show_filter_test, state_.ar_filters_enabled);
+    }
+    
+    // Show test statistics if active
+    if (state_.show_filter_test && state_.filter_test_demo.IsInitialized()) {
+        ImGui::Indent();
+        auto stats = state_.attachment_controller.GetStatistics();
+        ImGui::Text("Filters: %zu/%zu visible", 
+                   stats.visible_filters, 
+                   stats.total_filters);
+        ImGui::Text("Update: %.2f ms", stats.average_update_time_ms);
+        
+        if (ImGui::Button("Print Stats")) {
+            state_.filter_test_demo.PrintStatistics(state_.attachment_controller);
+        }
+        ImGui::Unindent();
+    }
+    
+    ImGui::Spacing();
+    ImGui::Separator();
+    
+    // AR Filter Presets (Phase 2 Step 6)
+    ImGui::Text("AR Filter Presets");
+    ImGui::Separator();
+    
+    // Preset selection dropdown
+    static int selected_preset = 0;
+    const char* preset_items[] = {
+        "None",
+        "Classic Glasses",
+        "Party Hat",
+        "Face Mask"
+    };
+    
+    if (ImGui::Combo("Filter Preset", &selected_preset, preset_items, IM_ARRAYSIZE(preset_items))) {
+        FilterPreset preset = static_cast<FilterPreset>(selected_preset);
+        state_.filter_preset_manager.ApplyPreset(preset, state_.attachment_controller, state_.ar_filters_enabled);
+        std::cout << "[DebugPanel] Applied preset: " 
+                  << state_.filter_preset_manager.GetPresetName(preset) << std::endl;
+    }
+    
+    ImGui::SameLine();
+    if (ImGui::Button("?##preset_help")) {}
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("For Test Demo (7 Filters), use 'Enable Filter Test' checkbox above");
+    }
+    
+    // Show preset info if one is active
+    if (state_.filter_preset_manager.IsPresetActive()) {
+        ImGui::Indent();
+        FilterPreset current = state_.filter_preset_manager.GetCurrentPreset();
+        ImGui::Text("Active: %s", state_.filter_preset_manager.GetPresetName(current).c_str());
+        ImGui::Text("Filters: %d", state_.filter_preset_manager.GetPresetFilterCount(current));
+        
+        auto stats = state_.attachment_controller.GetStatistics();
+        ImGui::Text("Visible: %zu/%zu", stats.visible_filters, stats.total_filters);
+        ImGui::Text("Update: %.5f ms", stats.average_update_time_ms);
+        
+        if (ImGui::Button("Clear Preset")) {
+            state_.filter_preset_manager.ClearCurrentPreset(state_.attachment_controller, state_.ar_filters_enabled);
+            selected_preset = 0;  // Reset dropdown to "None"
+            std::cout << "[DebugPanel] Cleared filter preset" << std::endl;
+        }
+        ImGui::Unindent();
+    }
 
 }
 
