@@ -76,6 +76,7 @@ mediapipe/examples/desktop/segmecam/
 **Goal**: Re-enable MediaPipe FaceLandmarker blendshape output for facial expression detection
 
 **Why This Is Important**:
+
 - 📊 **Precise Expressions**: 52 coefficients (0.0-1.0) for exact facial expression values
 - 🎭 **Dynamic AR Filters**: Filters respond to expressions (blink, smile, jaw open, etc.)
 - ✨ **Enhanced Wrinkles**: Already using smile/squint boost - blendshapes provide exact values
@@ -83,6 +84,7 @@ mediapipe/examples/desktop/segmecam/
 - 🧮 **Better Than Geometry**: No need to calculate expressions from landmark distances
 
 **Blendshape Categories** (52 total):
+
 - **Brows** (5): browDownLeft, browDownRight, browInnerUp, browOuterUpLeft, browOuterUpRight
 - **Cheeks** (3): cheekPuff, cheekSquintLeft, cheekSquintRight  
 - **Eyes** (14): eyeBlinkLeft/Right, eyeLookDown/In/Out/Up (L/R), eyeSquint/Wide (L/R)
@@ -92,14 +94,17 @@ mediapipe/examples/desktop/segmecam/
 - **Tongue** (1): tongueOut
 
 **Files to Create**:
+
 - `include/ar_filters/blendshape_processor.h`
 - `src/ar_filters/blendshape_processor.cpp`
 
 **Files to Modify**:
+
 - `src/mediapipe_manager/mediapipe_manager.cpp` - Enable blendshape output in FaceLandmarker
 - `include/app_state.h` - Add blendshape array storage
 
 **Technical Details**:
+
 ```cpp
 // include/ar_filters/blendshape_processor.h
 namespace segmecam {
@@ -157,6 +162,7 @@ private:
 ```
 
 **MediaPipe Integration**:
+
 ```cpp
 // In mediapipe_manager.cpp, configure FaceLandmarker:
 FaceLandmarkerOptions options;
@@ -167,6 +173,7 @@ options.output_facial_transformation_matrixes = true;
 ```
 
 **Use Cases for AR Filters**:
+
 1. **Responsive Glasses**: Shake/darken when blinking (eyeBlinkLeft/Right)
 2. **Interactive Hat**: Falls off when mouth opens wide (jawOpen > 0.7)
 3. **Smile Effects**: Color changes or sparkles when smiling (mouthSmileLeft/Right)
@@ -174,6 +181,7 @@ options.output_facial_transformation_matrixes = true;
 5. **Tongue Triggers**: Special effect when tongue out (tongueOut > 0.5)
 
 **Integration with Existing Wrinkle Detection**:
+
 ```cpp
 // In advanced_skin_effects.cpp, replace geometric calculations:
 // OLD: Calculate smile from landmark distances
@@ -187,6 +195,7 @@ config.squint_boost = squint_intensity * state.fx_skin_squint_boost;
 ```
 
 **Testing Criteria**:
+
 - ✅ 52 blendshape values extracted from MediaPipe output
 - ✅ Values range from 0.0 to 1.0
 - ✅ Updates at 30 FPS without frame drops
@@ -800,6 +809,7 @@ private:
 **Dependencies**: Phase 0 (Blendshapes), Phase 6 (AR Filter Manager), Phase 9 (Sample Filters)
 
 **Key Responsibilities**:
+
 1. Implement behavior system for filters
 2. Parse behavior definitions from filter JSON
 3. Map blendshapes to filter transformations
@@ -856,6 +866,7 @@ private:
 **Implementation Examples**:
 
 1. **Shake on Blink**:
+
 ```cpp
 glm::mat4 ApplyShakeBehavior(const BehaviorConfig& config, float blendshape_value) {
   if (blendshape_value < config.threshold) return glm::mat4(1.0f);
@@ -869,6 +880,7 @@ glm::mat4 ApplyShakeBehavior(const BehaviorConfig& config, float blendshape_valu
 ```
 
 2. **Fall Off on Jaw Open**:
+
 ```cpp
 glm::mat4 ApplyFallOffBehavior(const BehaviorConfig& config, float blendshape_value, float delta_time) {
   if (blendshape_value < config.threshold) {
@@ -888,6 +900,7 @@ glm::mat4 ApplyFallOffBehavior(const BehaviorConfig& config, float blendshape_va
 ```
 
 3. **Color Change on Smile**:
+
 ```cpp
 glm::vec4 ApplyColorChangeBehavior(const BehaviorConfig& config, float blendshape_value) {
   if (blendshape_value < config.threshold) return glm::vec4(1.0f);
@@ -938,12 +951,14 @@ glm::vec4 ApplyColorChangeBehavior(const BehaviorConfig& config, float blendshap
 ```
 
 **Integration Points**:
+
 - Update `FilterAsset` class to parse behaviors section
 - Add `FilterBehaviorProcessor` to `ARFilterManager`
 - Call `ProcessBehaviors()` in render loop before applying transforms
 - UI toggle: "Enable interactive filters" (performance option)
 
 **Testing Criteria**:
+
 - ✅ Behaviors trigger at correct blendshape thresholds
 - ✅ Animations smooth and responsive
 - ✅ Multiple behaviors can run simultaneously
@@ -951,6 +966,7 @@ glm::vec4 ApplyColorChangeBehavior(const BehaviorConfig& config, float blendshap
 - ✅ Behaviors work across all sample filters
 
 **Sample Filters to Update**:
+
 1. **Interactive Glasses**: Shake on blink
 2. **Falling Hat**: Falls off when jaw opens wide
 3. **Color-Changing Mask**: Changes color when smiling

@@ -281,6 +281,41 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
     display_rgb = ProcessAndDisplayFrame(frame_bgr, output_data.last_mask_u8, landmarks_ptr,
                                         *params.managers.effects, params.app_state, output_data.have_lms);
 
+    // Add face mesh visualization overlay if enabled
+    if (params.app_state.show_mesh && params.app_state.face_mesh_available) {
+        cv::Mat display_bgr;
+        cv::cvtColor(display_rgb, display_bgr, cv::COLOR_RGB2BGR);
+        
+        // Use face_processor to draw face mesh (need to access through effects_manager's face_processor)
+        // For now, draw simple overlay showing face mesh is available
+        std::string info = cv::format("Face Mesh Active: 478 pts | Yaw: %.1f° | Pitch: %.1f° | Scale: %.3f",
+                                      params.app_state.face_mesh.euler_angles[1],
+                                      params.app_state.face_mesh.euler_angles[0],
+                                      params.app_state.face_mesh.scale);
+        cv::putText(display_bgr, info, cv::Point(10, 30),
+                   cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
+        
+        // Draw key attachment points
+        auto drawKeyPoint = [&](const cv::Point2f& pt, const cv::Scalar& color, const std::string& label = "") {
+            if (pt.x >= 0 && pt.y >= 0 && pt.x < display_bgr.cols && pt.y < display_bgr.rows) {
+                cv::circle(display_bgr, pt, 5, color, 2, cv::LINE_AA);
+                if (!label.empty()) {
+                    cv::putText(display_bgr, label, pt + cv::Point2f(8, 0),
+                               cv::FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv::LINE_AA);
+                }
+            }
+        };
+        
+        drawKeyPoint(params.app_state.face_mesh.GetNoseTip2D(), cv::Scalar(0, 255, 0), "nose");
+        drawKeyPoint(params.app_state.face_mesh.GetNoseBridge2D(), cv::Scalar(0, 255, 255), "bridge");
+        drawKeyPoint(params.app_state.face_mesh.GetForeheadCenter2D(), cv::Scalar(255, 0, 255), "forehead");
+        drawKeyPoint(params.app_state.face_mesh.GetLeftTemple2D(), cv::Scalar(255, 128, 0), "L temple");
+        drawKeyPoint(params.app_state.face_mesh.GetRightTemple2D(), cv::Scalar(255, 128, 0), "R temple");
+        drawKeyPoint(params.app_state.face_mesh.GetChinCenter2D(), cv::Scalar(128, 255, 0), "chin");
+        
+        cv::cvtColor(display_bgr, display_rgb, cv::COLOR_BGR2RGB);
+    }
+
     // Handle virtual camera output
     HandleVirtualCameraOutput(*params.managers.camera, params.app_state, display_rgb);
 

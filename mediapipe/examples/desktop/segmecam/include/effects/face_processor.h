@@ -9,6 +9,9 @@
 
 namespace segmecam {
 
+// Forward declaration
+struct FaceMesh;
+
 class FaceProcessor {
 public:
     FaceProcessor();
@@ -21,6 +24,10 @@ public:
     // Landmark drawing
     void DrawLandmarks(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks);
     void DrawMesh(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks, bool dense = false);
+    
+    // Face mesh visualization (using new FaceMesh structure)
+    void DrawFaceMesh(cv::Mat& frame_bgr, const FaceMesh& face_mesh, bool dense = false, bool show_pose = false);
+    void DrawFacePose(cv::Mat& frame_bgr, const FaceMesh& face_mesh);
 
     // Advanced skin smoothing with processing scale
     void ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, const FaceRegions& regions,
