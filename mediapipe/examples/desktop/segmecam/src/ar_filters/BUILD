@@ -45,3 +45,30 @@ cc_library(
         "-std=c++17",
     ],
 )
+
+cc_library(
+    name = "filter_object",
+    srcs = ["filter_object.cpp"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/filter_object.h"],
+    includes = ["../.."],
+    visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
+    deps = [],
+    copts = [
+        "-std=c++17",
+    ],
+)
+
+cc_library(
+    name = "attachment_controller",
+    srcs = ["attachment_controller.cpp"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/attachment_controller.h"],
+    includes = ["../.."],
+    visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
+    deps = [
+        ":filter_object",
+        ":transform_calculator",
+    ],
+    copts = [
+        "-std=c++17",
+    ],
+)
