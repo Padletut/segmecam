@@ -35,6 +35,7 @@ int ApplicationRun::ExecuteMainLoop(
     std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
     std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
     std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& blendshapes_poller,
     SDL_Window* window,
     AppState& app_state) {
 
@@ -71,7 +72,7 @@ int ApplicationRun::ExecuteMainLoop(
     // Initialize frame processing state and parameters
     FrameProcessingParams params = {
         managers, mediapipe_graph, mask_poller, multi_face_landmarks_poller,
-        face_rects_poller, window, app_state, *managers.ui,
+        face_rects_poller, blendshapes_poller, window, app_state, *managers.ui,
         frame_id, fps, fps_frames, fps_last_ms, frame_count, running, has_landmarks
     };
 

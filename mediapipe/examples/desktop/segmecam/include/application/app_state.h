@@ -7,6 +7,7 @@
 #include <cstdint>
 #include "include/camera/vcam.h"
 #include "effects/advanced_skin_effects.h"
+#include "src/ar_filters/blendshape_processor.h"
 
 namespace segmecam {
 
@@ -21,6 +22,11 @@ struct AppState {
   // OpenCL acceleration  
   bool use_opencl = true; // Enable by default if available
   bool opencl_available = false;
+  
+  // Blendshapes (facial expression data)
+  BlendshapeProcessor blendshapes_processor; // Processor for 52 expression coefficients
+  BlendshapeData blendshapes; // Current smoothed blendshape values (0.0-1.0)
+  bool blendshapes_available = false; // Whether blendshapes are being tracked
   
   // Performance logging
   bool perf_log = false;

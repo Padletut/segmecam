@@ -269,7 +269,8 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
 
     // Process MediaPipe outputs
     MediaPipeOutputData output_data;
-    MediaPipeProcessor::ProcessMediaPipeOutputs(output_data, params.mask_poller, params.multi_face_landmarks_poller, params.face_rects_poller,
+    MediaPipeProcessor::ProcessMediaPipeOutputs(output_data, params.mask_poller, params.multi_face_landmarks_poller, 
+                           params.face_rects_poller, params.blendshapes_poller,
                            params.app_state, params.frame_count, params.has_landmarks);
 
     // Sync UI settings to EffectsManager before processing effects

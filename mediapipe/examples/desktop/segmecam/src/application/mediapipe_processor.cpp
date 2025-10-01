@@ -22,6 +22,7 @@ void MediaPipeProcessor::ProcessMediaPipeOutputs(
     std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
     std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
     std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& blendshapes_poller,
     AppState& app_state,
     int frame_count,
     bool has_landmarks
@@ -32,6 +33,11 @@ void MediaPipeProcessor::ProcessMediaPipeOutputs(
     // Process face landmarks if available
     if (has_landmarks && multi_face_landmarks_poller) {
         ProcessFaceLandmarks(output_data, multi_face_landmarks_poller, face_rects_poller, frame_count);
+    }
+
+    // Process blendshapes if available
+    if (has_landmarks && blendshapes_poller) {
+        ProcessBlendshapes(blendshapes_poller, app_state, frame_count);
     }
 
 }
@@ -122,6 +128,47 @@ void MediaPipeProcessor::ProcessFaceRects(
     mediapipe::Packet rp;
     while (face_rects_poller->QueueSize() > 0 && face_rects_poller->Next(&rp)) {
         output_data.latest_rects = rp.Get<std::vector<mediapipe::NormalizedRect>>();
+    }
+}
+
+void MediaPipeProcessor::ProcessBlendshapes(
+    std::unique_ptr<mediapipe::OutputStreamPoller>& blendshapes_poller,
+    AppState& app_state,
+    int frame_count
+) {
+    mediapipe::Packet bp;
+    int queue_size = blendshapes_poller->QueueSize();
+    if (frame_count <= 5) {
+        std::cout << "🎭 Blendshapes queue size: " << queue_size << std::endl;
+    }
+
+    // Process all pending blendshape packets (use latest)
+    while (queue_size > 0 && blendshapes_poller->Next(&bp)) {
+        try {
+            // Get ClassificationList from MediaPipe
+            const auto& classifications = bp.Get<std::vector<mediapipe::ClassificationList>>();
+            
+            if (!classifications.empty() && classifications[0].classification_size() == 52) {
+                // Update blendshapes in app_state
+                app_state.blendshapes_processor.Update(classifications[0]);
+                app_state.blendshapes = app_state.blendshapes_processor.GetSmoothedBlendshapes();
+                app_state.blendshapes_available = true;
+                
+                if (frame_count <= 5) {
+                    std::cout << "✅ Got 52 blendshapes - smile intensity: " 
+                              << app_state.blendshapes_processor.GetSmileIntensity() << std::endl;
+                }
+            } else {
+                if (frame_count <= 5) {
+                    std::cout << "⚠️  Unexpected blendshape format" << std::endl;
+                }
+            }
+            queue_size = blendshapes_poller->QueueSize();
+        } catch (const std::exception& e) {
+            std::cerr << "❌ Error processing blendshapes packet: " << e.what() << std::endl;
+            app_state.blendshapes_available = false;
+            break;
+        }
     }
 }
 
