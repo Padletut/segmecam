@@ -329,6 +329,36 @@ cv::Mat WrinkleSegmenter::PostProcessMask(const cv::Mat& raw_mask, const cv::Siz
     SubtractFeatureRegion(mask_float, regions.lips_outer);
     SubtractFeatureRegion(mask_float, regions.lips_inner);
 
+    // Filter out small scattered regions that cause wobbling
+    // Convert to binary mask for connected components analysis
+    cv::Mat mask_binary;
+    cv::threshold(mask_float, mask_binary, 0.054f, 1.0f, cv::THRESH_BINARY);
+    mask_binary.convertTo(mask_binary, CV_8U, 255.0);
+    
+    // Find connected components
+    cv::Mat labels, stats, centroids;
+    int num_labels = cv::connectedComponentsWithStats(mask_binary, labels, stats, centroids, 8, CV_32S);
+    
+    // Calculate minimum area threshold (e.g., 0.1% of frame area)
+    // Adjust this value: higher = removes more small regions, lower = keeps more
+    int min_area = static_cast<int>(target_size.width * target_size.height * 0.00013f); // 0.013% of frame
+    
+    // Create filtered mask: only keep components larger than min_area
+    cv::Mat filtered_mask = cv::Mat::zeros(target_size, CV_8U);
+    for (int i = 1; i < num_labels; i++) { // Skip background (label 0)
+        int area = stats.at<int>(i, cv::CC_STAT_AREA);
+        if (area >= min_area) {
+            // Keep this component
+            cv::Mat component_mask = (labels == i);
+            filtered_mask.setTo(255, component_mask);
+        }
+    }
+    
+    // Convert back to float and apply to original mask
+    cv::Mat filtered_mask_f;
+    filtered_mask.convertTo(filtered_mask_f, CV_32F, 1.0f / 255.0f);
+    cv::multiply(mask_float, filtered_mask_f, mask_float);
+
     cv::GaussianBlur(mask_float, mask_float, cv::Size(0, 0), 1.2);
     return mask_float;
 }
