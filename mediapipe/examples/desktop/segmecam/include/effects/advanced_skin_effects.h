@@ -86,6 +86,7 @@ struct SkinSmoothingConfig {
   float boost_gain = 1.0f;
   bool wrinkle_enabled = false;
   bool wrinkle_preview = false;
+  bool use_cv_inpaint = false; // Use cv::inpaint() instead of morphological closing
   float baseline_boost = 0.25f;
   float neg_atten_cap = 0.8f;
 };

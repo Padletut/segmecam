@@ -158,6 +158,7 @@ void FaceProcessor::SetupSkinSmoothingConfig(SkinSmoothingConfig& config, const 
     config.wrinkle.use_skin_gate = beauty_state.fx_wrinkle_use_skin_gate;
     config.wrinkle.mask_gain = beauty_state.fx_wrinkle_mask_gain;
     config.neg_atten_cap = beauty_state.fx_wrinkle_neg_cap;
+    config.use_cv_inpaint = beauty_state.fx_wrinkle_use_cv_inpaint;
     // boost_gain is now properly set above from fx_skin_wrinkle_gain
 }
 

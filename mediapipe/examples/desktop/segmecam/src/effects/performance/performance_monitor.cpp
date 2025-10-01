@@ -178,7 +178,8 @@ void PerformanceMonitor::ApplyScaleAdjustment(float scale_adjustment, const std:
     // Actually update the processing scale via callback if set
     if (set_processing_scale_cb_) {
         float current_scale = GetProcessingScale();
-        float new_scale = std::clamp(current_scale + scale_adjustment, 0.4f, 1.0f);
+        // Upper limit 0.999 to avoid edge case issues at exactly 1.0
+        float new_scale = std::clamp(current_scale + scale_adjustment, 0.4f, 0.999f);
         if (std::abs(new_scale - current_scale) > 0.0005f) {
             set_processing_scale_cb_(new_scale);
         }

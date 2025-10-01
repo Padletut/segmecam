@@ -87,6 +87,7 @@ struct AppState {
   float fx_wrinkle_mask_gain = 2.0f;
   float fx_wrinkle_baseline = 0.5f;
   float fx_wrinkle_neg_cap = 0.9f;
+  bool fx_wrinkle_use_cv_inpaint = false; // Use cv::inpaint() instead of morphological closing
   
   // Lip effects
   bool fx_lipstick = false;

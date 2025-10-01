@@ -79,11 +79,13 @@ void FrameProcessor::UpdateCameraInfo(FrameProcessingParams& params) {
 }
 
 void FrameProcessor::UpdateAutoFPS(FrameProcessingParams& params) {
-    static float last_camera_fps = -1.0f;
-    if (std::abs(params.app_state.camera_fps - last_camera_fps) > 0.1f) {
-        params.managers.effects->UpdateTargetFPSFromCamera(params.app_state.camera_fps);
+    // Use actual measured FPS instead of configured camera FPS
+    // This accounts for dynamic framerate changes (e.g., exposure priority dropping 30→15 FPS)
+    static float last_measured_fps = -1.0f;
+    if (std::abs(params.fps - last_measured_fps) > 0.1f) {
+        params.managers.effects->UpdateTargetFPSFromCamera(params.fps);
         params.app_state.target_fps = params.managers.effects->GetTargetFPS();
-        last_camera_fps = params.app_state.camera_fps;
+        last_measured_fps = params.fps;
     }
 }
 

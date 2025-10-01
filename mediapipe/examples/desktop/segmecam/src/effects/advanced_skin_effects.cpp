@@ -204,7 +204,8 @@ void AddForeheadBoost(cv::Mat& boost, const cv::Mat& frame_bgr, const FaceRegion
 void ApplyCheekWrinkleInpaint(cv::Mat& Lf,
                               const cv::Mat& boost_final,
                               const cv::Mat& wrinkle_mask,
-                              float strength) {
+                              float strength,
+                              bool use_cv_inpaint = false) {
   strength = std::clamp(strength, 0.0f, 1.0f);
   if (strength <= 0.10f) {
     return;
@@ -253,69 +254,147 @@ void ApplyCheekWrinkleInpaint(cv::Mat& Lf,
   
   if (cv::countNonZero(smooth_mask > 0.01f) == 0) return;
 
-  // KEY INSIGHT: Wrinkles are NARROW DARK LINES. 
-  // Morphological closing fills dark valleys with bright surrounding pixels!
+  cv::Mat Lf_smoothed;
   
-  // Convert to 8-bit for morphological operations
-  cv::Mat Lf_8u;
-  Lf.convertTo(Lf_8u, CV_8U, 255.0);
-  
-  // EXTREMELY AGGRESSIVE morphological CLOSING to completely eliminate wrinkles
-  // MASSIVE kernel to ensure even the deepest wrinkles are completely filled
-  int morph_size = 11 + (int)(strength * 20); // Size 11-31 (VERY large!)
-  cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, 
-                                             cv::Size(morph_size, morph_size));
-  
-  cv::Mat Lf_closed;
-  cv::morphologyEx(Lf_8u, Lf_closed, cv::MORPH_CLOSE, kernel);
-  
-  // Apply MANY iterations for complete wrinkle obliteration
-  // Each iteration pushes bright pixels deeper into wrinkle valleys
-  int iterations = 3 + (int)(strength * 5); // 3-8 iterations (tripled!)
-  for (int i = 1; i < iterations; ++i) {
-    cv::Mat Lf_temp;
-    cv::morphologyEx(Lf_closed, Lf_temp, cv::MORPH_CLOSE, kernel);
-    Lf_closed = Lf_temp;
-  }
-  
-  // CRITICAL ADDITION: Apply median filter to remove remaining line artifacts
-  // Median filter is PERFECT for removing narrow dark/light lines (wrinkles!)
-  int median_size = 7 + (int)(strength * 8); // 7-15 (must be odd)
-  if (median_size % 2 == 0) median_size++; // Ensure odd
-  cv::medianBlur(Lf_closed, Lf_closed, median_size);
-  
-  // Additional pass with MASSIVE kernel for the most stubborn wrinkles
-  if (strength > 0.3f) {
-    int large_kernel_size = morph_size + 8; // Even larger!
-    cv::Mat large_kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE,
-                                                     cv::Size(large_kernel_size, large_kernel_size));
-    cv::Mat Lf_extra;
-    cv::morphologyEx(Lf_closed, Lf_extra, cv::MORPH_CLOSE, large_kernel);
+  // Choose wrinkle removal method
+  if (use_cv_inpaint) {
+    // ============================================================================
+    // METHOD 1: HYBRID - Morphological Fill + Inpainting Smoothing (EXPERIMENTAL)
+    // ============================================================================
+    // KNOWN ISSUE: Can still produce dark spots/tone mismatch on some skin tones
+    // cv::inpaint() interpolates texture which may not perfectly match all skin tones
+    // This is experimental - use with caution, pure morphological is more reliable
+    //
+    // APPROACH:
+    // STEP 1: Use morphological closing to fill wrinkles with proper skin tone
+    // STEP 2: Use cv::inpaint to smooth morphological artifacts and restore texture
+    // 
+    // THEORY: Morphological provides correct tone, inpainting smooths texture
+    // REALITY: Inpainting can still create tone mismatches in some cases
     
-    // Apply this large kernel multiple times too
-    int extra_iterations = 1 + (int)(strength * 2);
-    for (int i = 1; i < extra_iterations; ++i) {
+    // Convert to 8-bit for morphological operations
+    cv::Mat Lf_8u;
+    Lf.convertTo(Lf_8u, CV_8U, 255.0);
+    
+    // PHASE 1: MORPHOLOGICAL FILL (Tone Matching)
+    // Use moderate morphological closing to fill wrinkles with correct skin tone
+    // Smaller kernel than pure morphological to preserve more texture for inpainting
+    int morph_size = 7 + (int)(strength * 10); // Size 7-17 (MODERATE, not aggressive)
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, 
+                                               cv::Size(morph_size, morph_size));
+    
+    cv::Mat Lf_morph_filled;
+    cv::morphologyEx(Lf_8u, Lf_morph_filled, cv::MORPH_CLOSE, kernel);
+    
+    // Apply 2-3 iterations to ensure wrinkles are filled
+    int iterations = 2 + (int)(strength * 1); // 2-3 iterations (REDUCED from 3-8)
+    for (int i = 1; i < iterations; ++i) {
       cv::Mat Lf_temp;
-      cv::morphologyEx(Lf_extra, Lf_temp, cv::MORPH_CLOSE, large_kernel);
-      Lf_extra = Lf_temp;
+      cv::morphologyEx(Lf_morph_filled, Lf_temp, cv::MORPH_CLOSE, kernel);
+      Lf_morph_filled = Lf_temp;
     }
     
-    // Another median filter pass after extra morphology
-    cv::medianBlur(Lf_extra, Lf_extra, median_size);
-    Lf_closed = Lf_extra;
+    // PHASE 2: INPAINTING SMOOTHING (Texture Restoration)
+    // Now use cv::inpaint to smooth the morphological artifacts and restore natural texture
+    // WARNING: The inpaint may still create tone mismatches despite morphological pre-fill
+    
+    // Create inpaint mask from wrinkle detection
+    cv::Mat inpaint_mask;
+    smooth_mask.convertTo(inpaint_mask, CV_8U, 255.0);
+    cv::threshold(inpaint_mask, inpaint_mask, 25, 255, cv::THRESH_BINARY); // 10% threshold
+    
+    // Small inpaint radius since morphological already filled the wrinkles
+    // We just need to smooth the texture
+    int inpaint_radius = 2 + (int)(strength * 5); // 2-7 pixels (SMALL, just smoothing)
+    
+    cv::Mat Lf_hybrid;
+    cv::inpaint(Lf_morph_filled, inpaint_mask, Lf_hybrid, inpaint_radius, cv::INPAINT_NS);
+    
+    // Light Gaussian blur to blend everything naturally
+    cv::GaussianBlur(Lf_hybrid, Lf_hybrid, cv::Size(0, 0), 0.5 + strength * 1.5);
+    
+    // Convert back to float
+    Lf_hybrid.convertTo(Lf_smoothed, CV_32F, 1.0 / 255.0);
+    
+    // Subtle brightening (morphological already provides good tone)
+    float lift = 0.01 + strength * 0.02; // 1-3% lift
+    cv::add(Lf_smoothed, cv::Scalar(lift), Lf_smoothed);
+    cv::min(Lf_smoothed, 1.0f, Lf_smoothed);
+    
+  } else {
+    // ============================================================================
+    // METHOD 2: Morphological Closing (Original Method - Default)
+    // ============================================================================
+    // Aggressive wrinkle removal via morphological operations
+    // Better for deep wrinkles but can over-smooth texture
+    
+    // KEY INSIGHT: Wrinkles are NARROW DARK LINES. 
+    // Morphological closing fills dark valleys with bright surrounding pixels!
+    
+    // Convert to 8-bit for morphological operations
+    cv::Mat Lf_8u;
+    Lf.convertTo(Lf_8u, CV_8U, 255.0);
+    
+    // EXTREMELY AGGRESSIVE morphological CLOSING to completely eliminate wrinkles
+    // MASSIVE kernel to ensure even the deepest wrinkles are completely filled
+    int morph_size = 11 + (int)(strength * 20); // Size 11-31 (VERY large!)
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, 
+                                               cv::Size(morph_size, morph_size));
+    
+    cv::Mat Lf_closed;
+    cv::morphologyEx(Lf_8u, Lf_closed, cv::MORPH_CLOSE, kernel);
+    
+    // Apply MANY iterations for complete wrinkle obliteration
+    // Each iteration pushes bright pixels deeper into wrinkle valleys
+    int iterations = 3 + (int)(strength * 5); // 3-8 iterations (tripled!)
+    for (int i = 1; i < iterations; ++i) {
+      cv::Mat Lf_temp;
+      cv::morphologyEx(Lf_closed, Lf_temp, cv::MORPH_CLOSE, kernel);
+      Lf_closed = Lf_temp;
+    }
+    
+    // CRITICAL ADDITION: Apply median filter to remove remaining line artifacts
+    // Median filter is PERFECT for removing narrow dark/light lines (wrinkles!)
+    int median_size = 7 + (int)(strength * 8); // 7-15 (must be odd)
+    if (median_size % 2 == 0) median_size++; // Ensure odd
+    cv::medianBlur(Lf_closed, Lf_closed, median_size);
+    
+    // Additional pass with MASSIVE kernel for the most stubborn wrinkles
+    if (strength > 0.3f) {
+      int large_kernel_size = morph_size + 8; // Even larger!
+      cv::Mat large_kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE,
+                                                       cv::Size(large_kernel_size, large_kernel_size));
+      cv::Mat Lf_extra;
+      cv::morphologyEx(Lf_closed, Lf_extra, cv::MORPH_CLOSE, large_kernel);
+      
+      // Apply this large kernel multiple times too
+      int extra_iterations = 1 + (int)(strength * 2);
+      for (int i = 1; i < extra_iterations; ++i) {
+        cv::Mat Lf_temp;
+        cv::morphologyEx(Lf_extra, Lf_temp, cv::MORPH_CLOSE, large_kernel);
+        Lf_extra = Lf_temp;
+      }
+      
+      // Another median filter pass after extra morphology
+      cv::medianBlur(Lf_extra, Lf_extra, median_size);
+      Lf_closed = Lf_extra;
+    }
+    
+    // Strong Gaussian blur to remove any texture remnants
+    cv::GaussianBlur(Lf_closed, Lf_closed, cv::Size(0, 0), 5.0 + strength * 6.0);
+    
+    // Convert back to float
+    Lf_closed.convertTo(Lf_smoothed, CV_32F, 1.0 / 255.0);
+    
+    // Slight brightening for perfect match
+    float lift = 0.015 + strength * 0.035; // 1.5-5% lift
+    cv::add(Lf_smoothed, cv::Scalar(lift), Lf_smoothed);
+    cv::min(Lf_smoothed, 1.0f, Lf_smoothed);
   }
   
-  // Strong Gaussian blur to remove any texture remnants
-  cv::GaussianBlur(Lf_closed, Lf_closed, cv::Size(0, 0), 5.0 + strength * 6.0);
-  
-  // Convert back to float
-  cv::Mat Lf_smoothed;
-  Lf_closed.convertTo(Lf_smoothed, CV_32F, 1.0 / 255.0);
-  
-  // Slight brightening for perfect match
-  float lift = 0.015 + strength * 0.035; // 1.5-5% lift
-  cv::add(Lf_smoothed, cv::Scalar(lift), Lf_smoothed);
-  cv::min(Lf_smoothed, 1.0f, Lf_smoothed);
+  // ============================================================================
+  // COMMON BLENDING (Both Methods)
+  // ============================================================================
   
   // CRITICAL: Boost blend strength to ensure wrinkles are fully replaced
   // The mask might have low values, so we normalize and boost
@@ -1816,7 +1895,7 @@ FacialExpressionMetrics ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceR
       
       // Apply wrinkle inpainting directly to luminance
       cv::Mat boost_mask = cv::Mat::ones(wrinkle_mask.size(), CV_32F);
-      ApplyCheekWrinkleInpaint(Lf_wrinkle, boost_mask, wrinkle_mask, wrinkle_strength);
+      ApplyCheekWrinkleInpaint(Lf_wrinkle, boost_mask, wrinkle_mask, wrinkle_strength, config.use_cv_inpaint);
       
       // Convert back to BGR and apply to original frame
       cv::Mat frame_lab;

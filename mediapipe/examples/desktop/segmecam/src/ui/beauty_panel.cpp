@@ -136,6 +136,20 @@ bool BeautyPanel::RenderWrinkleControls() {
         changed |= ImGui::SliderFloat("Neg atten cap", &state_.fx_wrinkle_neg_cap, 0.6f, 1.0f);
 
         ImGui::Separator();
+        
+        // Inpainting method selection
+        changed |= ImGui::Checkbox("Hybrid inpaint (experimental)", &state_.fx_wrinkle_use_cv_inpaint);
+        ImGui::SameLine();
+        if (ImGui::Button("?##inpaint_method")) {
+            ImGui::SetTooltip("Toggle between:\n"
+                             "• Morphological (default): Pure morphological closing - RECOMMENDED\n"
+                             "  Fast, reliable, proven to work on all skin tones\n"
+                             "• Hybrid (experimental): Morphological + cv::inpaint - MAY CAUSE ISSUES\n"
+                             "  Can produce dark spots/tone mismatch on some skin tones\n"
+                             "  Uses morphological fill + inpaint smoothing\n"
+                             "  Only enable if you want to experiment");
+        }
+        
         bool preview_changed = ImGui::Checkbox("Wrinkle-only preview", &state_.fx_wrinkle_preview);
         changed |= preview_changed;
         if (preview_changed) {
@@ -341,6 +355,7 @@ void BeautyPanel::CopyWrinkleFieldsToBeautyState(BeautyState& bs) {
     bs.fx_wrinkle_mask_gain = state_.fx_wrinkle_mask_gain;
     bs.fx_wrinkle_baseline = state_.fx_wrinkle_baseline;
     bs.fx_wrinkle_neg_cap = state_.fx_wrinkle_neg_cap;
+    bs.fx_wrinkle_use_cv_inpaint = state_.fx_wrinkle_use_cv_inpaint;
 }
 
 void BeautyPanel::CopyLipFieldsToBeautyState(BeautyState& bs) {
@@ -417,6 +432,7 @@ void BeautyPanel::CopyWrinkleStateToAppState(const BeautyState& bs) {
     state_.fx_wrinkle_mask_gain = bs.fx_wrinkle_mask_gain;
     state_.fx_wrinkle_baseline = bs.fx_wrinkle_baseline;
     state_.fx_wrinkle_neg_cap = bs.fx_wrinkle_neg_cap;
+    state_.fx_wrinkle_use_cv_inpaint = bs.fx_wrinkle_use_cv_inpaint;
 }
 
 void BeautyPanel::CopyLipStateToAppState(const BeautyState& bs) {

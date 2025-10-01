@@ -41,6 +41,7 @@ struct BeautyState {
   float fx_wrinkle_baseline = 0.5f;
   float fx_wrinkle_neg_cap = 0.9f;
   bool fx_wrinkle_preview = false;
+  bool fx_wrinkle_use_cv_inpaint = false; // Use cv::inpaint() instead of morphological closing
 
   // Advanced scaling tweaks
   float fx_adv_scale = 1.0f;             // processing scale for ROI
