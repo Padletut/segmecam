@@ -68,6 +68,10 @@ public:
     // Getter for latest facial metrics (for debug display)
     const FacialExpressionMetrics& GetLastFacialMetrics() const { return state_.last_facial_metrics; }
     
+    // Getter for face processor (Phase 2 Step 3: Anchor visualization)
+    FaceProcessor& GetFaceProcessor() { return *face_processor_; }
+    const FaceProcessor& GetFaceProcessor() const { return *face_processor_; }
+    
     // Core lifecycle
     int Initialize(const EffectsConfig& config);
     void Cleanup();

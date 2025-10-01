@@ -39,6 +39,12 @@ void DebugPanel::RenderOverlayControls() {
         ImGui::SameLine();
         ImGui::Button("?##mesh_dense");
     }
+    
+    // Anchor point visualization (Phase 2 Step 3)
+    ImGui::Checkbox("Show Anchor Points", &state_.show_anchors);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Display 7 key attachment points for AR filters");
+    }
 
 }
 

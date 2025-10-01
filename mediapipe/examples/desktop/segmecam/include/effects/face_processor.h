@@ -26,8 +26,11 @@ public:
     void DrawMesh(cv::Mat& frame_bgr, const mediapipe::NormalizedLandmarkList& landmarks, bool dense = false);
     
     // Face mesh visualization (using new FaceMesh structure)
-    void DrawFaceMesh(cv::Mat& frame_bgr, const FaceMesh& face_mesh, bool dense = false, bool show_pose = false);
+    void DrawFaceMesh(cv::Mat& frame_bgr, const FaceMesh& face_mesh, bool dense = false, bool show_pose = false, bool show_anchors = false);
     void DrawFacePose(cv::Mat& frame_bgr, const FaceMesh& face_mesh);
+    
+    // Anchor point visualization (Phase 2 Step 3)
+    void DrawAnchorPoints(cv::Mat& frame_bgr, const FaceMesh& face_mesh, bool show_labels = true);
 
     // Advanced skin smoothing with processing scale
     void ApplySkinSmoothingWithProcessingScale(cv::Mat& frame_bgr, const FaceRegions& regions,
