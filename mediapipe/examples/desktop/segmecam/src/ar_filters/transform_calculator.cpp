@@ -723,31 +723,13 @@ void TransformCalculator::ProjectAnchorTo2D(AnchorPoint& anchor, const FaceMesh&
     int width = face_mesh.image_width;
     int height = face_mesh.image_height;
     
-    // Use camera matrix for perspective projection
-    // camera_matrix_ is a 3x3 matrix with focal lengths and principal point
-    // Format: [fx, 0, cx]
-    //         [0, fy, cy]
-    //         [0,  0,  1]
+    // Note: Currently, position_world contains pixel coordinates directly from face_mesh.landmarks_2d
+    // This is because the anchor calculations use landmarks_2d which are already in pixel space.
+    // In the future, we may want to use actual 3D world coordinates and proper projection.
+    // For now, we simply use the X,Y components as pixel coordinates.
     
-    float fx = camera_matrix_.at<float>(0, 0);
-    float fy = camera_matrix_.at<float>(1, 1);
-    float cx = camera_matrix_.at<float>(0, 2);
-    float cy = camera_matrix_.at<float>(1, 2);
-    
-    // Project 3D point to 2D using pinhole camera model
-    // 2D_x = (fx * 3D_x / 3D_z) + cx
-    // 2D_y = (fy * 3D_y / 3D_z) + cy
-    
-    float z = anchor.position_world[2];
-    if (z < 0.01f) {
-        // Point behind camera or too close, mark as not visible
-        anchor.is_visible = false;
-        anchor.position_2d = cv::Point2f(-1, -1);
-        return;
-    }
-    
-    float x_2d = (fx * anchor.position_world[0] / z) + cx;
-    float y_2d = (fy * anchor.position_world[1] / z) + cy;
+    float x_2d = anchor.position_world[0];
+    float y_2d = anchor.position_world[1];
     
     anchor.position_2d = cv::Point2f(x_2d, y_2d);
     
