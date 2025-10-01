@@ -33,6 +33,9 @@ void MediaPipeProcessor::ProcessMediaPipeOutputs(
     // Process face landmarks if available
     if (has_landmarks && multi_face_landmarks_poller) {
         ProcessFaceLandmarks(output_data, multi_face_landmarks_poller, face_rects_poller, frame_count);
+        
+        // Process face mesh from landmarks (Phase 1 & 2)
+        ProcessFaceMesh(output_data, app_state, frame_count);
     }
 
     // Process blendshapes if available
