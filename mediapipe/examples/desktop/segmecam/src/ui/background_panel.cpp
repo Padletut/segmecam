@@ -36,7 +36,7 @@ void BackgroundPanel::Render() {
 }
 
 void BackgroundPanel::RenderMaskControls() {
-    ImGui::Checkbox("Show Segmentation (mask)", &state_.show_mask);
+    //ImGui::Checkbox("Show Segmentation (mask)", &state_.show_mask);
     ImGui::TextDisabled("GPU graph; CPU composite");
 }
 
@@ -104,7 +104,7 @@ void BackgroundPanel::RenderImageHeader() {
 void BackgroundPanel::RenderImagePathControls() {
     ImGui::InputText("Image Path", state_.bg_path_buf, sizeof(state_.bg_path_buf));
     
-    ImGui::SameLine();
+    // Buttons in a row below the input field
     if (ImGui::Button("Load")) {
         LoadImageFromPath(state_.bg_path_buf);
     }

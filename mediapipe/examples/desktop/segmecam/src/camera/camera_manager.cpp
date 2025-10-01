@@ -308,6 +308,11 @@ bool CameraManager::SetControl(uint32_t control_id, int value) {
     return camera_controls_->SetControl(state_.current_camera_path, control_id, value);
 }
 
+bool CameraManager::GetControl(uint32_t control_id, int32_t* value) {
+    if (!value) return false;
+    return camera_controls_->GetControl(state_.current_camera_path, control_id, value);
+}
+
 std::string CameraManager::GetBackendName() const {
     return state_.backend_name;
 }

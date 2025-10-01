@@ -238,6 +238,7 @@ public:
     
     // Generic control method for V4L2 controls
     bool SetControl(uint32_t control_id, int value);
+    bool GetControl(uint32_t control_id, int32_t* value);
     
     // Control ranges (for UI sliders)
     const CtrlRange& GetBrightnessRange() const { return camera_controls_->GetBrightnessRange(); }

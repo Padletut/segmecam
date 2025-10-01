@@ -22,6 +22,7 @@ void AppState::SaveToProfile(cv::FileStorage& fs) const {
   fs << "use_opencl" << (int)use_opencl;
   fs << "fx_skin_wrinkle" << (int)fx_skin_wrinkle << "fx_skin_smile_boost" << fx_skin_smile_boost << "fx_skin_squint_boost" << fx_skin_squint_boost
       << "fx_skin_forehead_boost" << fx_skin_forehead_boost << "fx_skin_wrinkle_gain" << fx_skin_wrinkle_gain
+      << "fx_skin_smile_wrinkle_gain" << fx_skin_smile_wrinkle_gain
       << "fx_wrinkle_suppress_lower" << (int)fx_wrinkle_suppress_lower << "fx_wrinkle_lower_ratio" << fx_wrinkle_lower_ratio
       << "fx_wrinkle_ignore_glasses" << (int)fx_wrinkle_ignore_glasses << "fx_wrinkle_glasses_margin" << fx_wrinkle_glasses_margin
       << "fx_wrinkle_keep_ratio" << fx_wrinkle_keep_ratio << "fx_wrinkle_custom_scales" << (int)fx_wrinkle_custom_scales

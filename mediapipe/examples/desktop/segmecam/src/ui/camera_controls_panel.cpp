@@ -94,7 +94,10 @@ void CameraControlsPanel::RenderExposureControls() {
             SliderCtrl("Exposure", r_exposure_abs_, V4L2_CID_EXPOSURE_ABSOLUTE);
         }
         if (r_expo_dynfps_.available) {
+            // Exposure dynamic framerate only works when auto exposure is ON
+            if (!ae_on) ImGui::BeginDisabled();
             CheckboxCtrl("Exposure dynamic framerate", r_expo_dynfps_, V4L2_CID_EXPOSURE_AUTO_PRIORITY);
+            if (!ae_on) ImGui::EndDisabled();
         }
     }
 }
@@ -181,13 +184,14 @@ void CameraControlsPanel::CheckboxCtrl(const char* label, CtrlRange& range, uint
 
     bool v = (range.val != 0);
     if (ImGui::Checkbox(label, &v)) {
-        range.val = v ? 1 : 0;
+        int new_val = v ? 1 : 0;
 
         // Use lookup table for boolean controls
-        static const std::unordered_map<uint32_t, std::function<void(CameraManager&, bool)>> bool_setters = {
-            {V4L2_CID_AUTOGAIN, [](CameraManager& mgr, bool val) { mgr.SetAutoGain(val); }},
-            {V4L2_CID_FOCUS_AUTO, [](CameraManager& mgr, bool val) { mgr.SetAutoFocus(val); }},
-            {V4L2_CID_AUTO_WHITE_BALANCE, [](CameraManager& mgr, bool val) { mgr.SetWhiteBalance(val); }}
+        static const std::unordered_map<uint32_t, std::function<bool(CameraManager&, bool)>> bool_setters = {
+            {V4L2_CID_AUTOGAIN, [](CameraManager& mgr, bool val) { mgr.SetAutoGain(val); return true; }},
+            {V4L2_CID_FOCUS_AUTO, [](CameraManager& mgr, bool val) { mgr.SetAutoFocus(val); return true; }},
+            {V4L2_CID_AUTO_WHITE_BALANCE, [](CameraManager& mgr, bool val) { mgr.SetWhiteBalance(val); return true; }},
+            {V4L2_CID_EXPOSURE_AUTO_PRIORITY, [](CameraManager& mgr, bool val) { return mgr.SetControl(V4L2_CID_EXPOSURE_AUTO_PRIORITY, val ? 1 : 0); }}
         };
 
         auto it = bool_setters.find(control_id);
@@ -196,10 +200,11 @@ void CameraControlsPanel::CheckboxCtrl(const char* label, CtrlRange& range, uint
         } else if (control_id == V4L2_CID_BACKLIGHT_COMPENSATION &&
                    range.min == 0 && range.max == 1 && range.step == 1) {
             // Special case: backlight can be either checkbox or slider
-            camera_mgr_.SetBacklightCompensation(range.val);
+            camera_mgr_.SetBacklightCompensation(new_val);
         } else {
-            camera_mgr_.SetControl(control_id, range.val);
+            camera_mgr_.SetControl(control_id, new_val);
         }
+        // Note: Cache is automatically updated by CameraControls::SetControl()
     }
 }
 

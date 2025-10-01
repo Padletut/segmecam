@@ -60,6 +60,9 @@ public:
     const CtrlRange& GetExposureDynamicFPSRange() const { return r_expo_dynfps_; }
 
 private:
+    // Helper method to update cached control values after SetControl
+    void UpdateCachedControlValue(uint32_t control_id, int value);
+    
     // Cached control ranges
     CtrlRange r_brightness_;
     CtrlRange r_contrast_;

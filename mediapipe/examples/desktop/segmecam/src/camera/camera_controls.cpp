@@ -182,7 +182,36 @@ bool CameraControls::SetBacklightCompensation(const std::string& cam_path, int v
 }
 
 bool CameraControls::SetControl(const std::string& cam_path, uint32_t control_id, int value) {
-    return SetCtrl(cam_path, control_id, value);
+    bool success = SetCtrl(cam_path, control_id, value);
+    
+    // Update the cached control value if the set was successful
+    if (success) {
+        UpdateCachedControlValue(control_id, value);
+    }
+    
+    return success;
+}
+
+void CameraControls::UpdateCachedControlValue(uint32_t control_id, int value) {
+    // Update the cached CtrlRange value for the control that was just set
+    switch (control_id) {
+        case V4L2_CID_BRIGHTNESS: r_brightness_.val = value; break;
+        case V4L2_CID_CONTRAST: r_contrast_.val = value; break;
+        case V4L2_CID_SATURATION: r_saturation_.val = value; break;
+        case V4L2_CID_GAIN: r_gain_.val = value; break;
+        case V4L2_CID_SHARPNESS: r_sharpness_.val = value; break;
+        case V4L2_CID_ZOOM_ABSOLUTE: r_zoom_.val = value; break;
+        case V4L2_CID_FOCUS_ABSOLUTE: r_focus_.val = value; break;
+        case V4L2_CID_AUTOGAIN: r_autogain_.val = value; break;
+        case V4L2_CID_FOCUS_AUTO: r_autofocus_.val = value; break;
+        case V4L2_CID_EXPOSURE_AUTO: r_autoexposure_.val = value; break;
+        case V4L2_CID_EXPOSURE_ABSOLUTE: r_exposure_abs_.val = value; break;
+        case V4L2_CID_AUTO_WHITE_BALANCE: r_awb_.val = value; break;
+        case V4L2_CID_WHITE_BALANCE_TEMPERATURE: r_wb_temp_.val = value; break;
+        case V4L2_CID_BACKLIGHT_COMPENSATION: r_backlight_.val = value; break;
+        case V4L2_CID_EXPOSURE_AUTO_PRIORITY: r_expo_dynfps_.val = value; break;
+        default: break; // Unknown control, no cache to update
+    }
 }
 
 bool CameraControls::GetControl(const std::string& cam_path, uint32_t id, int32_t* value) {
