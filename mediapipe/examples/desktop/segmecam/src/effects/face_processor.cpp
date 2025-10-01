@@ -3,6 +3,7 @@
 #include "include/effects/segmecam_face_effects.h"
 #include "include/effects/advanced_skin_effects.h"
 #include "include/ar_filters/face_mesh_processor.h"
+#include "include/application/app_state.h"
 #include "mediapipe/tasks/cc/vision/face_landmarker/face_landmarks_connections.h"
 #include <iostream>
 #include <opencv2/core.hpp>
@@ -65,7 +66,9 @@ void FaceProcessor::DrawMesh(cv::Mat& frame_bgr, const mediapipe::NormalizedLand
     }
 }
 
-void FaceProcessor::DrawFaceMesh(cv::Mat& frame_bgr, const FaceMesh& face_mesh, bool dense, bool show_pose, bool show_anchors) {
+void FaceProcessor::DrawFaceMesh(cv::Mat& frame_bgr, const AppState& app_state, bool dense, bool show_pose, bool show_anchors) {
+    const FaceMesh& face_mesh = app_state.face_mesh;
+    
     if (frame_bgr.empty() || face_mesh.confidence < 0.1f) {
         return;
     }
@@ -127,7 +130,7 @@ void FaceProcessor::DrawFaceMesh(cv::Mat& frame_bgr, const FaceMesh& face_mesh, 
     
     // Draw anchor points if requested
     if (show_anchors) {
-        DrawAnchorPoints(frame_bgr, face_mesh, !dense);
+        DrawAnchorPoints(frame_bgr, app_state, !dense);
     }
     
     // Draw info overlay
@@ -230,25 +233,17 @@ void FaceProcessor::DrawFacePose(cv::Mat& frame_bgr, const FaceMesh& face_mesh) 
     cv::putText(frame_bgr, "Z", z_end, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 0, 0), 2, cv::LINE_AA);
 }
 
-void FaceProcessor::DrawAnchorPoints(cv::Mat& frame_bgr, const FaceMesh& face_mesh, bool show_labels) {
-    if (frame_bgr.empty() || face_mesh.confidence < 0.1f) {
+void FaceProcessor::DrawAnchorPoints(cv::Mat& frame_bgr, const AppState& app_state, bool show_labels) {
+    if (frame_bgr.empty() || !app_state.transform_data_available) {
         return;
     }
     
-    // Get anchor points from AppState via external access
-    // Note: In Phase 2 Step 2, anchor_points are stored in AppState, not in FaceMesh
-    // For now, we'll visualize the key landmarks that will become anchors
+    // Access anchor points from AppState (calculated by TransformCalculator)
+    const std::vector<AnchorPoint>& anchors = app_state.anchor_points;
     
-    // Define the 7 key anchor landmark indices (from TransformCalculator)
-    const std::vector<int> anchor_indices = {
-        6,    // Nose Bridge
-        159,  // Left Eye Center (approximate)
-        386,  // Right Eye Center (approximate)
-        61,   // Left Mouth Corner
-        291,  // Right Mouth Corner
-        152,  // Chin
-        10    // Forehead Center
-    };
+    if (anchors.empty()) {
+        return;
+    }
     
     // Define colors for each anchor point (bright, distinct colors)
     const std::vector<cv::Scalar> anchor_colors = {
@@ -261,14 +256,16 @@ void FaceProcessor::DrawAnchorPoints(cv::Mat& frame_bgr, const FaceMesh& face_me
         cv::Scalar(147, 20, 255)    // Forehead - Deep Pink
     };
     
-    const std::vector<std::string> anchor_names = {
-        "Nose", "L.Eye", "R.Eye", "L.Mouth", "R.Mouth", "Chin", "Forehead"
-    };
-    
-    // Draw each anchor point
-    for (size_t i = 0; i < anchor_indices.size(); ++i) {
-        int landmark_idx = anchor_indices[i];
-        cv::Point2f anchor_pos = face_mesh.landmarks_2d[landmark_idx];
+    // Draw each anchor point with stability-based visualization
+    for (size_t i = 0; i < anchors.size() && i < anchor_colors.size(); ++i) {
+        const AnchorPoint& anchor = anchors[i];
+        
+        // Skip if anchor is not visible
+        if (!anchor.is_visible) {
+            continue;
+        }
+        
+        cv::Point2f anchor_pos = anchor.position_2d;
         
         // Skip invalid points
         if (anchor_pos.x < 0 || anchor_pos.y < 0 ||
@@ -276,18 +273,32 @@ void FaceProcessor::DrawAnchorPoints(cv::Mat& frame_bgr, const FaceMesh& face_me
             continue;
         }
         
+        // Get color for this anchor
         cv::Scalar color = anchor_colors[i];
         
-        // Draw anchor visualization with double-ring design
+        // Color-code by stability: green (stable), yellow (moderate), red (unstable)
+        cv::Scalar ring_color;
+        if (anchor.stability > 0.8f) {
+            ring_color = cv::Scalar(0, 255, 0);      // Green: very stable
+        } else if (anchor.stability > 0.5f) {
+            ring_color = cv::Scalar(0, 255, 255);    // Yellow: moderate stability
+        } else {
+            ring_color = cv::Scalar(0, 0, 255);      // Red: unstable
+        }
+        
+        // Draw anchor visualization with stability-based ring thickness
         int outer_radius = 12;
         int inner_radius = 6;
         
-        // Outer ring - thicker for stability
-        // TODO: Use actual stability data from TransformCalculator once connected
-        int ring_thickness = 2;  // Placeholder - will be based on anchor.stability
-        cv::circle(frame_bgr, anchor_pos, outer_radius, color, ring_thickness, cv::LINE_AA);
+        // Ring thickness based on stability: 1-4 pixels
+        // Higher stability = thicker ring
+        int ring_thickness = 1 + (int)(anchor.stability * 3);
+        ring_thickness = std::clamp(ring_thickness, 1, 4);
         
-        // Inner filled circle
+        // Outer ring - color and thickness indicate stability
+        cv::circle(frame_bgr, anchor_pos, outer_radius, ring_color, ring_thickness, cv::LINE_AA);
+        
+        // Inner filled circle with anchor's base color
         cv::circle(frame_bgr, anchor_pos, inner_radius, color, -1, cv::LINE_AA);
         
         // Center dot for precise position
@@ -295,10 +306,9 @@ void FaceProcessor::DrawAnchorPoints(cv::Mat& frame_bgr, const FaceMesh& face_me
         
         // Draw label if requested
         if (show_labels) {
-            std::string label = anchor_names[i];
-            
-            // TODO: Add stability percentage once TransformCalculator data is connected
-            // label += cv::format(" %.0f%%", anchor.stability * 100);
+            // Create label with anchor name and stability percentage
+            std::string label = anchor.name;
+            label += cv::format(" %.0f%%", anchor.stability * 100);
             
             // Position label above and to the right of the anchor
             cv::Point label_pos(anchor_pos.x + 15, anchor_pos.y - 5);
@@ -311,24 +321,24 @@ void FaceProcessor::DrawAnchorPoints(cv::Mat& frame_bgr, const FaceMesh& face_me
                          cv::Point(label_pos.x + text_size.width + 2, label_pos.y + baseline + 2),
                          cv::Scalar(0, 0, 0), -1);
             
-            // Draw label text
+            // Draw label text with stability-based color
             cv::putText(frame_bgr, label, label_pos, 
-                       cv::FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv::LINE_AA);
+                       cv::FONT_HERSHEY_SIMPLEX, 0.4, ring_color, 1, cv::LINE_AA);
         }
     }
     
     // Draw legend in bottom-left corner
-    int legend_y = frame_bgr.rows - 120;
+    int legend_y = frame_bgr.rows - 140;  // Increased height for stability info
     int legend_x = 10;
     
     // Legend background
     cv::rectangle(frame_bgr, 
                  cv::Point(legend_x - 5, legend_y - 5),
-                 cv::Point(legend_x + 150, legend_y + 115),
+                 cv::Point(legend_x + 180, legend_y + 135),
                  cv::Scalar(0, 0, 0), -1);
     cv::rectangle(frame_bgr, 
                  cv::Point(legend_x - 5, legend_y - 5),
-                 cv::Point(legend_x + 150, legend_y + 115),
+                 cv::Point(legend_x + 180, legend_y + 135),
                  cv::Scalar(255, 255, 255), 1);
     
     // Legend title
@@ -338,23 +348,41 @@ void FaceProcessor::DrawAnchorPoints(cv::Mat& frame_bgr, const FaceMesh& face_me
     legend_y += 20;
     
     // Draw anchor count
-    cv::putText(frame_bgr, cv::format("Count: %zu", anchor_indices.size()),
+    cv::putText(frame_bgr, cv::format("Count: %zu", anchors.size()),
                cv::Point(legend_x, legend_y), 
                cv::FONT_HERSHEY_SIMPLEX, 0.35, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
     legend_y += 18;
     
-    // Draw stability guide (placeholder for now)
-    cv::putText(frame_bgr, "Ring thickness:", 
+    // Draw stability guide with color coding
+    cv::putText(frame_bgr, "Stability Colors:", 
                cv::Point(legend_x, legend_y), 
                cv::FONT_HERSHEY_SIMPLEX, 0.35, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
     legend_y += 15;
-    cv::putText(frame_bgr, "  Thin = Unstable", 
-               cv::Point(legend_x, legend_y), 
-               cv::FONT_HERSHEY_SIMPLEX, 0.35, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
+    
+    // Green = Stable
+    cv::circle(frame_bgr, cv::Point(legend_x + 10, legend_y - 3), 4, cv::Scalar(0, 255, 0), -1, cv::LINE_AA);
+    cv::putText(frame_bgr, " Green: Stable (>80%)", 
+               cv::Point(legend_x + 20, legend_y), 
+               cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
     legend_y += 15;
-    cv::putText(frame_bgr, "  Thick = Stable", 
+    
+    // Yellow = Moderate
+    cv::circle(frame_bgr, cv::Point(legend_x + 10, legend_y - 3), 4, cv::Scalar(0, 255, 255), -1, cv::LINE_AA);
+    cv::putText(frame_bgr, " Yellow: Moderate", 
+               cv::Point(legend_x + 20, legend_y), 
+               cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
+    legend_y += 15;
+    
+    // Red = Unstable
+    cv::circle(frame_bgr, cv::Point(legend_x + 10, legend_y - 3), 4, cv::Scalar(0, 0, 255), -1, cv::LINE_AA);
+    cv::putText(frame_bgr, " Red: Unstable (<50%)", 
+               cv::Point(legend_x + 20, legend_y), 
+               cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
+    legend_y += 15;
+    
+    cv::putText(frame_bgr, "Ring thickness = stability", 
                cv::Point(legend_x, legend_y), 
-               cv::FONT_HERSHEY_SIMPLEX, 0.35, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
+               cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
 }
 
 template<size_t N>

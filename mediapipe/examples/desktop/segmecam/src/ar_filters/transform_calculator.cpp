@@ -60,6 +60,14 @@ void TransformCalculator::Update(const FaceMesh& face_mesh) {
     // Calculate anchor points using smoothed pose
     state_.anchors = CalculateAnchors(state_.smoothed_pose, face_mesh);
     
+    // Phase 2 Step 4: Update stability tracking for each anchor
+    UpdateStabilityTracking(state_.anchors);
+    
+    // Project 3D anchors to 2D screen space
+    for (auto& anchor : state_.anchors) {
+        ProjectAnchorTo2D(anchor, face_mesh);
+    }
+    
     // Update metadata
     state_.last_update_time = GetCurrentTimeMs();
     state_.frame_count++;
@@ -639,6 +647,112 @@ double TransformCalculator::GetCurrentTimeMs() const {
     auto now = std::chrono::steady_clock::now();
     auto duration = now.time_since_epoch();
     return std::chrono::duration<double, std::milli>(duration).count();
+}
+
+// Update stability tracking for all anchors
+void TransformCalculator::UpdateStabilityTracking(std::vector<AnchorPoint>& anchors) {
+    // Initialize history if first time
+    if (state_.anchor_position_history.empty()) {
+        state_.anchor_position_history.resize(anchors.size());
+    }
+    
+    // Ensure history size matches number of anchors
+    if (state_.anchor_position_history.size() != anchors.size()) {
+        state_.anchor_position_history.resize(anchors.size());
+    }
+    
+    // Update each anchor's stability metrics
+    for (size_t i = 0; i < anchors.size(); ++i) {
+        auto& history = state_.anchor_position_history[i];
+        
+        // Add current position to history
+        history.push_back(anchors[i].position_world);
+        
+        // Maintain window size (30 frames = ~1 second at 30 FPS)
+        if (history.size() > TransformState::kHistorySize) {
+            history.pop_front();
+        }
+        
+        // Calculate variance and stability
+        anchors[i].variance = CalculateVariance(history);
+        anchors[i].stability = VarianceToStability(anchors[i].variance);
+    }
+}
+
+// Calculate variance from position history
+float TransformCalculator::CalculateVariance(const std::deque<cv::Vec3f>& position_history) {
+    // Require at least 10 frames for meaningful statistics
+    if (position_history.size() < 10) {
+        return 0.0f;  // Insufficient data, assume stable
+    }
+    
+    // Calculate mean position
+    cv::Vec3f mean(0, 0, 0);
+    for (const auto& pos : position_history) {
+        mean += pos;
+    }
+    mean /= static_cast<float>(position_history.size());
+    
+    // Calculate variance (average squared distance from mean)
+    float variance = 0.0f;
+    for (const auto& pos : position_history) {
+        cv::Vec3f diff = pos - mean;
+        variance += diff.dot(diff);  // Sum of squared distances
+    }
+    variance /= static_cast<float>(position_history.size());
+    
+    return variance;
+}
+
+// Convert variance to stability score (0.0 = unstable, 1.0 = very stable)
+float TransformCalculator::VarianceToStability(float variance) {
+    // Map variance to stability using exponential decay
+    // Lower variance = higher stability
+    // Calibration:
+    //   variance < 0.001 → stability ~1.0 (very stable)
+    //   variance ~0.01 → stability ~0.5 (moderate)
+    //   variance > 0.1 → stability ~0.0 (very unstable)
+    const float scale = 50.0f;  // Exponential decay rate
+    float stability = std::exp(-variance * scale);
+    return std::clamp(stability, 0.0f, 1.0f);
+}
+
+// Project 3D anchor position to 2D screen coordinates
+void TransformCalculator::ProjectAnchorTo2D(AnchorPoint& anchor, const FaceMesh& face_mesh) {
+    // Get frame dimensions
+    int width = face_mesh.image_width;
+    int height = face_mesh.image_height;
+    
+    // Use camera matrix for perspective projection
+    // camera_matrix_ is a 3x3 matrix with focal lengths and principal point
+    // Format: [fx, 0, cx]
+    //         [0, fy, cy]
+    //         [0,  0,  1]
+    
+    float fx = camera_matrix_.at<float>(0, 0);
+    float fy = camera_matrix_.at<float>(1, 1);
+    float cx = camera_matrix_.at<float>(0, 2);
+    float cy = camera_matrix_.at<float>(1, 2);
+    
+    // Project 3D point to 2D using pinhole camera model
+    // 2D_x = (fx * 3D_x / 3D_z) + cx
+    // 2D_y = (fy * 3D_y / 3D_z) + cy
+    
+    float z = anchor.position_world[2];
+    if (z < 0.01f) {
+        // Point behind camera or too close, mark as not visible
+        anchor.is_visible = false;
+        anchor.position_2d = cv::Point2f(-1, -1);
+        return;
+    }
+    
+    float x_2d = (fx * anchor.position_world[0] / z) + cx;
+    float y_2d = (fy * anchor.position_world[1] / z) + cy;
+    
+    anchor.position_2d = cv::Point2f(x_2d, y_2d);
+    
+    // Check visibility: point must be within frame bounds
+    anchor.is_visible = (x_2d >= 0 && x_2d < width && y_2d >= 0 && y_2d < height);
 }
 
 }  // namespace segmecam

@@ -322,7 +322,7 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
         cv::cvtColor(display_rgb, display_bgr, cv::COLOR_RGB2BGR);
         
         // Draw anchor points using FaceProcessor
-        params.managers.effects->GetFaceProcessor().DrawAnchorPoints(display_bgr, params.app_state.face_mesh, true);
+        params.managers.effects->GetFaceProcessor().DrawAnchorPoints(display_bgr, params.app_state, true);
         
         cv::cvtColor(display_bgr, display_rgb, cv::COLOR_BGR2RGB);
     }

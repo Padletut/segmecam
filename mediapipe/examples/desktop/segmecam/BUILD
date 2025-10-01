@@ -734,11 +734,13 @@ cc_library( # type: ignore
     hdrs = ["include/effects/face_processor.h"],
     includes = [".", "include", "include/effects"],
     deps = [
+        ":app_state",
         ":face_regions",
         ":segmecam_face_effects",
         ":segmecam_composite",
         ":presets",
         "//mediapipe/examples/desktop/segmecam/src/ar_filters:face_mesh_processor",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:transform_calculator",
         "//mediapipe/framework/formats:landmark_cc_proto",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",

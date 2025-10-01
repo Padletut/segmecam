@@ -4,6 +4,7 @@
 #ifndef MEDIAPIPE_EXAMPLES_DESKTOP_SEGMECAM_INCLUDE_AR_FILTERS_TRANSFORM_CALCULATOR_H_
 #define MEDIAPIPE_EXAMPLES_DESKTOP_SEGMECAM_INCLUDE_AR_FILTERS_TRANSFORM_CALCULATOR_H_
 
+#include <deque>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -42,18 +43,26 @@ struct AnchorPoint {
     std::string name;            // Identifier: "nose_bridge", "forehead", "left_ear", etc.
     cv::Vec3f position_world;    // 3D position in world space
     cv::Vec3f position_local;    // 3D position in face-local space
+    cv::Point2f position_2d;     // 2D projected screen position (Phase 2 Step 4)
     cv::Vec4f orientation_quat;  // Local orientation as quaternion
     cv::Mat transform_matrix;    // 4x4 local-to-world transform matrix
     float scale;                 // Local scale factor (for asymmetric objects)
     bool is_visible;             // Visibility flag (false if occluded/out of frame)
+    
+    // Phase 2 Step 4: Stability tracking
+    float stability;             // Stability score: 0.0 (unstable) to 1.0 (very stable)
+    float variance;              // Position variance over recent frames (lower = more stable)
 
     AnchorPoint()
         : name("unknown"),
           position_world(0, 0, 0),
           position_local(0, 0, 0),
+          position_2d(0, 0),
           orientation_quat(1, 0, 0, 0),  // Identity quaternion
           scale(1.0f),
-          is_visible(false) {
+          is_visible(false),
+          stability(0.0f),
+          variance(0.0f) {
         transform_matrix = cv::Mat::eye(4, 4, CV_32F);
     }
 };
@@ -65,6 +74,10 @@ struct TransformState {
     std::vector<AnchorPoint> anchors;  // All anchor points
     double last_update_time;     // Timestamp of last update
     int frame_count;             // Frame counter
+    
+    // Phase 2 Step 4: Anchor position history for stability tracking
+    std::vector<std::deque<cv::Vec3f>> anchor_position_history;  // Per-anchor position history (max 30 frames)
+    static constexpr size_t kHistorySize = 30;  // Track last 30 frames (~1 second at 30 FPS)
 
     TransformState() : last_update_time(0.0), frame_count(0) {}
 };
@@ -135,6 +148,12 @@ private:
     AnchorPoint CalculateChin(const HeadPose& pose, const FaceMesh& face_mesh);
     AnchorPoint CalculateLeftTemple(const HeadPose& pose, const FaceMesh& face_mesh);
     AnchorPoint CalculateRightTemple(const HeadPose& pose, const FaceMesh& face_mesh);
+    
+    // Phase 2 Step 4: Stability tracking
+    void UpdateStabilityTracking(std::vector<AnchorPoint>& anchors);
+    float CalculateVariance(const std::deque<cv::Vec3f>& position_history);
+    float VarianceToStability(float variance);
+    void ProjectAnchorTo2D(AnchorPoint& anchor, const FaceMesh& face_mesh);
 
     // Utility methods
     cv::Vec3f CalculateHeadCenter(const FaceMesh& face_mesh);
