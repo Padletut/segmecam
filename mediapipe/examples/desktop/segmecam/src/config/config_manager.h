@@ -179,7 +179,7 @@ struct ConfigData {
         
         // Auto processing scale
         bool auto_processing_scale = false;
-        float target_fps = 14.5f;
+        float target_fps = 29.0f;
         
         // Wrinkle-aware settings
         bool fx_skin_wrinkle = true;

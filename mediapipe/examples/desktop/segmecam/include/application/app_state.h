@@ -34,7 +34,7 @@ struct AppState {
   
   // Auto processing scale
   bool auto_processing_scale = true; // Enabled by default - now stable with conservative adjustments
-  float target_fps = 14.5f;
+  float target_fps = 29.0f;
   float current_fps = 0.0f;
   float auto_scale_last_adjustment = 0.0f;
   uint32_t auto_scale_last_time_ms = 0;

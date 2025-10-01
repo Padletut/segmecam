@@ -59,7 +59,7 @@ public:
     std::chrono::steady_clock::time_point last_scale_adjustment_;
     std::vector<float> fps_history_;
 
-    static constexpr size_t FPS_HISTORY_SIZE = 10;
+    static constexpr size_t FPS_HISTORY_SIZE = 8;
 
     // Helper methods
     void UpdateFPSHistory(float current_fps);

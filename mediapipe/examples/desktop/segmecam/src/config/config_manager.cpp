@@ -444,7 +444,7 @@ void ConfigManager::readBeautyEffectsSettings(const cv::FileNode& root, ConfigDa
     config.beauty.fx_adv_scale = ReadFloat(root["fx_adv_scale"], 0.8f);
     config.beauty.fx_adv_detail_preserve = ReadFloat(root["fx_adv_detail_preserve"], 0.18f);
     config.beauty.auto_processing_scale = ReadInt(root["auto_processing_scale"], 1) != 0;
-    config.beauty.target_fps = ReadFloat(root["target_fps"], 14.5f);
+    config.beauty.target_fps = ReadFloat(root["target_fps"], 14.0f);
     config.beauty.fx_skin_wrinkle = ReadInt(root["fx_skin_wrinkle"], 1) != 0;
     config.beauty.fx_skin_smile_boost = ReadFloat(root["fx_skin_smile_boost"], 0.5f);
     config.beauty.fx_skin_squint_boost = ReadFloat(root["fx_skin_squint_boost"], 0.5f);

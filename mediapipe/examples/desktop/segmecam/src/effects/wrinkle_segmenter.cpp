@@ -267,11 +267,11 @@ cv::Mat WrinkleSegmenter::PredictMask(const cv::Mat& frame_bgr,
         double avg_inference_ms = total_inference_time_ / inference_count_;
         
         // Log performance every 30 inferences
-        if (inference_count_ % 30 == 0) {
-            std::cout << "🔍 Wrinkle model inference #" << inference_count_ 
-                      << ": " << inference_ms << "ms (avg: " << avg_inference_ms << "ms)"
-                      << (use_cuda_ ? " [GPU]" : " [CPU]") << std::endl;
-        }
+       // if (inference_count_ % 30 == 0) {
+       //     std::cout << "🔍 Wrinkle model inference #" << inference_count_ 
+       //               << ": " << inference_ms << "ms (avg: " << avg_inference_ms << "ms)"
+       //               << (use_cuda_ ? " [GPU]" : " [CPU]") << std::endl;
+       // }
         
         cv::Mat prob_resized;
         cv::resize(prob, prob_resized, face_region.size(), 0, 0, cv::INTER_LINEAR);

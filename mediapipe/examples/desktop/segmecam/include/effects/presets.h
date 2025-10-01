@@ -60,7 +60,7 @@ struct BeautyState {
   
   // Auto processing scale
   bool auto_processing_scale = true; // Default enabled for better performance
-  float target_fps = 14.5f;
+  float target_fps = 29.0f;
 };
 
 // idx: 0=Default, 1=Natural, 2=Studio, 3=Glam, 4=Meeting

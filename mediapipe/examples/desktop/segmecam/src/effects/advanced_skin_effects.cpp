@@ -240,21 +240,18 @@ void ApplyCheekWrinkleInpaint(cv::Mat& Lf,
   cv::pow(smooth_mask, 0.6, smooth_mask); // Gentler to keep more wrinkles
   cv::threshold(smooth_mask, smooth_mask, 0.08f, 1.0f, cv::THRESH_TOZERO); // Very low threshold
   
-  // Smooth mask for natural blending
-  cv::GaussianBlur(smooth_mask, smooth_mask, cv::Size(0, 0), 2.5);
+  // DILATE the mask to expand wrinkle regions for wider inpainting coverage
+  // This ensures we inpaint a wider area around each detected wrinkle
+  int dilation_size = 3 + (int)(strength * 5); // 3-8 pixels expansion
+  cv::Mat dilation_kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, 
+                                                       cv::Size(dilation_size, dilation_size));
+  cv::dilate(smooth_mask, smooth_mask, dilation_kernel);
+  
+  // Smooth mask for natural blending (after dilation)
+  cv::GaussianBlur(smooth_mask, smooth_mask, cv::Size(0, 0), 3.5); // Increased from 2.5 for wider feather
   smooth_mask = cv::min(smooth_mask, 1.0f);
   
   if (cv::countNonZero(smooth_mask > 0.01f) == 0) return;
-
-  // Debug: Check mask statistics
-  double mask_min, mask_max, mask_mean;
-  cv::minMaxLoc(smooth_mask, &mask_min, &mask_max);
-  mask_mean = cv::mean(smooth_mask)[0];
-  static int debug_counter = 0;
-  if (++debug_counter % 30 == 0) {
-    std::cout << "[DEBUG] ApplyCheekWrinkleInpaint: strength=" << strength 
-              << " mask_max=" << mask_max << " mask_mean=" << mask_mean << std::endl;
-  }
 
   // KEY INSIGHT: Wrinkles are NARROW DARK LINES. 
   // Morphological closing fills dark valleys with bright surrounding pixels!
@@ -268,10 +265,6 @@ void ApplyCheekWrinkleInpaint(cv::Mat& Lf,
   int morph_size = 11 + (int)(strength * 20); // Size 11-31 (VERY large!)
   cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, 
                                              cv::Size(morph_size, morph_size));
-  
-  if (debug_counter % 30 == 0) {
-    std::cout << "[DEBUG] Morph kernel size: " << morph_size << std::endl;
-  }
   
   cv::Mat Lf_closed;
   cv::morphologyEx(Lf_8u, Lf_closed, cv::MORPH_CLOSE, kernel);
@@ -338,13 +331,6 @@ void ApplyCheekWrinkleInpaint(cv::Mat& Lf,
   // Apply strength and ensure strong blending
   cv::multiply(blend_strength, cv::Scalar(strength * 1.2), blend_strength); // 20% boost!
   blend_strength = cv::min(blend_strength, 1.0f);
-  
-  // Debug blend strength
-  if (debug_counter % 30 == 0) {
-    double blend_max_final;
-    cv::minMaxLoc(blend_strength, nullptr, &blend_max_final);
-    std::cout << "[DEBUG] Final blend_strength max: " << blend_max_final << std::endl;
-  }
   
   cv::Mat inv_blend;
   cv::subtract(1.0f, blend_strength, inv_blend);
@@ -1719,10 +1705,7 @@ void ApplySnapchatStyleSmoothing(cv::Mat& frame_bgr, const cv::Mat& refined_face
         config.smile_wrinkle_gain * 0.45f
     });
     wrinkle_strength = std::clamp(wrinkle_strength, 0.12f, 1.0f);
-    std::cout << "[DEBUG] Skipping wrinkle inpainting in ApplySnapchatStyleSmoothing (handled independently): " << wrinkle_strength << std::endl;
     // ApplyCheekWrinkleInpaint(Lf, boost_final, wrinkle_mask, wrinkle_strength); // DISABLED - now handled independently
-  } else {
-    std::cout << "[DEBUG] Skipping wrinkle inpainting - apply_wrinkle_treatments=false" << std::endl;
   }
 
   // Basic wrinkle reduction logic (Snapchat-style) - keep this for visible smoothing
@@ -1737,8 +1720,6 @@ void ApplySnapchatStyleSmoothing(cv::Mat& frame_bgr, const cv::Mat& refined_face
     cv::Mat base_boost_masked;
     cv::multiply(base_wrinkle_boost, face_gate, base_boost_masked);
     cv::add(boost_final, base_boost_masked, boost_final);
-
-    std::cout << "[DEBUG] Snapchat-style base wrinkle reduction: " << base_wrinkle_enhancement << "x" << std::endl;
   }
 
   // Apply the Snapchat-style frequency separation with MAXIMUM increased amount for complete wrinkle smoothing
@@ -1797,8 +1778,6 @@ FacialExpressionMetrics ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceR
 
   // Phase 2.5: INDEPENDENT WRINKLE PROCESSING (works regardless of skin smoothing amount)
   if (wrinkle_processing_requested) {
-    std::cout << "[DEBUG] Starting independent wrinkle processing..." << std::endl;
-    
     // Prepare minimal data needed for wrinkle processing
     cv::Mat Lf_wrinkle = PrepareLabLuminance(frame_bgr);
     cv::Mat weight_wrinkle = BuildSkinWeightMap(fr, frame_bgr.size(), config.edge_feather_px,
@@ -1835,10 +1814,6 @@ FacialExpressionMetrics ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceR
       }
       wrinkle_strength = std::clamp(wrinkle_strength, 0.12f, 1.0f);
       
-      std::cout << "[DEBUG] Independent wrinkle processing: base=" << base_strength 
-                << " wrinkle_gain=" << wrinkle_gain << " smile_gain=" << smile_gain 
-                << " final_strength=" << wrinkle_strength << std::endl;
-      
       // Apply wrinkle inpainting directly to luminance
       cv::Mat boost_mask = cv::Mat::ones(wrinkle_mask.size(), CV_32F);
       ApplyCheekWrinkleInpaint(Lf_wrinkle, boost_mask, wrinkle_mask, wrinkle_strength);
@@ -1856,8 +1831,6 @@ FacialExpressionMetrics ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceR
       
       cv::merge(lab_channels, frame_lab);
       cv::cvtColor(frame_lab, frame_bgr, cv::COLOR_Lab2BGR);
-      
-      std::cout << "[DEBUG] Independent wrinkle processing completed" << std::endl;
     }
   }
 
@@ -1867,11 +1840,6 @@ FacialExpressionMetrics ApplySkinSmoothingAdvBGR(cv::Mat& frame_bgr, const FaceR
   if (amount > 0.0f) {
     weight = BuildSkinWeightMap(fr, frame_bgr.size(), config.edge_feather_px,
                                 config.texture_thresh, frame_bgr, &metrics);
-    
-    // Debug: Check weight map coverage
-    cv::Scalar weight_sum = cv::sum(weight);
-    std::cout << "[DEBUG] Weight map total coverage: " << weight_sum[0] 
-              << " face_oval size: " << fr.face_oval.size() << std::endl;
     
     cv::Mat orig_lab;
     cv::cvtColor(frame_bgr, orig_lab, cv::COLOR_BGR2Lab);

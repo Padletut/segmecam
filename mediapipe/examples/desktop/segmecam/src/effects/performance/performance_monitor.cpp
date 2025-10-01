@@ -10,7 +10,7 @@ PerformanceMonitor::PerformanceMonitor()
       perf_sum_bg_ms_(0.0),
       perf_sum_frames_(0),
       auto_scale_enabled_(false),
-      target_fps_(14.5f),
+      target_fps_(29.0f),
       current_fps_(0.0f) {
     last_perf_log_time_ = std::chrono::steady_clock::now();
     last_fps_update_ = std::chrono::steady_clock::now();
@@ -86,7 +86,7 @@ void PerformanceMonitor::SetAutoProcessingScaleEnabled(bool enabled) {
 }
 
 void PerformanceMonitor::SetTargetFPS(float target_fps) {
-    float new_target = std::clamp(target_fps, 5.0f, 60.0f);
+    float new_target = std::clamp(target_fps, 5.0f, 30.0f);
     if (std::abs(target_fps_ - new_target) < 0.1f) {
         return; // No significant change
     }
@@ -96,7 +96,7 @@ void PerformanceMonitor::SetTargetFPS(float target_fps) {
 void PerformanceMonitor::UpdateTargetFPSFromCamera(float camera_fps) {
     float target_fps;
     if (camera_fps >= 15.0f) {
-        target_fps = 30.0f - 1.0f; // Target 14 FPS for high frame rate cameras
+        target_fps = 30.0f; // Target 14 FPS for high frame rate cameras
     } else {
         target_fps = camera_fps - 1.0f; // Target camera_fps - 1 for lower frame rates
     }
