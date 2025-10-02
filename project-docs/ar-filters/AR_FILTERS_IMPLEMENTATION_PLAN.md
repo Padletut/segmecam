@@ -13,7 +13,14 @@ This document outlines the implementation plan for adding native augmented reali
 >
 > **AR Filters add a NEW capability alongside existing features!**
 
-**Target**: Native C++/OpenGL implementation that maintains 30 FPS performance with existing beauty effects.
+**Target**: Native C++/OpenGL implementation that maintains 30 FPS performance.
+
+**Architecture Note**: AR filters are **completely independent** from beauty/background effects. They operate on the same video frames but use separate rendering passes. This ensures:
+- ✅ No coupling or dependencies between systems
+- ✅ AR filters work regardless of beauty effect settings
+- ✅ Beauty effects work regardless of AR filter settings
+- ✅ Users can enable/disable either system independently
+- ✅ Bugs in one system don't affect the other
 
 ---
 
@@ -76,6 +83,52 @@ mediapipe/examples/desktop/segmecam/
 └── BUILD                            # Add ar_filters targets
 ```
 
+### 1.4 AR Filter Independence Architecture
+
+> 🚨 **CRITICAL DESIGN PRINCIPLE**: AR filters are **completely independent** from beauty/background effects!
+
+**No Dependencies Means**:
+
+- ❌ **No imports** from `EffectsManager` or beauty effect code
+- ❌ **No shared state** with beauty effect parameters  
+- ❌ **No coupling** to background blur/replacement logic
+- ❌ **No assumptions** about beauty effects being enabled
+- ✅ **Independent rendering pass** - AR filters render separately
+- ✅ **Direct MediaPipe access** - AR filters read face data directly
+- ✅ **Separate OpenGL context** - AR filters manage their own GPU resources
+- ✅ **Optional feature** - App works perfectly if AR disabled
+
+**Data Flow (Independent Pipelines)**:
+
+```
+MediaPipe Output (shared source)
+├─> Beauty Effects Pipeline (EffectsManager)
+│   ├─ Skin smoothing
+│   ├─ Eye enlargement  
+│   ├─ Background blur
+│   └─ Color correction
+│
+└─> AR Filters Pipeline (ARFilterManager) 
+    ├─ Face mesh construction
+    ├─ Head pose estimation
+    ├─ 3D model rendering
+    └─ Filter attachments
+
+Both pipelines:
+- Read from same MediaPipe output (landmarks, blendshapes)
+- Render independently to frame buffer
+- Can be enabled/disabled separately
+- Don't share code or state
+```
+
+**Why This Matters**:
+
+- 🐛 **Isolation**: Bugs in beauty effects can't break AR filters
+- 🔧 **Maintenance**: Changes to one system don't affect the other
+- ⚡ **Performance**: Each system can be optimized independently
+- 🎯 **Testing**: AR filters tested in isolation, not with beauty effects
+- 🔓 **Flexibility**: Users can enable just AR, just beauty, both, or neither
+
 ---
 
 ## 2. Implementation Phases
@@ -92,15 +145,10 @@ mediapipe/examples/desktop/segmecam/
 - ✅ MediaPipe FaceLandmarker configured with blendshape output enabled
 - ✅ 52 blendshape coefficients available from MediaPipe
 - ✅ Values range 0.0-1.0 for all expression types
-- ✅ Already integrated into existing beauty effects (smile/squint detection)
+- ✅ Blendshapes available in MediaPipe output (beauty effects may use some, AR will use all)
 - ✅ Ready for AR filter expression-driven behaviors
 
-**Achievement Summary**:
-- ✅ MediaPipe FaceLandmarker configured with blendshape output enabled
-- ✅ 52 blendshape coefficients available from MediaPipe
-- ✅ Values range 0.0-1.0 for all expression types
-- ✅ Already integrated into existing beauty effects (smile/squint detection)
-- ✅ Ready for AR filter expression-driven behaviors
+**Note**: While beauty effects may use a few blendshapes (smile/squint), AR filters will use the full set independently. No code sharing or dependencies between the two systems.
 
 **Implementation Details**:
 
@@ -136,7 +184,7 @@ The blendshape system is already operational in SegmeCam's existing MediaPipe in
 - ✅ Values range from 0.0 to 1.0
 - ✅ Updates at 30 FPS without frame drops
 - ✅ Already integrated with app_state for downstream usage
-- ✅ Expression detection working (smile/squint in beauty effects)
+- ✅ AR filters will consume blendshapes directly from MediaPipe (no EffectsManager dependency)
 
 **Performance**: ~0.5ms per frame (negligible overhead)
 
@@ -1049,9 +1097,10 @@ glm::vec4 ApplyColorChangeBehavior(const BehaviorConfig& config, float blendshap
    - Multiple attachments
 
 5. **Performance Stress**
-   - AR filters + beauty effects
-   - Background blur + AR
-   - Virtual camera output
+   - AR filters alone (baseline)
+   - AR filters + beauty effects enabled (independent systems running in parallel)
+   - AR filters + background blur (independent systems running in parallel)
+   - AR filters + virtual camera output
    - High resolution (1920x1080)
 
 **Testing Checklist**:
@@ -1064,7 +1113,8 @@ glm::vec4 ApplyColorChangeBehavior(const BehaviorConfig& config, float blendshap
 - [ ] UI is intuitive
 - [ ] Assets load properly
 - [ ] No visual glitches
-- [ ] Works with beauty effects
+- [ ] Works independently (no dependency on beauty effects)
+- [ ] Works alongside beauty effects (when user enables both)
 - [ ] Virtual camera output works
 
 ---
@@ -1175,12 +1225,15 @@ Each component should have unit tests:
 
 ### 5.2 Integration Tests
 
-Test AR system with existing SegmeCam features:
+Test AR system independence and coexistence with existing SegmeCam features:
 
-- AR filters + beauty effects
-- AR filters + background blur
-- AR filters + virtual camera output
-- AR filters + profile saving/loading
+- **AR filters alone** (baseline - must work without any other effects)
+- **AR filters + beauty effects** (independent parallel rendering - both optional)
+- **AR filters + background blur** (independent parallel processing)
+- **AR filters + virtual camera output** (AR-processed frames to vcam)
+- **AR filters + profile saving/loading** (AR settings persisted separately)
+
+**Key Principle**: AR filters must function perfectly even if beauty/background effects are completely disabled or broken.
 
 ### 5.3 Performance Tests
 
