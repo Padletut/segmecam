@@ -7,6 +7,7 @@
 #include "include/ui/ui_manager_enhanced.h"
 #include "include/ui/ui_utils.h"
 #include "include/application/app_state.h"
+#include "include/ar_filters/model_loader.h"
 
 // Include MediaPipe for graph operations
 #include "mediapipe/framework/calculator_graph.h"
@@ -210,26 +211,66 @@ void FrameProcessor::RenderFilterPrimitives(cv::Mat& display_bgr, AppState& app_
             continue;
         }
         
-        // Convert filter color (RGBA 0-1) to OpenCV BGR (0-255)
-        cv::Scalar color(
-            static_cast<int>(filter.color[2] * 255),  // B
-            static_cast<int>(filter.color[1] * 255),  // G
-            static_cast<int>(filter.color[0] * 255)   // R
-        );
+        // Determine color based on filter type
+        cv::Scalar color;
+        std::string type_label;
+        
+        if (filter.type == FilterObject::Type::MODEL_3D && filter.model != nullptr) {
+            // For 3D models, use material diffuse color if available
+            type_label = "[3D] ";
+            if (!filter.model->materials.empty() && !filter.model->meshes.empty()) {
+                // Get the material used by the first mesh
+                const std::string& material_name = filter.model->meshes[0].material_name;
+                auto mat_it = filter.model->materials.find(material_name);
+                
+                if (mat_it != filter.model->materials.end()) {
+                    // Use the mesh's material
+                    const auto& material = mat_it->second;
+                    color = cv::Scalar(
+                        static_cast<int>(material.diffuse[2] * 255),  // B
+                        static_cast<int>(material.diffuse[1] * 255),  // G
+                        static_cast<int>(material.diffuse[0] * 255)   // R
+                    );
+                } else {
+                    // Fallback: use first material if mesh material not found
+                    const auto& first_material = filter.model->materials.begin()->second;
+                    color = cv::Scalar(
+                        static_cast<int>(first_material.diffuse[2] * 255),  // B
+                        static_cast<int>(first_material.diffuse[1] * 255),  // G
+                        static_cast<int>(first_material.diffuse[0] * 255)   // R
+                    );
+                }
+            } else {
+                // Default to cyan for 3D models without materials
+                color = cv::Scalar(255, 255, 0);  // Cyan
+            }
+        } else {
+            // For primitives, use filter color
+            type_label = "[2D] ";
+            color = cv::Scalar(
+                static_cast<int>(filter.color[2] * 255),  // B
+                static_cast<int>(filter.color[1] * 255),  // G
+                static_cast<int>(filter.color[0] * 255)   // R
+            );
+        }
         
         // Calculate radius based on scale (simple heuristic)
         float avg_scale = (filter.scale[0] + filter.scale[1] + filter.scale[2]) / 3.0f;
-        int radius = static_cast<int>(avg_scale * filter.local_scale * 500.0f);  // Scale to screen space
-        radius = std::max(5, std::min(50, radius));  // Clamp to reasonable range
+        int radius = static_cast<int>(avg_scale * filter.local_scale * 50.0f);  // Scale to screen space
+        radius = std::max(8, std::min(60, radius));  // Clamp to reasonable range
         
         // Draw the filter as a filled circle
         cv::circle(display_bgr, pos, radius, color, -1, cv::LINE_AA);
         
-        // Draw border
-        cv::circle(display_bgr, pos, radius, cv::Scalar(255, 255, 255), 2, cv::LINE_AA);
+        // Draw border (thicker for 3D models to distinguish them)
+        int border_thickness = (filter.type == FilterObject::Type::MODEL_3D) ? 3 : 2;
+        cv::Scalar border_color = (filter.type == FilterObject::Type::MODEL_3D) 
+                                  ? cv::Scalar(0, 255, 255)  // Yellow border for 3D
+                                  : cv::Scalar(255, 255, 255);  // White border for 2D
+        cv::circle(display_bgr, pos, radius, border_color, border_thickness, cv::LINE_AA);
         
         // Draw filter name and info
-        std::string label = filter.name;
+        std::string label = type_label + filter.name;
         if (!filter.anchor_name.empty()) {
             label += " → " + filter.anchor_name;
         }
@@ -237,6 +278,15 @@ void FrameProcessor::RenderFilterPrimitives(cv::Mat& display_bgr, AppState& app_
         cv::Point2f text_pos = pos + cv::Point2f(radius + 5, 5);
         cv::putText(display_bgr, label, text_pos,
                    cv::FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv::LINE_AA);
+        
+        // Draw additional info for 3D models
+        if (filter.type == FilterObject::Type::MODEL_3D && filter.model != nullptr) {
+            std::string model_info = "Meshes:" + std::to_string(filter.model->meshes.size()) +
+                                   " V:" + std::to_string(filter.model->vertex_count);
+            cv::Point2f info_pos = pos + cv::Point2f(radius + 5, 20);
+            cv::putText(display_bgr, model_info, info_pos,
+                       cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 255, 255), 1, cv::LINE_AA);
+        }
         
         // Draw frame count for debugging
         std::string frame_info = "f:" + std::to_string(filter.frame_count);

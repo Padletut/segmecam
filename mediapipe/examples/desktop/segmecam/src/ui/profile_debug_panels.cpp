@@ -1,4 +1,6 @@
 #include "include/ui/ui_panels.h"
+#include "include/ar_filters/filter_object.h"
+#include "include/ar_filters/model_loader.h"
 #include <iostream>
 
 namespace segmecam {
@@ -128,6 +130,75 @@ void DebugPanel::RenderOverlayControls() {
             std::cout << "[DebugPanel] Cleared filter preset" << std::endl;
         }
         ImGui::Unindent();
+    }
+    
+    ImGui::Spacing();
+    ImGui::Separator();
+    
+    // 3D Model Loading (Phase 3 Step 7)
+    ImGui::Text("3D Model Loading (Phase 3)");
+    ImGui::Separator();
+    
+    // Model file path input
+    static char model_path[512] = "assets/ar_filters/models/simple_cube.obj";
+    ImGui::InputText("Model Path", model_path, sizeof(model_path));
+    ImGui::TextDisabled("Path relative to workspace or absolute path");
+    
+    // Anchor point selection
+    static int model_anchor = 0;
+    const char* anchor_items[] = {
+        "nose_bridge",
+        "forehead", 
+        "chin",
+        "left_cheek",
+        "right_cheek",
+        "left_eye",
+        "right_eye"
+    };
+    ImGui::Combo("Anchor Point", &model_anchor, anchor_items, IM_ARRAYSIZE(anchor_items));
+    
+    // Model scale control
+    static float model_scale = 1.0f;
+    ImGui::SliderFloat("Model Scale", &model_scale, 0.1f, 5.0f);
+    
+    // Load button
+    if (ImGui::Button("Load 3D Model")) {
+        std::string anchor_name = anchor_items[model_anchor];
+        std::cout << "[DebugPanel] Loading 3D model: " << model_path 
+                  << " at anchor: " << anchor_name << std::endl;
+        
+        // Create FilterObject from model
+        FilterObject model_filter = CreateFromModel(
+            anchor_name,
+            std::string("Model: ") + model_path,
+            std::string(model_path)
+        );
+        
+        if (model_filter.model != nullptr && !model_filter.model->meshes.empty()) {
+            model_filter.local_scale = model_scale;
+            model_filter.offset = {0.0f, 0.0f, 0.0f};
+            model_filter.enabled = true;
+            model_filter.visible = true;
+            
+            // Enable AR filters and attach
+            state_.ar_filters_enabled = true;
+            auto filter_id = state_.attachment_controller.AttachFilter(model_filter);
+            
+            std::cout << "[DebugPanel] Model loaded successfully! Filter ID: " 
+                      << filter_id << std::endl;
+            std::cout << "[DebugPanel] Meshes: " << model_filter.model->meshes.size()
+                      << ", Materials: " << model_filter.model->materials.size() << std::endl;
+        } else {
+            std::cout << "[DebugPanel] ERROR: Failed to load model from: " 
+                      << model_path << std::endl;
+        }
+    }
+    
+    ImGui::SameLine();
+    if (ImGui::Button("Clear All Models")) {
+        state_.attachment_controller.DetachAll();
+        state_.ar_filters_enabled = false;
+        std::cout << "[DebugPanel] Cleared all models" << std::endl;
     }
 
 }
