@@ -4,6 +4,15 @@
 
 This document outlines the implementation plan for adding native augmented reality (AR) face filters to SegmeCam. The implementation will leverage existing MediaPipe face tracking (468 landmarks), OpenGL rendering pipeline, and SDL2 infrastructure to create a performant, modular AR filter system.
 
+> ⚠️ **CRITICAL**: AR Filters are an **ADDITION** to SegmeCam, not a replacement!  
+> **All existing features remain fully functional**:
+> - ✅ Beauty effects (skin smoothing, brightness, eye enlargement, etc.)
+> - ✅ Background effects (blur, replacement, green screen, etc.)
+> - ✅ Virtual camera output (v4l2loopback)
+> - ✅ All existing UI panels and settings
+>
+> **AR Filters add a NEW capability alongside existing features!**
+
 **Target**: Native C++/OpenGL implementation that maintains 30 FPS performance with existing beauty effects.
 
 ---
@@ -220,7 +229,27 @@ public:
 
 ### Phase 3: 3D Model Loading System (Week 3-4)
 
-**Goal**: Load and parse 3D models (OBJ format initially)
+**Goal**: Add 3D model loading support (OBJ/GLTF) **alongside existing primitive system**
+
+> ⚠️ **IMPORTANT**: This phase **extends** FilterObject with 3D model support!
+>
+> **What Phase 3 Adds**:
+>
+> - ✅ **Keep Phase 2 primitives** (CreateCube, CreateCylinder, CreateCone, CreateSphere)
+> - ✅ **Add model loading** (CreateFromModel for OBJ/GLTF files)  
+> - ✅ **Both coexist** - Primitives for simple filters, Models for complex ones!
+>
+> **Why Keep Phase 2 Primitives**:
+>
+> - 🚀 **Performance**: 0.1μs switching, super lightweight
+> - 🐛 **Debugging**: Easy visualization of anchor points and transforms
+> - 🔧 **Prototyping**: Quick filter creation without 3D modeling
+> - 🔙 **Fallback**: If model loading fails or assets missing
+> - 📚 **Educational**: Show how the AR system works
+> - 🎨 **Customization**: Users can create simple filters without Blender
+>
+> **Remember**: AR filters (primitives + models) are an **addition** to SegmeCam!  
+> All existing beauty/background effects remain fully functional alongside AR filters.
 
 **Files to Create**:
 
@@ -234,10 +263,44 @@ public:
 3. Create OpenGL vertex buffers (VBO) and vertex array objects (VAO)
 4. Support multiple mesh objects in single OBJ file
 5. Optimize mesh data for GPU upload
+6. **Integrate with existing FilterObject system** (new type: MODEL_3D)
 
 **Technical Details**:
 
 ```cpp
+// Updated FilterObject to support both primitives and 3D models
+class FilterObject {
+public:
+  enum class Type {
+    PRIMITIVE,  // Phase 2: Cube, Cylinder, Cone, Sphere (KEEP THESE!)
+    MODEL_3D    // Phase 3: Loaded OBJ/GLTF models (NEW!)
+  };
+  
+  // Phase 2 methods (KEEP - still work perfectly!)
+  static FilterObject CreateCube(const std::string& anchor_name, 
+                                  const std::string& name,
+                                  const cv::Vec3f& size,
+                                  const cv::Vec4f& color = cv::Vec4f(1,1,1,1));
+  static FilterObject CreateCylinder(...);
+  static FilterObject CreateCone(...);
+  static FilterObject CreateSphere(...);
+  
+  // Phase 3 methods (NEW!)
+  static FilterObject CreateFromModel(const std::string& anchor_name,
+                                       const std::string& name, 
+                                       const std::string& model_path);
+  
+  void Render();  // Handles both types automatically
+  
+private:
+  Type type_;
+  // Primitive data (Phase 2)
+  std::vector<cv::Vec3f> vertices_;
+  // Model data (Phase 3)
+  std::shared_ptr<ModelLoader::Model> model_;
+};
+
+// New ModelLoader class
 class ModelLoader {
 public:
   struct Mesh {
@@ -258,6 +321,40 @@ public:
   absl::StatusOr<Model> LoadOBJ(const std::string& filepath);
   void UnloadModel(Model& model);
 };
+```
+
+**Integration with Existing System**:
+
+```cpp
+// Phase 2 primitive filters (KEEP - still work!)
+auto glasses_lens = FilterObject::CreateCylinder("nose_bridge", "left_lens", 
+                                                  0.03f, 0.005f, 32);
+
+// Phase 3 model-based filters (NEW!)
+auto realistic_glasses = FilterObject::CreateFromModel("nose_bridge", 
+                                                        "sunglasses",
+                                                        "assets/sunglasses.obj");
+
+// AttachmentController handles both types identically!
+attachment_controller.AttachFilter(glasses_lens);
+attachment_controller.AttachFilter(realistic_glasses);
+```
+
+**User Experience - Both Filter Types Available**:
+
+```
+AR Filters Panel:
+├─ 🎨 Primitive Filters (Phase 2 - Lightweight)
+│  ├─ Classic Glasses (3 cylinders)
+│  ├─ Party Hat (cone + sphere)
+│  ├─ Face Mask (5 cubes)
+│  └─ Test Demo (7 mixed primitives)
+│
+└─ 🎭 3D Model Filters (Phase 3 - High Quality)
+   ├─ Realistic Sunglasses (sunglasses.obj)
+   ├─ Top Hat (top_hat.gltf)
+   ├─ Cat Ears (cat_ears.fbx)
+   └─ Face Mask Pro (mask.obj)
 ```
 
 **Dependencies**:
