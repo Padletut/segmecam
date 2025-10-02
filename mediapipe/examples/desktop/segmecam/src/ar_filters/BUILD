@@ -47,12 +47,37 @@ cc_library(
 )
 
 cc_library(
+    name = "model_loader",
+    srcs = ["model_loader.cpp"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/model_loader.h"],
+    includes = ["../.."],
+    visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
+    deps = [
+        "//mediapipe/framework/port:opencv_core",
+        "@assimp//:assimp",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/log",
+    ],
+    copts = [
+        "-std=c++17",
+        "-DGL_GLEXT_PROTOTYPES",  # Enable OpenGL extension function prototypes
+    ],
+    linkopts = [
+        "-lGL",
+    ],
+)
+
+cc_library(
     name = "filter_object",
     srcs = ["filter_object.cpp"],
     hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/filter_object.h"],
     includes = ["../.."],
     visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
-    deps = [],
+    deps = [
+        ":model_loader",
+        "@com_google_absl//absl/log",
+    ],
     copts = [
         "-std=c++17",
     ],

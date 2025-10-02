@@ -113,6 +113,26 @@ http_archive(
     urls = ["https://github.com/google/googletest/archive/4ec4cd23f486bf70efcc5d2caa40f24368f752e3.zip"],
 )
 
+# Assimp (Open Asset Import Library) - 3D model loading
+# Supports 50+ formats: OBJ, GLTF, FBX, STL, etc.
+# Using WORKSPACE approach due to MediaPipe protobuf compatibility requirements.
+http_archive(
+    name = "assimp",
+    build_file = "@//third_party:assimp.BUILD",
+    sha256 = "66dfbaee288f2bc43172440a55d0235dfc7bf885dda6435c038e8000e79582cb",
+    strip_prefix = "assimp-5.4.3",
+    urls = ["https://github.com/assimp/assimp/archive/refs/tags/v5.4.3.tar.gz"],
+)
+
+# pugixml - Fast XML parser used by Assimp
+http_archive(
+    name = "pugixml",
+    build_file = "@//third_party:pugixml.BUILD",
+    sha256 = "610f98375424b5614754a6f34a491adbddaaec074e9044577d965160ec103d2e",
+    strip_prefix = "pugixml-1.14",
+    urls = ["https://github.com/zeux/pugixml/archive/refs/tags/v1.14.tar.gz"],
+)
+
 # Load Zlib before initializing TensorFlow and the iOS build rules to guarantee
 # that the target @zlib//:mini_zlib is available
 http_archive(

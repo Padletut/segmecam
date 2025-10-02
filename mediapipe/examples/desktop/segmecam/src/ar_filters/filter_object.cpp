@@ -1,15 +1,17 @@
 // Copyright 2025 SegmeCam Contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Filter Object Implementation - Phase 2 Step 5
-// Primitive geometry generators for AR filter testing
+// Filter Object Implementation - Phase 2 Step 5, Phase 3 Step 3
+// Primitive geometry generators and 3D model loading for AR filter testing
 
 #include "mediapipe/examples/desktop/segmecam/include/ar_filters/filter_object.h"
+#include "mediapipe/examples/desktop/segmecam/include/ar_filters/model_loader.h"
 
 #include <cmath>
 #include <sstream>
 #include <iomanip>
 #include <chrono>
+#include "absl/log/log.h"
 
 namespace segmecam {
 
@@ -30,6 +32,7 @@ FilterObject CreateCube(const std::string& anchor_name,
                        const std::string& name,
                        float size) {
   FilterObject filter;
+  filter.type = FilterObject::Type::PRIMITIVE;
   filter.id = GenerateFilterId();
   filter.name = name;
   filter.anchor_name = anchor_name;
@@ -87,6 +90,7 @@ FilterObject CreateSphere(const std::string& anchor_name,
                          int segments,
                          float radius) {
   FilterObject filter;
+  filter.type = FilterObject::Type::PRIMITIVE;
   filter.id = GenerateFilterId();
   filter.name = name;
   filter.anchor_name = anchor_name;
@@ -141,6 +145,7 @@ FilterObject CreateCylinder(const std::string& anchor_name,
                            float height,
                            int segments) {
   FilterObject filter;
+  filter.type = FilterObject::Type::PRIMITIVE;
   filter.id = GenerateFilterId();
   filter.name = name;
   filter.anchor_name = anchor_name;
@@ -219,6 +224,7 @@ FilterObject CreateCone(const std::string& anchor_name,
                        float height,
                        int segments) {
   FilterObject filter;
+  filter.type = FilterObject::Type::PRIMITIVE;
   filter.id = GenerateFilterId();
   filter.name = name;
   filter.anchor_name = anchor_name;
@@ -269,6 +275,40 @@ FilterObject CreateCone(const std::string& anchor_name,
     filter.indices.push_back(next);
     filter.indices.push_back(current);
   }
+  
+  return filter;
+}
+
+// Phase 3: Create FilterObject from 3D model file
+FilterObject CreateFromModel(const std::string& anchor_name,
+                            const std::string& name,
+                            const std::string& model_path) {
+  FilterObject filter;
+  filter.type = FilterObject::Type::MODEL_3D;
+  filter.id = GenerateFilterId();
+  filter.name = name;
+  filter.anchor_name = anchor_name;
+  
+  // Load 3D model using ModelLoader
+  ar_filters::ModelLoader loader;
+  auto model_or = loader.LoadModel(model_path);
+  
+  if (!model_or.ok()) {
+    LOG(ERROR) << "Failed to load 3D model: " << model_path 
+               << " - " << model_or.status();
+    // Return empty filter object that won't render
+    filter.enabled = false;
+    filter.visible = false;
+    return filter;
+  }
+  
+  // Store loaded model
+  filter.model = std::make_shared<ar_filters::Model>(*model_or);
+  
+  LOG(INFO) << "Loaded 3D model: " << filter.model->name
+            << " with " << filter.model->meshes.size() << " meshes, "
+            << filter.model->vertex_count << " vertices, "
+            << filter.model->triangle_count << " triangles";
   
   return filter;
 }

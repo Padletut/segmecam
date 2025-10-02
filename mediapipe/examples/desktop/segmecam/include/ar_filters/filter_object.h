@@ -1,31 +1,55 @@
 // Copyright 2025 SegmeCam Contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Filter Object Definition - Phase 2 Step 5
-// Defines FilterObject structure and simple primitive geometry generators
+// Filter Object Definition - Phase 2 Step 5, Phase 3 Step 3
+// Defines FilterObject structure with primitive geometry and 3D model support
 
 #ifndef SEGMECAM_AR_FILTERS_FILTER_OBJECT_H_
 #define SEGMECAM_AR_FILTERS_FILTER_OBJECT_H_
 
 #include <string>
 #include <vector>
+#include <memory>
+#include <memory>
 #include <opencv2/core.hpp>
+#include <GL/gl.h>
+#include <GL/gl.h>
 
 namespace segmecam {
 
-// Simple filter object for AR attachment testing
-// This is a lightweight structure for Phase 2 testing with geometric primitives
-// Phase 3+ will extend this with full 3D model loading capabilities
+// Forward declarations
+namespace ar_filters {
+  struct Model;
+}
+
+// Filter object for AR attachments
+// Supports both simple primitives (Phase 2) and 3D models (Phase 3)
+// Can switch between types seamlessly for testing and production use
 struct FilterObject {
+  // Type of filter object
+  enum class Type {
+    PRIMITIVE,  // Phase 2: Cube, Cylinder, Cone, Sphere
+    MODEL_3D    // Phase 3: Loaded OBJ/GLTF/FBX models
+  };
+  
+  Type type;                            // Current object type
   // Identity
   std::string id;                       // Unique identifier (auto-generated)
   std::string name;                     // Human-readable name (e.g., "Test Cube")
   std::string anchor_name;              // Anchor point to attach to
   
   // Geometry (simple primitives for Phase 2 testing)
-  std::vector<cv::Vec3f> vertices;      // Vertex positions (local space)
-  std::vector<unsigned int> indices;    // Triangle indices
-  std::vector<cv::Vec3f> normals;       // Vertex normals (for lighting)
+  std::vector<cv::Vec3f> vertices;      // Vertex positions (local space) - PRIMITIVE only
+  std::vector<unsigned int> indices;    // Triangle indices - PRIMITIVE only
+  std::vector<cv::Vec3f> normals;       // Vertex normals (for lighting) - PRIMITIVE only
+  
+  // OpenGL buffers (for both primitives and models)
+  GLuint vao;                           // Vertex Array Object (PRIMITIVE only)
+  GLuint vbo;                           // Vertex Buffer Object (PRIMITIVE only)
+  GLuint ebo;                           // Element Buffer Object (PRIMITIVE only)
+  
+  // 3D Model data (Phase 3 - MODEL_3D type only)
+  std::shared_ptr<ar_filters::Model> model;  // Loaded 3D model (nullptr for primitives)
   
   // Transform (world space)
   cv::Vec3f position;                   // World position (updated each frame)
@@ -51,9 +75,14 @@ struct FilterObject {
   
   // Default constructor
   FilterObject()
-      : id(""),
+      : type(Type::PRIMITIVE),
+        id(""),
         name("Unnamed"),
         anchor_name(""),
+        vao(0),
+        vbo(0),
+        ebo(0),
+        model(nullptr),
         position(0.0f, 0.0f, 0.0f),
         rotation(1.0f, 0.0f, 0.0f, 0.0f),  // Identity quaternion (w,x,y,z)
         scale(1.0f, 1.0f, 1.0f),
@@ -109,6 +138,16 @@ FilterObject CreateCone(const std::string& anchor_name,
                        float base_radius = 0.03f,
                        float height = 0.06f,
                        int segments = 16);
+
+// Phase 3: Create from 3D model file
+// Supports 50+ formats via Assimp: OBJ, GLTF, FBX, STL, Collada, 3DS, Blender, etc.
+// model_path: Path to 3D model file (absolute or relative)
+// anchor_name: Anchor point to attach to (e.g., "nose_bridge", "forehead")
+// name: Human-readable name for the filter
+// Returns: FilterObject with loaded 3D model (type = MODEL_3D)
+FilterObject CreateFromModel(const std::string& anchor_name,
+                            const std::string& name,
+                            const std::string& model_path);
 
 // Helper function to generate unique filter ID
 std::string GenerateFilterId();

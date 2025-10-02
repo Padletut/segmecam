@@ -5,6 +5,7 @@ exports_files([
     "include/ar_filters/blendshape_processor.h",
     "include/ar_filters/face_mesh_processor.h",
     "include/ar_filters/transform_calculator.h",
+    "include/ar_filters/model_loader.h",
     "include/ar_filters/filter_object.h",
     "include/ar_filters/attachment_controller.h",
     "include/ar_filters/filter_test_demo.h",
