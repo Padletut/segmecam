@@ -498,6 +498,7 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
                                         *params.managers.effects, params.app_state, output_data.have_lms);
 
     // Phase 8: Update and render AR filters (after effects, before overlays)
+    // TODO Phase 8 Day 3: GPU texture readback not yet implemented - AR rendering disabled
     if (params.managers.ar_filter_manager && params.app_state.ar_filters_enabled) {
         // Update AR filter transforms based on face landmarks
         if (output_data.have_lms && params.managers.ar_filter_manager->HasActiveFilter()) {
@@ -514,7 +515,10 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
             );
         }
         
-        // Render AR filter effects onto frame
+        // DISABLED: Render AR filter effects onto frame
+        // Rendering disabled until GPU texture readback is implemented (Phase 8 Day 3)
+        // Without texture readback, the GPU rendering corrupts the video feed
+        /*
         if (params.managers.ar_filter_manager->HasActiveFilter()) {
             cv::Mat display_bgr;
             cv::cvtColor(display_rgb, display_bgr, cv::COLOR_RGB2BGR);
@@ -522,6 +526,7 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
             display_bgr = params.managers.ar_filter_manager->Render(display_bgr);
             cv::cvtColor(display_bgr, display_rgb, cv::COLOR_BGR2RGB);
         }
+        */
     }
 
     // Add face mesh visualization overlay if enabled
