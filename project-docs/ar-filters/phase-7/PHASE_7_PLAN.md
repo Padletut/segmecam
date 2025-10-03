@@ -1081,11 +1081,50 @@ After Phase 7 completion, we'll have:
 - Behavior system is placeholder (TODO for Day 2)
 - Unit tests not yet created (TODO after Day 2)
 
-**Next:** Phase 7 Day 2 - Behavior System implementation
+**Next:** Phase 7 Day 3 - Application integration & testing
+
+### ✅ Day 2: Complete (January 10, 2025) - Commit 0f441c1
+
+**Implemented:**
+- ✅ BehaviorState struct for per-attachment state tracking
+- ✅ UpdateBehaviors() main loop processing all filter behaviors
+- ✅ GetBlendshapeValue() with 6 blendshape approximations from landmarks
+- ✅ SHAKE behavior (random jitter on activation)
+- ✅ SCALE behavior (proportional/target scaling)
+- ✅ HIDE behavior (visibility toggle at threshold)
+- ✅ ROTATE behavior (rotation interpolation)
+- ✅ FALL_OFF behavior (physics-based gravity simulation)
+- ✅ COLOR_CHANGE behavior (color tint interpolation)
+
+**Blendshapes Supported:**
+- eyeBlinkLeft (landmarks 159/145)
+- eyeBlinkRight (landmarks 386/374)
+- jawOpen/mouthOpen (landmarks 13/14)
+- mouthSmile (landmarks 61/291)
+- browRaiserLeft (landmarks 70/159)
+- browRaiserRight (landmarks 300/386)
+
+**Build Status:** ✅ Clean build, 0 compilation errors  
+**Code Quality:** ✅ Clean Codacy analysis  
+**Total Lines Added:** ~270 lines behavior system code
+
+**Files:**
+- `include/ar_filters/ar_filter_manager.h` (modified - added behavior structs/methods)
+- `src/ar_filters/ar_filter_manager.cpp` (modified - full behavior implementation)
+- `src/ar_filters/BUILD` (modified - added @glm dependency)
+
+**Key Features:**
+- Landmark-based blendshape extraction ✅
+- Threshold-based behavior activation ✅
+- Intensity scaling with blendshape values ✅
+- Per-attachment state tracking ✅
+- Comprehensive logging for debugging ✅
+
+**Next:** Phase 7 Day 3 - Application integration, visual testing, unit tests
 
 ---
 
-**Document Version**: 1.1  
+**Document Version**: 1.2  
 **Created**: October 3, 2025  
 **Last Updated**: January 10, 2025  
-**Status**: 🔄 In Progress - Day 1 Complete, Day 2 Next
+**Status**: 🔄 In Progress - Days 1-2 Complete, Day 3 Next
