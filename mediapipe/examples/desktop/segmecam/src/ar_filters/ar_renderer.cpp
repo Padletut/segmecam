@@ -11,6 +11,12 @@
 #include "absl/log/absl_log.h"
 #include "absl/status/status.h"
 
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/quaternion.hpp>
+
 namespace segmecam {
 namespace ar_filters {
 
@@ -289,7 +295,59 @@ absl::Status ARRenderer::CompositeWithBackground(const uint8_t* background_frame
 }
 
 void ARRenderer::UpdateInstanceTransformsFromLandmarks() {
-  // TODO: Implement landmark-based transforms
+  if (current_face_landmarks_.empty() || model_instances_.empty()) {
+    return;
+  }
+  
+  // Parse landmarks (468 points x 3 coords = 1404 floats)
+  std::vector<cv::Point3f> landmark_points;
+  landmark_points.reserve(468);
+  
+  for (size_t i = 0; i + 2 < current_face_landmarks_.size(); i += 3) {
+    landmark_points.emplace_back(
+        current_face_landmarks_[i],
+        current_face_landmarks_[i + 1],
+        current_face_landmarks_[i + 2]
+    );
+  }
+  
+  // Update each model instance's transform based on its anchor point
+  for (auto& [id, instance] : model_instances_) {
+    if (!instance.visible) continue;
+    
+    // Get anchor position from landmarks
+    cv::Point3f anchor_pos = GetAnchorPosition(landmark_points, instance.attachment_anchor);
+    
+    // Build transform matrix: Translation * Rotation * Scale
+    glm::mat4 translation = glm::translate(glm::mat4(1.0f), 
+        glm::vec3(anchor_pos.x, anchor_pos.y, anchor_pos.z));
+    
+    // Apply any user-defined offset
+    translation = glm::translate(translation, instance.position_offset);
+    
+    // Apply rotation (from instance or head pose)
+    glm::mat4 rotation = glm::mat4_cast(instance.rotation_quat);
+    
+    // Apply scale
+    glm::mat4 scale = glm::scale(glm::mat4(1.0f), instance.scale_factor);
+    
+    // Combine: T * R * S
+    glm::mat4 new_transform = translation * rotation * scale;
+    
+    // Smooth transform to reduce jitter (exponential moving average)
+    float smoothing = 0.3f;  // Lower = smoother but more lag
+    
+    // Interpolate each matrix element separately (glm::mix doesn't work on mat4)
+    for (int col = 0; col < 4; col++) {
+      for (int row = 0; row < 4; row++) {
+        instance.transform[col][row] = glm::mix(
+            instance.last_transform[col][row],
+            new_transform[col][row],
+            smoothing);
+      }
+    }
+    instance.last_transform = new_transform;
+  }
 }
 
 void ARRenderer::CalculateModelTransform(const ModelInstance& instance,
@@ -308,6 +366,60 @@ absl::Status ARRenderer::EnsureResourcesLoaded(const std::string& instance_name)
 
 void ARRenderer::CleanupUnusedResources() {
   // TODO: Implement resource cleanup
+}
+
+cv::Point3f ARRenderer::GetAnchorPosition(
+    const std::vector<cv::Point3f>& landmarks,
+    const std::string& anchor_name) const {
+  
+  if (landmarks.size() < 468) {
+    ABSL_LOG(WARNING) << "Insufficient landmarks: " << landmarks.size();
+    return cv::Point3f(0, 0, 0);
+  }
+  
+  // Map anchor names to landmark indices based on MediaPipe Face Mesh
+  if (anchor_name == "nose_bridge" || anchor_name == "nose") {
+    // Average of nose bridge landmarks (6, 197, 195)
+    return (landmarks[6] + landmarks[197] + landmarks[195]) / 3.0f;
+  }
+  else if (anchor_name == "left_ear") {
+    // Average of left ear landmarks (234, 127, 162)
+    return (landmarks[234] + landmarks[127] + landmarks[162]) / 3.0f;
+  }
+  else if (anchor_name == "right_ear") {
+    // Average of right ear landmarks (454, 356, 389)
+    return (landmarks[454] + landmarks[356] + landmarks[389]) / 3.0f;
+  }
+  else if (anchor_name == "forehead" || anchor_name == "top_head") {
+    // Forehead center (landmark 10)
+    return landmarks[10];
+  }
+  else if (anchor_name == "chin") {
+    // Chin (landmark 152)
+    return landmarks[152];
+  }
+  else if (anchor_name == "left_eye") {
+    // Left eye center (average of 33, 133, 160, 159, 158, 157)
+    return (landmarks[33] + landmarks[133] + landmarks[160] + 
+            landmarks[159] + landmarks[158] + landmarks[157]) / 6.0f;
+  }
+  else if (anchor_name == "right_eye") {
+    // Right eye center (average of 362, 263, 387, 386, 385, 384)
+    return (landmarks[362] + landmarks[263] + landmarks[387] + 
+            landmarks[386] + landmarks[385] + landmarks[384]) / 6.0f;
+  }
+  else if (anchor_name == "mouth") {
+    // Mouth center (average of 13, 14, 78, 308)
+    return (landmarks[13] + landmarks[14] + landmarks[78] + landmarks[308]) / 4.0f;
+  }
+  else if (anchor_name == "center" || anchor_name == "face_center") {
+    // Face center (average of key central landmarks)
+    return (landmarks[1] + landmarks[4] + landmarks[10] + landmarks[152]) / 4.0f;
+  }
+  else {
+    ABSL_LOG(WARNING) << "Unknown anchor: " << anchor_name << ", using face center";
+    return (landmarks[1] + landmarks[4] + landmarks[10] + landmarks[152]) / 4.0f;
+  }
 }
 
 } // namespace ar_filters

@@ -189,6 +189,7 @@ cc_library(
         ":model_loader",
         ":texture_manager",
         "//mediapipe/examples/desktop/segmecam:fbo_manager",
+        "@glm//:glm",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/log",

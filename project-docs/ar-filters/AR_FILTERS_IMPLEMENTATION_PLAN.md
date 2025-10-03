@@ -6,6 +6,7 @@ This document outlines the implementation plan for adding native augmented reali
 
 > ⚠️ **CRITICAL**: AR Filters are an **ADDITION** to SegmeCam, not a replacement!  
 > **All existing features remain fully functional**:
+>
 > - ✅ Beauty effects (skin smoothing, brightness, eye enlargement, etc.)
 > - ✅ Background effects (blur, replacement, green screen, etc.)
 > - ✅ Virtual camera output (v4l2loopback)
@@ -16,6 +17,7 @@ This document outlines the implementation plan for adding native augmented reali
 **Target**: Native C++/OpenGL implementation that maintains 30 FPS performance.
 
 **Architecture Note**: AR filters are **completely independent** from beauty/background effects. They operate on the same video frames but use separate rendering passes. This ensures:
+
 - ✅ No coupling or dependencies between systems
 - ✅ AR filters work regardless of beauty effect settings
 - ✅ Beauty effects work regardless of AR filter settings
@@ -142,6 +144,7 @@ Both pipelines:
 **Goal**: Re-enable MediaPipe FaceLandmarker blendshape output for facial expression detection
 
 **Achievement Summary**:
+
 - ✅ MediaPipe FaceLandmarker configured with blendshape output enabled
 - ✅ 52 blendshape coefficients available from MediaPipe
 - ✅ Values range 0.0-1.0 for all expression types
@@ -211,6 +214,7 @@ The blendshape system is already operational in SegmeCam's existing MediaPipe in
 **Goal**: Calculate 3D head pose and transforms for accurate filter placement
 
 **Achievement Summary**:
+
 - ✅ All 6 steps completed with full testing
 - ✅ 3 production filter examples (Glasses, Hat, Mask)
 - ✅ Exceptional performance: 0.1μs preset switching (10,000x better than target!)
@@ -284,6 +288,7 @@ public:
 **Goal**: Build OpenGL 3D rendering infrastructure for AR filters with shader system and 3D model loading support
 
 **Achievement Summary**:
+
 - ✅ OpenGLRenderer class created (isolated from MediaPipe)
 - ✅ ShaderProgram class with GLSL compilation/linking
 - ✅ GLSL shaders (vertex + fragment, Blinn-Phong lighting)

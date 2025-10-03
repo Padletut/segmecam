@@ -12,8 +12,11 @@
 #include <memory>
 #include <vector>
 #include <map>
+#include <opencv2/core.hpp>
 #include "absl/status/statusor.h"
 #include "absl/status/status.h"
+#include "glm/glm.hpp"
+#include "glm/gtc/quaternion.hpp"
 
 // Forward declarations to avoid circular dependencies
 namespace segmecam {
@@ -78,14 +81,22 @@ public:
     std::string model_name;
     std::string model_path;
     
-    // Transform
+    // Transform (legacy arrays for compatibility)
     float position[3] = {0.0f, 0.0f, 0.0f};
     float rotation[3] = {0.0f, 0.0f, 0.0f};
     float scale[3] = {1.0f, 1.0f, 1.0f};
     
-    // Face landmark attachment (optional)
+    // Phase 5: GLM-based transforms for rendering
+    glm::vec3 position_offset{0.0f, 0.0f, 0.0f};
+    glm::vec3 scale_factor{1.0f, 1.0f, 1.0f};
+    glm::quat rotation_quat{1.0f, 0.0f, 0.0f, 0.0f};  // Identity quaternion
+    glm::mat4 transform{1.0f};  // Current transform matrix
+    glm::mat4 last_transform{1.0f};  // Previous transform for smoothing
+    
+    // Face landmark attachment
     bool attach_to_landmarks = false;
     std::vector<int> landmark_indices; // Which landmarks to track
+    std::string attachment_anchor = "nose_bridge";  // Phase 5: anchor point name
     
     // Visibility
     bool visible = true;
@@ -173,6 +184,8 @@ private:
   void UpdateInstanceTransformsFromLandmarks();
   void CalculateModelTransform(const ModelInstance& instance,
                               float transform_matrix[16]) const;
+  cv::Point3f GetAnchorPosition(const std::vector<cv::Point3f>& landmarks,
+                                const std::string& anchor_name) const;
   
   // Resource management
   absl::Status EnsureResourcesLoaded(const std::string& instance_name);
