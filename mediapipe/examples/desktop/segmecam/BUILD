@@ -558,6 +558,7 @@ cc_library( # type: ignore
         ":vcam",
         ":portal_utils",
         "//mediapipe/examples/desktop/segmecam/src/config:config_manager",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:ar_filter_manager",  # Phase 8 Day 2
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
         "//mediapipe/framework/port:opencv_highgui",

@@ -10,6 +10,11 @@
 #include <string>
 #include "ui_panels.h"
 
+// Forward declarations
+namespace ar_filters {
+    class ARFilterManager;
+}
+
 namespace segmecam {
 
 class AppState;
@@ -26,8 +31,12 @@ public:
   bool Initialize();
   bool Initialize(SDL_Window* existing_window);
   
-  // Initialize UI panels with dependencies
-  void InitializePanels(AppState& state, CameraManager& camera_mgr, class EffectsManager& effects_mgr, ConfigManager* config_mgr = nullptr);
+  // Initialize UI panels with dependencies (Phase 8 Day 2: Added ar_filter_mgr)
+  void InitializePanels(AppState& state, 
+                        CameraManager& camera_mgr, 
+                        class EffectsManager& effects_mgr, 
+                        ConfigManager* config_mgr = nullptr,
+                        ar_filters::ARFilterManager* ar_filter_mgr = nullptr);
   
   // Event handling
   bool ProcessEvents(bool& running);

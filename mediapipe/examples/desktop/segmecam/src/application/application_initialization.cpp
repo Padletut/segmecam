@@ -219,8 +219,12 @@ int ApplicationInitialization::InitializeApplication(
         return -9;
     }
     
-    // Initialize UI panels with dependencies (must be done after UIManager is initialized)
-    managers.ui->InitializePanels(app_state, *managers.camera, *managers.effects, managers.config.get());
+    // Initialize UI panels with dependencies (Phase 8 Day 2: Pass ar_filter_mgr)
+    managers.ui->InitializePanels(app_state, 
+                                   *managers.camera, 
+                                   *managers.effects, 
+                                   managers.config.get(),
+                                   managers.ar_filter_manager.get());
     
     std::cout << "✅ SegmeCam Application initialized successfully!" << std::endl;
     return 0;

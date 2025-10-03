@@ -198,12 +198,20 @@ private:
 };
 
 // Debug panel for overlay controls and performance stats
+// Forward declarations for AR filters
+namespace ar_filters {
+    class ARFilterManager;
+}
+
 class DebugPanel : public UIPanel {
 public:
     DebugPanel(AppState& state);
     ~DebugPanel() override = default;
     
     void Render() override;
+    
+    // Phase 8 Day 2: Set AR filter manager for UI controls
+    void SetARFilterManager(ar_filters::ARFilterManager* ar_mgr) { ar_filter_mgr_ = ar_mgr; }
 
 private:
     void RenderOverlayControls();
@@ -216,7 +224,11 @@ private:
     void RenderAutoProcessingScaleDetails();
     void RenderPerformanceStatus();
     
+    // Phase 8 Day 2: AR filter controls
+    void RenderARFilterControls();
+    
     AppState& state_;
+    ar_filters::ARFilterManager* ar_filter_mgr_ = nullptr; // Phase 8 Day 2
 };
 
 // Status panel for system information and status display

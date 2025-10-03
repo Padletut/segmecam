@@ -127,7 +127,11 @@ void UIManager::DrawInitialFrame() {
     std::cout << "Initial frame drawn" << std::endl;
 }
 
-void UIManager::InitializePanels(AppState& state, CameraManager& camera_mgr, EffectsManager& effects_mgr, ConfigManager* config_mgr) {
+void UIManager::InitializePanels(AppState& state, 
+                                  CameraManager& camera_mgr, 
+                                  EffectsManager& effects_mgr, 
+                                  ConfigManager* config_mgr,
+                                  ar_filters::ARFilterManager* ar_filter_mgr) {
     // Initialize panels with their dependencies
     auto camera_panel = std::make_unique<CameraPanel>(state, camera_mgr, effects_mgr);
     if (config_mgr) {
@@ -140,8 +144,12 @@ void UIManager::InitializePanels(AppState& state, CameraManager& camera_mgr, Eff
     RegisterPanel(std::make_unique<BackgroundPanel>(state));
     RegisterPanel(std::make_unique<BeautyPanel>(state, effects_mgr));
     
-    // Debug and Status panels
-    RegisterPanel(std::make_unique<DebugPanel>(state));
+    // Debug and Status panels (Phase 8 Day 2: Pass ar_filter_mgr to DebugPanel)
+    auto debug_panel = std::make_unique<DebugPanel>(state);
+    if (ar_filter_mgr) {
+        debug_panel->SetARFilterManager(ar_filter_mgr);
+    }
+    RegisterPanel(std::move(debug_panel));
     RegisterPanel(std::make_unique<StatusPanel>(state));
 }
 

@@ -1,6 +1,7 @@
 #include "include/ui/ui_panels.h"
 #include "include/ar_filters/filter_object.h"
 #include "include/ar_filters/model_loader.h"
+#include "include/ar_filters/ar_filter_manager.h"  // Phase 8 Day 2
 #include <iostream>
 
 namespace segmecam {
@@ -18,6 +19,7 @@ void DebugPanel::Render() {
     
     if (ImGui::CollapsingHeader("Debug Controls")) {
         RenderOverlayControls();
+        RenderARFilterControls();  // Phase 8 Day 2: AR filter UI controls
         RenderPerformanceStats();
         RenderAdvancedSettings();
     }
@@ -346,6 +348,137 @@ void StatusPanel::RenderSystemInfo() {
 void StatusPanel::RenderGraphInfo() {
     // Removed App: Running status as it's not very useful
     // The fact that the UI is updating indicates the app is running
+}
+
+// Phase 8 Day 2: AR Filter Controls Implementation
+void DebugPanel::RenderARFilterControls() {
+    if (!ar_filter_mgr_) {
+        return;  // AR Filter Manager not available
+    }
+    
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Text("🎭 AR Filters (Phase 8)");
+    ImGui::Separator();
+    
+    // Enable/Disable toggle
+    bool ar_enabled = state_.ar_filters_enabled;
+    if (ImGui::Checkbox("Enable AR Filters", &ar_enabled)) {
+        state_.ar_filters_enabled = ar_enabled;
+        std::cout << "[DebugPanel] AR Filters " 
+                  << (ar_enabled ? "enabled" : "disabled") << std::endl;
+    }
+    
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Enable/disable AR filter rendering in the pipeline");
+    }
+    
+    // Get available filters
+    auto filters_result = ar_filter_mgr_->GetAvailableFilters();
+    if (!filters_result.ok()) {
+        ImGui::TextColored(ImVec4(1, 0, 0, 1), "⚠️  Failed to load filters");
+        ImGui::TextWrapped("Error: %s", filters_result.status().message().data());
+        return;
+    }
+    
+    const auto& filters = *filters_result;
+    
+    if (filters.empty()) {
+        ImGui::TextColored(ImVec4(1, 1, 0, 1), "⚠️  No filters available");
+        ImGui::TextWrapped("Place filter definitions in assets/filters/");
+        return;
+    }
+    
+    // Display filter count
+    ImGui::Text("Available Filters: %zu", filters.size());
+    
+    // Filter selection dropdown
+    static int selected_filter_idx = -1;
+    static std::vector<std::string> filter_names;
+    static std::vector<const char*> filter_items;
+    
+    // Rebuild filter list if needed
+    if (filter_names.size() != filters.size()) {
+        filter_names.clear();
+        filter_items.clear();
+        filter_names.push_back("(None)");
+        filter_items.push_back(filter_names.back().c_str());
+        
+        for (const auto& filter : filters) {
+            filter_names.push_back(filter.name + " (" + filter.category + ")");
+            filter_items.push_back(filter_names.back().c_str());
+        }
+        
+        selected_filter_idx = 0;  // Default to "None"
+    }
+    
+    ImGui::Combo("Select Filter", &selected_filter_idx, 
+                 filter_items.data(), 
+                 static_cast<int>(filter_items.size()));
+    
+    // Load/Clear buttons
+    ImGui::BeginDisabled(selected_filter_idx <= 0);
+    if (ImGui::Button("Load Filter")) {
+        if (selected_filter_idx > 0 && selected_filter_idx <= static_cast<int>(filters.size())) {
+            const auto& selected_filter = filters[selected_filter_idx - 1];
+            auto status = ar_filter_mgr_->LoadFilter(selected_filter.id);
+            if (status.ok()) {
+                std::cout << "[DebugPanel] ✅ Loaded filter: " 
+                          << selected_filter.name << std::endl;
+            } else {
+                std::cerr << "[DebugPanel] ❌ Failed to load filter: " 
+                          << status.message() << std::endl;
+            }
+        }
+    }
+    ImGui::EndDisabled();
+    
+    ImGui::SameLine();
+    
+    bool has_active = ar_filter_mgr_->HasActiveFilter();
+    ImGui::BeginDisabled(!has_active);
+    if (ImGui::Button("Clear Filter")) {
+        auto status = ar_filter_mgr_->UnloadCurrentFilter();
+        if (status.ok()) {
+            std::cout << "[DebugPanel] Cleared active filter" << std::endl;
+            selected_filter_idx = 0;  // Reset to "None"
+        } else {
+            std::cerr << "[DebugPanel] Failed to clear filter: " 
+                      << status.message() << std::endl;
+        }
+    }
+    ImGui::EndDisabled();
+    
+    // Display current filter status
+    if (has_active) {
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0, 1, 0, 1), "✅ Active Filter");
+        
+        // Find and display active filter info
+        for (size_t i = 0; i < filters.size(); ++i) {
+            // Check if this filter is active by ID comparison
+            // (We don't have direct access to active filter ID, so we use HasActiveFilter as indicator)
+            if (selected_filter_idx == static_cast<int>(i + 1)) {
+                const auto& filter = filters[i];
+                ImGui::Text("  Name: %s", filter.name.c_str());
+                ImGui::Text("  Category: %s", filter.category.c_str());
+                if (!filter.description.empty()) {
+                    ImGui::TextWrapped("  %s", filter.description.c_str());
+                }
+                break;
+            }
+        }
+    } else {
+        ImGui::Text("Status: No active filter");
+    }
+    
+    // Help text
+    ImGui::Spacing();
+    ImGui::TextDisabled("Tips:");
+    ImGui::TextDisabled("- Select a filter from the dropdown");
+    ImGui::TextDisabled("- Click 'Load Filter' to activate it");
+    ImGui::TextDisabled("- Enable AR Filters to see rendering");
+    ImGui::TextDisabled("- Filters require face detection");
 }
 
 } // namespace segmecam
