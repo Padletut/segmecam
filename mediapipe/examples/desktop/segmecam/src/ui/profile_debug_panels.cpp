@@ -393,12 +393,13 @@ void DebugPanel::RenderARFilterControls() {
     ImGui::Text("Available Filters: %zu", filters.size());
     
     // Filter selection dropdown
-    static int selected_filter_idx = -1;
+    static int selected_filter_idx = 0;  // Start at 0 = "(None)"
     static std::vector<std::string> filter_names;
     static std::vector<const char*> filter_items;
+    static std::string last_active_filter_id;
     
     // Rebuild filter list if needed
-    if (filter_names.size() != filters.size()) {
+    if (filter_names.size() != filters.size() + 1) {  // +1 for "(None)"
         filter_names.clear();
         filter_items.clear();
         filter_names.push_back("(None)");
@@ -409,7 +410,31 @@ void DebugPanel::RenderARFilterControls() {
             filter_items.push_back(filter_names.back().c_str());
         }
         
-        selected_filter_idx = 0;  // Default to "None"
+        selected_filter_idx = 0;  // Reset to "None" when list changes
+    }
+    
+    // Sync dropdown with active filter state
+    std::string current_active_id = ar_filter_mgr_->GetActiveFilterId();
+    if (current_active_id != last_active_filter_id) {
+        // Active filter changed - update dropdown to match
+        last_active_filter_id = current_active_id;
+        
+        if (current_active_id.empty()) {
+            selected_filter_idx = 0;  // No active filter -> "(None)"
+        } else {
+            // Find the filter in the list and update dropdown
+            bool found = false;
+            for (size_t i = 0; i < filters.size(); ++i) {
+                if (filters[i].id == current_active_id) {
+                    selected_filter_idx = static_cast<int>(i + 1);  // +1 for "(None)" offset
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                selected_filter_idx = 0;  // Fallback if filter not found
+            }
+        }
     }
     
     ImGui::Combo("Select Filter", &selected_filter_idx, 
@@ -425,9 +450,11 @@ void DebugPanel::RenderARFilterControls() {
             if (status.ok()) {
                 std::cout << "[DebugPanel] ✅ Loaded filter: " 
                           << selected_filter.name << std::endl;
+                // Don't reset dropdown - it will sync automatically via GetActiveFilterId()
             } else {
                 std::cerr << "[DebugPanel] ❌ Failed to load filter: " 
                           << status.message() << std::endl;
+                selected_filter_idx = 0;  // Reset to "(None)" on failure
             }
         }
     }
@@ -441,7 +468,7 @@ void DebugPanel::RenderARFilterControls() {
         auto status = ar_filter_mgr_->UnloadCurrentFilter();
         if (status.ok()) {
             std::cout << "[DebugPanel] Cleared active filter" << std::endl;
-            selected_filter_idx = 0;  // Reset to "None"
+            // Don't manually reset - it will sync automatically via GetActiveFilterId()
         } else {
             std::cerr << "[DebugPanel] Failed to clear filter: " 
                       << status.message() << std::endl;
