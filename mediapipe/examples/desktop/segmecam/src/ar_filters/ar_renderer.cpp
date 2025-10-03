@@ -20,6 +20,7 @@
 // OpenGL headers for rendering
 #include <epoxy/gl.h>
 #include <opencv2/opencv.hpp>
+#include <chrono>
 
 namespace segmecam {
 namespace ar_filters {
@@ -182,36 +183,49 @@ absl::StatusOr<ARRenderer::RenderResult> ARRenderer::RenderToTexture(
     const uint8_t* input_frame, int frame_width, int frame_height) {
   RenderResult result;
   result.success = false;
+  result.models_rendered = 0;
+  result.triangles_rendered = 0;
+  result.render_time_ms = 0.0f;
   
   if (!initialized_) {
     result.error_message = "Not initialized";
     return result;
   }
+
+  // Start timing
+  auto start_time = std::chrono::high_resolution_clock::now();
   
-  // Bind FBO
-  if (!fbo_manager_->BindFramebuffer(render_fbo_name_)) {
-    result.error_message = "Failed to bind FBO";
-    return result;
-  }
+  // Step 1: Update model transforms from current face landmarks
+  UpdateInstanceTransformsFromLandmarks();
   
-  // Composite background
-  auto composite_status = CompositeWithBackground(input_frame, frame_width, frame_height);
-  if (!composite_status.ok()) {
-    result.error_message = std::string(composite_status.message());
-    return result;
-  }
-  
-  // Render models
+  // Step 2: Render 3D models to offscreen FBO
   auto render_status = RenderModelInstances();
   if (!render_status.ok()) {
     result.error_message = std::string(render_status.message());
     return result;
   }
   
-  fbo_manager_->UnbindFramebuffer();
+  // Step 3: Composite AR layer with video background
+  auto composite_status = CompositeWithBackground(input_frame, frame_width, frame_height);
+  if (!composite_status.ok()) {
+    result.error_message = std::string(composite_status.message());
+    return result;
+  }
   
+  // Calculate render time
+  auto end_time = std::chrono::high_resolution_clock::now();
+  result.render_time_ms = std::chrono::duration<float, std::milli>(
+      end_time - start_time).count();
+  
+  // Update result with rendering statistics
   result.success = true;
   result.output_texture_id = fbo_manager_->GetColorTexture(render_fbo_name_);
+  result.models_rendered = last_models_rendered_;
+  result.triangles_rendered = last_triangles_rendered_;
+  
+  // Track performance
+  last_render_time_ms_ = result.render_time_ms;
+  
   return result;
 }
 
