@@ -18,6 +18,7 @@
 #include "absl/status/statusor.h"
 #include "mediapipe/framework/formats/landmark.pb.h"
 #include "opencv2/core.hpp"
+#include "glm/glm.hpp"
 
 // Forward declarations
 namespace segmecam {
@@ -25,6 +26,7 @@ namespace ar_filters {
 
 class FilterAsset;
 class ARRenderer;
+struct FilterBehavior;
 
 // Configuration for ARFilterManager
 struct ARFilterManagerConfig {
@@ -112,12 +114,33 @@ private:
     int frame_count = 0;
   };
 
+  // Behavior system state
+  struct BehaviorState {
+    bool active = false;
+    float intensity = 0.0f;
+    uint64_t activation_time_us = 0;
+    glm::vec3 shake_offset{0.0f};
+    float scale_multiplier = 1.0f;
+    bool hidden = false;
+    glm::vec3 color_tint{1.0f, 1.0f, 1.0f};
+  };
+
   // Internal methods
   absl::Status ScanFiltersDirectory();
   absl::Status LoadFilterAsset(const std::string& filter_id);
   void UpdateBehaviors(const std::vector<mediapipe::NormalizedLandmark>& landmarks);
   void UpdatePerformanceStats(uint64_t render_time_us);
   FilterInfo CreateFilterInfo(const FilterAsset& asset) const;
+  
+  // Behavior system methods
+  float GetBlendshapeValue(const std::string& blendshape_name,
+                           const std::vector<mediapipe::NormalizedLandmark>& landmarks);
+  void ApplyShakeBehavior(const FilterBehavior& behavior, float blendshape_value);
+  void ApplyScaleBehavior(const FilterBehavior& behavior, float blendshape_value);
+  void ApplyHideBehavior(const FilterBehavior& behavior, float blendshape_value);
+  void ApplyRotateBehavior(const FilterBehavior& behavior, float blendshape_value);
+  void ApplyFallOffBehavior(const FilterBehavior& behavior, float blendshape_value);
+  void ApplyColorChangeBehavior(const FilterBehavior& behavior, float blendshape_value);
 
   // Member variables
   ARFilterManagerConfig config_;
@@ -129,6 +152,7 @@ private:
   
   // Blendshape state for behaviors (updated each frame)
   std::map<std::string, float> blendshape_values_;
+  std::map<std::string, BehaviorState> behavior_states_;  // behavior_id -> state
 };
 
 } // namespace ar_filters

@@ -9,9 +9,13 @@
 #include <filesystem>
 #include <chrono>
 #include <algorithm>
+#include <random>
+#include <cmath>
 #include "absl/log/absl_log.h"
 #include "absl/log/log.h"
 #include "absl/strings/str_format.h"
+#include "glm/glm.hpp"
+#include "glm/gtc/matrix_transform.hpp"
 
 namespace segmecam {
 namespace ar_filters {
@@ -399,9 +403,51 @@ absl::Status ARFilterManager::LoadFilterAsset(const std::string& filter_id) {
 
 void ARFilterManager::UpdateBehaviors(
     const std::vector<mediapipe::NormalizedLandmark>& landmarks) {
-  // TODO: Implement blendshape behavior system in Day 2
-  // This will read blendshape values and apply behaviors from FilterAsset
-  (void)landmarks;  // Suppress unused parameter warning
+  if (!HasActiveFilter() || landmarks.empty()) {
+    return;
+  }
+
+  // Get current filter's behaviors
+  auto it = loaded_filter_assets_.find(state_.active_filter_id);
+  if (it == loaded_filter_assets_.end()) {
+    return;
+  }
+
+  const auto& behaviors = it->second->GetBehaviors();
+  if (behaviors.empty()) {
+    return;
+  }
+  
+  // Process each behavior
+  for (const auto& behavior : behaviors) {
+    // Get blendshape value (0.0 to 1.0)
+    float blendshape_value = GetBlendshapeValue(behavior.blendshape_name, landmarks);
+    
+    // Store for debugging/monitoring
+    blendshape_values_[behavior.blendshape_name] = blendshape_value;
+    
+    // Apply behavior based on type
+    switch (behavior.type) {
+      case FilterBehavior::Type::SHAKE:
+        ApplyShakeBehavior(behavior, blendshape_value);
+        break;
+      case FilterBehavior::Type::SCALE:
+        ApplyScaleBehavior(behavior, blendshape_value);
+        break;
+      case FilterBehavior::Type::HIDE:
+        ApplyHideBehavior(behavior, blendshape_value);
+        break;
+      case FilterBehavior::Type::ROTATE:
+        ApplyRotateBehavior(behavior, blendshape_value);
+        break;
+      case FilterBehavior::Type::FALL_OFF:
+        ApplyFallOffBehavior(behavior, blendshape_value);
+        break;
+      case FilterBehavior::Type::COLOR_CHANGE:
+        ApplyColorChangeBehavior(behavior, blendshape_value);
+        break;
+    }
+  }
 }
 
 void ARFilterManager::UpdatePerformanceStats(uint64_t render_time_us) {
@@ -439,6 +485,212 @@ FilterInfo ARFilterManager::CreateFilterInfo(const FilterAsset& asset) const {
   info.has_behaviors = !behaviors.empty();
 
   return info;
+}
+
+// Behavior System Implementation
+
+float ARFilterManager::GetBlendshapeValue(
+    const std::string& blendshape_name,
+    const std::vector<mediapipe::NormalizedLandmark>& landmarks) {
+  
+  // Map common blendshape names to landmark-based calculations
+  // MediaPipe Face Mesh provides 468 landmarks
+  // We approximate blendshapes using landmark geometry
+  
+  if (blendshape_name == "eyeBlinkLeft") {
+    // Left eye vertical distance
+    // Landmarks: 159 (upper eyelid), 145 (lower eyelid)
+    if (landmarks.size() > 159) {
+      float eye_height = std::abs(landmarks[159].y() - landmarks[145].y());
+      // Normalize: fully open = 0.03, fully closed = 0.005
+      return std::clamp(1.0f - ((eye_height - 0.005f) / 0.025f), 0.0f, 1.0f);
+    }
+  } else if (blendshape_name == "eyeBlinkRight") {
+    // Right eye vertical distance
+    // Landmarks: 386 (upper eyelid), 374 (lower eyelid)
+    if (landmarks.size() > 386) {
+      float eye_height = std::abs(landmarks[386].y() - landmarks[374].y());
+      return std::clamp(1.0f - ((eye_height - 0.005f) / 0.025f), 0.0f, 1.0f);
+    }
+  } else if (blendshape_name == "jawOpen" || blendshape_name == "mouthOpen") {
+    // Mouth vertical opening
+    // Landmarks: 13 (upper lip center), 14 (lower lip center)
+    if (landmarks.size() > 14) {
+      float mouth_height = std::abs(landmarks[13].y() - landmarks[14].y());
+      // Normalize: closed = 0.01, wide open = 0.15
+      return std::clamp((mouth_height - 0.01f) / 0.14f, 0.0f, 1.0f);
+    }
+  } else if (blendshape_name == "mouthSmile") {
+    // Mouth width expansion
+    // Landmarks: 61 (left corner), 291 (right corner)
+    if (landmarks.size() > 291) {
+      float mouth_width = std::abs(landmarks[61].x() - landmarks[291].x());
+      // Normalize: neutral = 0.15, smile = 0.25
+      return std::clamp((mouth_width - 0.15f) / 0.10f, 0.0f, 1.0f);
+    }
+  } else if (blendshape_name == "browRaiserLeft") {
+    // Left eyebrow height
+    // Landmarks: 70 (eyebrow), 159 (eyelid)
+    if (landmarks.size() > 159) {
+      float brow_height = std::abs(landmarks[70].y() - landmarks[159].y());
+      // Normalize: neutral = 0.02, raised = 0.04
+      return std::clamp((brow_height - 0.02f) / 0.02f, 0.0f, 1.0f);
+    }
+  } else if (blendshape_name == "browRaiserRight") {
+    // Right eyebrow height
+    // Landmarks: 300 (eyebrow), 386 (eyelid)
+    if (landmarks.size() > 386) {
+      float brow_height = std::abs(landmarks[300].y() - landmarks[386].y());
+      return std::clamp((brow_height - 0.02f) / 0.02f, 0.0f, 1.0f);
+    }
+  }
+  
+  return 0.0f;  // Unknown blendshape
+}
+
+void ARFilterManager::ApplyShakeBehavior(const FilterBehavior& behavior, 
+                                         float blendshape_value) {
+  if (blendshape_value < behavior.threshold) {
+    return;
+  }
+
+  // Generate random shake offset based on intensity
+  static std::random_device rd;
+  static std::mt19937 gen(rd());
+  std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
+
+  // Scale shake by blendshape value and intensity
+  float shake_amount = (blendshape_value - behavior.threshold) * behavior.intensity * 0.01f;
+  
+  glm::vec3 shake_offset(
+      dis(gen) * shake_amount,
+      dis(gen) * shake_amount,
+      dis(gen) * shake_amount
+  );
+
+  // Update behavior state
+  auto& state = behavior_states_[behavior.target_attachment_id];
+  state.active = true;
+  state.shake_offset = shake_offset;
+  state.intensity = blendshape_value;
+
+  // Apply shake to target attachment via ARRenderer
+  // Note: This requires ARRenderer to support offset modification
+  // For now, we log the shake event
+  LOG(INFO) << "SHAKE behavior activated for " << behavior.target_attachment_id 
+            << " with offset (" << shake_offset.x << ", " << shake_offset.y << ", " << shake_offset.z << ")";
+}
+
+void ARFilterManager::ApplyScaleBehavior(const FilterBehavior& behavior, 
+                                         float blendshape_value) {
+  if (blendshape_value < behavior.threshold) {
+    return;
+  }
+
+  // Calculate scale multiplier based on blendshape value
+  float scale_factor = 1.0f + (blendshape_value - behavior.threshold) * behavior.intensity;
+  
+  // Apply target scale if specified, otherwise proportional scaling
+  glm::vec3 scale_vec = behavior.target_scale;
+  if (glm::length(scale_vec - glm::vec3(1.0f)) < 0.001f) {
+    // No target scale specified, use uniform scaling
+    scale_vec = glm::vec3(scale_factor);
+  } else {
+    // Interpolate towards target scale
+    scale_vec = glm::mix(glm::vec3(1.0f), scale_vec, blendshape_value * behavior.intensity);
+  }
+
+  // Update behavior state
+  auto& state = behavior_states_[behavior.target_attachment_id];
+  state.active = true;
+  state.scale_multiplier = scale_factor;
+  state.intensity = blendshape_value;
+
+  LOG(INFO) << "SCALE behavior activated for " << behavior.target_attachment_id 
+            << " with scale " << scale_factor;
+}
+
+void ARFilterManager::ApplyHideBehavior(const FilterBehavior& behavior, 
+                                        float blendshape_value) {
+  bool should_hide = blendshape_value >= behavior.threshold;
+  
+  // Update behavior state
+  auto& state = behavior_states_[behavior.target_attachment_id];
+  state.active = should_hide;
+  state.hidden = should_hide;
+  state.intensity = blendshape_value;
+
+  if (should_hide) {
+    LOG(INFO) << "HIDE behavior activated for " << behavior.target_attachment_id;
+  }
+}
+
+void ARFilterManager::ApplyRotateBehavior(const FilterBehavior& behavior, 
+                                          float blendshape_value) {
+  if (blendshape_value < behavior.threshold) {
+    return;
+  }
+
+  // Calculate rotation based on target rotation and blendshape value
+  glm::vec3 rotation = behavior.target_rotation * blendshape_value * behavior.intensity;
+
+  // Update behavior state
+  auto& state = behavior_states_[behavior.target_attachment_id];
+  state.active = true;
+  state.intensity = blendshape_value;
+
+  LOG(INFO) << "ROTATE behavior activated for " << behavior.target_attachment_id 
+            << " with rotation (" << rotation.x << ", " << rotation.y << ", " << rotation.z << ")";
+}
+
+void ARFilterManager::ApplyFallOffBehavior(const FilterBehavior& behavior, 
+                                           float blendshape_value) {
+  if (blendshape_value < behavior.threshold) {
+    return;
+  }
+
+  auto& state = behavior_states_[behavior.target_attachment_id];
+  
+  // Initialize fall-off if just triggered
+  if (!state.active) {
+    state.active = true;
+    state.activation_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    LOG(INFO) << "FALL_OFF behavior triggered for " << behavior.target_attachment_id;
+  }
+
+  // Calculate elapsed time since activation
+  uint64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::steady_clock::now().time_since_epoch()).count();
+  float elapsed_seconds = (now_us - state.activation_time_us) / 1000000.0f;
+
+  // Apply gravity: y = y0 + v0*t + 0.5*g*t^2
+  float fall_distance = 0.5f * behavior.gravity * elapsed_seconds * elapsed_seconds;
+  state.shake_offset = glm::vec3(0.0f, -fall_distance, 0.0f);
+  state.intensity = blendshape_value;
+
+  LOG(INFO) << "FALL_OFF physics: " << behavior.target_attachment_id 
+            << " fell " << fall_distance << " units";
+}
+
+void ARFilterManager::ApplyColorChangeBehavior(const FilterBehavior& behavior, 
+                                               float blendshape_value) {
+  if (blendshape_value < behavior.threshold) {
+    return;
+  }
+
+  // Interpolate color from white to target color
+  glm::vec3 color = glm::mix(glm::vec3(1.0f), behavior.target_color, 
+                             blendshape_value * behavior.intensity);
+
+  // Update behavior state
+  auto& state = behavior_states_[behavior.target_attachment_id];
+  state.active = true;
+  state.color_tint = color;
+  state.intensity = blendshape_value;
+
+  LOG(INFO) << "COLOR_CHANGE behavior activated for " << behavior.target_attachment_id 
+            << " with color (" << color.r << ", " << color.g << ", " << color.b << ")";
 }
 
 } // namespace ar_filters

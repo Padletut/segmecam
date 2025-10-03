@@ -296,6 +296,7 @@ cc_library(
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:str_format",
+        "@glm",
     ],
     copts = [
         "-std=c++17",
