@@ -475,6 +475,29 @@ cc_library( # pyright: ignore[reportUndefinedVariable]
     ],
 )
 
+# Phase 4 Step 2: FBOManager - Framebuffer Object Management for offscreen rendering
+cc_library(
+    name = "fbo_manager",
+    srcs = ["src/render/fbo_manager.cpp"],
+    hdrs = ["include/render/fbo_manager.h"],
+    includes = [".", "include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+    ],
+    copts = [
+        "-std=c++17",
+        "-I/usr/include",
+    ],
+    linkopts = [
+        "-lepoxy",
+        "-lGL",
+    ],
+)
+
 # Profile Management System
 cc_library( # type: ignore
     name = "profile_manager",
