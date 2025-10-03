@@ -20,7 +20,7 @@
 
 // Include SDL for OpenGL context (needed for MediaPipe GPU)
 #include <SDL.h>
-#include <SDL_opengl.h>
+// Removed SDL_opengl.h - using epoxy/gl.h instead
 
 // Include ImGui for GUI
 #include "third_party/imgui/imgui.h"
@@ -31,7 +31,7 @@
 #include <opencv2/opencv.hpp>
 
 // Include OpenGL for texture management
-#include <GL/gl.h>
+#include <epoxy/gl.h>  // Modern OpenGL function loader
 
 #include <iostream>
 #include <chrono>

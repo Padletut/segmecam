@@ -9,6 +9,13 @@
 #include "include/application/app_state.h"
 #include "include/ar_filters/model_loader.h"
 
+// For 3D rendering (Phase 3 Step 8)
+#include "include/render/render_manager.h"
+#include "ar_filters/opengl_renderer.h"
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
 // Include MediaPipe for graph operations
 #include "mediapipe/framework/calculator_graph.h"
 #include "mediapipe/framework/formats/image_frame.h"
@@ -25,6 +32,64 @@
 #include <thread>
 
 namespace segmecam {
+
+// Helper function to create RenderCommand from FilterObject (Phase 3 Step 8)
+static segmecam::ar_filters::RenderCommand CreateRenderCommand(const FilterObject& filter, const AppState& app_state) {
+    segmecam::ar_filters::RenderCommand cmd;
+    
+    // Set model pointer
+    cmd.model = filter.model.get();
+    cmd.visible = filter.visible && filter.enabled;
+    
+    // Build model matrix from position, rotation, scale
+    glm::mat4 model_matrix = glm::mat4(1.0f);
+    
+    // Apply position (convert to NDC coordinates centered at origin)
+    glm::vec3 position(filter.position[0], filter.position[1], filter.position[2]);
+    model_matrix = glm::translate(model_matrix, position);
+    
+    // Apply rotation (in degrees)
+    model_matrix = glm::rotate(model_matrix, glm::radians(filter.rotation[2]), glm::vec3(0.0f, 0.0f, 1.0f)); // Z
+    model_matrix = glm::rotate(model_matrix, glm::radians(filter.rotation[1]), glm::vec3(0.0f, 1.0f, 0.0f)); // Y
+    model_matrix = glm::rotate(model_matrix, glm::radians(filter.rotation[0]), glm::vec3(1.0f, 0.0f, 0.0f)); // X
+    
+    // Apply scale
+    glm::vec3 scale(
+        filter.scale[0] * filter.local_scale,
+        filter.scale[1] * filter.local_scale,
+        filter.scale[2] * filter.local_scale
+    );
+    model_matrix = glm::scale(model_matrix, scale);
+    
+    // Copy to command (column-major storage)
+    memcpy(cmd.model_matrix, glm::value_ptr(model_matrix), 16 * sizeof(float));
+    
+    // Get material (use first material or default)
+    if (filter.model && !filter.model->materials.empty()) {
+        // Try to get mesh material first, fallback to first material
+        if (!filter.model->meshes.empty()) {
+            const std::string& material_name = filter.model->meshes[0].material_name;
+            auto mat_it = filter.model->materials.find(material_name);
+            if (mat_it != filter.model->materials.end()) {
+                cmd.material = mat_it->second;
+            } else {
+                cmd.material = filter.model->materials.begin()->second;
+            }
+        } else {
+            cmd.material = filter.model->materials.begin()->second;
+        }
+    } else {
+        // Default material (white diffuse)
+        cmd.material.ambient = cv::Vec3f(0.2f, 0.2f, 0.2f);
+        cmd.material.diffuse = cv::Vec3f(1.0f, 1.0f, 1.0f);
+        cmd.material.specular = cv::Vec3f(0.5f, 0.5f, 0.5f);
+        cmd.material.shininess = 32.0f;
+        cmd.material.opacity = 1.0f;
+        cmd.material.texture_id = 0;
+    }
+    
+    return cmd;
+}
 
 void FrameProcessor::MatToImageFrame(const cv::Mat& mat_bgr, std::unique_ptr<mediapipe::ImageFrame>& frame) {
     frame = std::make_unique<mediapipe::ImageFrame>(
@@ -185,8 +250,10 @@ void FrameProcessor::handle_frame_output(
 }
 
 void FrameProcessor::RenderFilterPrimitives(cv::Mat& display_bgr, AppState& app_state) {
-    // Phase 2 Step 5: Simple 2D visualization of filter primitives
-    // This renders filter objects as colored circles/shapes at their calculated positions
+    // Phase 2 Step 5 → Phase 3 Step 8: AR filter visualization
+    // Renders filter objects as:
+    //  - 3D models (when ar_render_3d_models enabled) [NEW in Step 8]
+    //  - Colored circles/shapes for 2D primitives or fallback
     
     if (!app_state.ar_filters_enabled) {
         return;
@@ -196,6 +263,20 @@ void FrameProcessor::RenderFilterPrimitives(cv::Mat& display_bgr, AppState& app_
     if (filters.empty()) {
         return;
     }
+    
+    // Phase 3 Step 8: Render 3D models with OpenGL if enabled
+    // NOTE: This currently renders to the default framebuffer (screen)
+    // In Phase 4, we'll render to an FBO and composite with the video frame
+    // For now, this is a proof-of-concept showing actual 3D models
+    
+    // TODO Phase 4: Implement FBO rendering and proper compositing
+    //   1. Create FBO with color texture and depth buffer
+    //   2. Render 3D models to FBO
+    //   3. Read back FBO texture and composite with video frame
+    //   4. This will eliminate the slow glReadPixels path
+    
+    // For now: Fall back to 2D circle visualization
+    // (OpenGL 3D rendering requires FBO integration which is Phase 4 work)
     
     // Render each visible filter
     for (const auto& filter : filters) {
@@ -268,6 +349,14 @@ void FrameProcessor::RenderFilterPrimitives(cv::Mat& display_bgr, AppState& app_
                                   ? cv::Scalar(0, 255, 255)  // Yellow border for 3D
                                   : cv::Scalar(255, 255, 255);  // White border for 2D
         cv::circle(display_bgr, pos, radius, border_color, border_thickness, cv::LINE_AA);
+        
+        // Phase 3 Step 8: Draw "3D" marker for MODEL_3D types
+        if (filter.type == FilterObject::Type::MODEL_3D && filter.model != nullptr) {
+            std::string mode_label = app_state.ar_render_3d_models ? "[3D GL]" : "[3D CIRCLE]";
+            cv::Point2f mode_pos = pos + cv::Point2f(-30, -radius - 10);
+            cv::putText(display_bgr, mode_label, mode_pos,
+                       cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
+        }
         
         // Draw filter name and info
         std::string label = type_label + filter.name;
@@ -483,6 +572,11 @@ bool FrameProcessor::ProcessFrameUIAndRender(FrameProcessingParams& params, cons
     if (!params.running) {
         std::cout << "🛑 Running flag set to false by event handler, exiting..." << std::endl;
         return false;
+    }
+
+    // Update UI texture with processed video frame
+    if (!display_rgb.empty()) {
+        params.ui_manager.UploadTexture(display_rgb);
     }
 
     // Render complete frame

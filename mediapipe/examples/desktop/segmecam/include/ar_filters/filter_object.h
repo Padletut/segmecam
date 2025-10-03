@@ -10,10 +10,10 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <memory>
+#include <cstdint>
 #include <opencv2/core.hpp>
-#include <GL/gl.h>
-#include <GL/gl.h>
+// NOTE: Do NOT include OpenGL headers here! This file must be includable
+// from both MediaPipe code (which uses GLES2) and OpenGL renderer code (which uses epoxy)
 
 namespace segmecam {
 
@@ -44,9 +44,10 @@ struct FilterObject {
   std::vector<cv::Vec3f> normals;       // Vertex normals (for lighting) - PRIMITIVE only
   
   // OpenGL buffers (for both primitives and models)
-  GLuint vao;                           // Vertex Array Object (PRIMITIVE only)
-  GLuint vbo;                           // Vertex Buffer Object (PRIMITIVE only)
-  GLuint ebo;                           // Element Buffer Object (PRIMITIVE only)
+  // Using uint32_t instead of GLuint to avoid OpenGL header dependency
+  uint32_t vao;                         // Vertex Array Object (PRIMITIVE only)
+  uint32_t vbo;                         // Vertex Buffer Object (PRIMITIVE only)
+  uint32_t ebo;                         // Element Buffer Object (PRIMITIVE only)
   
   // 3D Model data (Phase 3 - MODEL_3D type only)
   std::shared_ptr<ar_filters::Model> model;  // Loaded 3D model (nullptr for primitives)

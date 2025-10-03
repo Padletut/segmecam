@@ -3,8 +3,9 @@
 #include <filesystem>
 #include <cstdlib>
 #include <dlfcn.h>
-#include <EGL/egl.h>
-#include <GL/gl.h>
+// IMPORTANT: epoxy/gl.h MUST be included before EGL/egl.h
+#include <epoxy/gl.h>   // Modern OpenGL function loader
+#include <EGL/egl.h>    // EGL after epoxy
 
 bool GPUDetector::testing_mode = false;
 

@@ -10,6 +10,7 @@ exports_files([
     "include/ar_filters/attachment_controller.h",
     "include/ar_filters/filter_test_demo.h",
     "include/ar_filters/filter_presets.h",
+    "include/ar_filters/opengl_renderer.h",
 ])
 
 cc_library( # type: ignore
@@ -430,6 +431,23 @@ cc_library( # type: ignore
     ],
 )
 
+# Shader Program Library (Phase 3 Step 8 - 3D Rendering)
+cc_library( # pyright: ignore[reportUndefinedVariable]
+    name = "shader_program",
+    srcs = ["src/render/shader_program.cpp"],
+    hdrs = ["include/render/shader_program.h"],
+    includes = [".", "include"],
+    visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
+    deps = [
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+    ],
+    copts = [
+        "-I/usr/include",
+    ],
+    linkopts = ["-lepoxy"],  # libepoxy provides modern OpenGL function loading
+)
+
 # Render Manager Library (Phase 3 Refactoring)
 cc_library( # pyright: ignore[reportUndefinedVariable]
     name = "render_manager",
@@ -437,8 +455,13 @@ cc_library( # pyright: ignore[reportUndefinedVariable]
     hdrs = ["include/render/render_manager.h"],
     includes = [".", "include"],
     deps = [
+        ":shader_program",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:model_loader",
         "//mediapipe/framework/port:opencv_core",
         "//third_party/imgui:imgui",
+        "@glm//:glm",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
     ],
     copts = [
         "-I/usr/include/SDL2",
@@ -805,6 +828,7 @@ cc_binary( # pyright: ignore[reportUndefinedVariable]
         "//mediapipe/examples/desktop/segmecam/src/config:config_manager",
         "//mediapipe/examples/desktop/segmecam/src/ar_filters:blendshape_processor",
         "//mediapipe/examples/desktop/segmecam/src/ar_filters:attachment_controller",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:opengl_renderer",
         "//mediapipe/framework:calculator_graph",
         "//mediapipe/framework/port:file_helpers",
         "//mediapipe/framework/port:opencv_core",

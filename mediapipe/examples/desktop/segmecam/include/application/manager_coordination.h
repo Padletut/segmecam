@@ -22,6 +22,12 @@ namespace segmecam {
     class ConfigManager;
 }
 
+namespace segmecam {
+namespace ar_filters {
+    class OpenGLRenderer;
+}
+}
+
 class ManagerCoordination {
 public:
     struct Managers {
@@ -30,17 +36,21 @@ public:
         std::unique_ptr<segmecam::CameraManager> camera;
         std::unique_ptr<segmecam::EffectsManager> effects;
         std::unique_ptr<segmecam::UIManager> ui;
+        std::unique_ptr<segmecam::ar_filters::OpenGLRenderer> opengl_renderer;
         
         // TODO: Add other managers when their dependencies are resolved
         // std::unique_ptr<segmecam::MediaPipeManager> mediapipe;
         // std::unique_ptr<segmecam::RenderManager> render;
         
         // Default constructor
-        Managers() = default;
+        Managers();
+        
+        // Destructor (defined in .cpp where OpenGLRenderer is complete)
+        ~Managers();
         
         // Move constructor and assignment
-        Managers(Managers&&) = default;
-        Managers& operator=(Managers&&) = default;
+        Managers(Managers&&);
+        Managers& operator=(Managers&&);
         
         // Delete copy constructor and assignment
         Managers(const Managers&) = delete;
@@ -59,6 +69,7 @@ private:
     static bool InitializeCameraManager(Managers& managers, segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
     static bool InitializeEffectsManager(Managers& managers, segmecam::AppState& app_state);
     static bool InitializeUIManager(Managers& managers, segmecam::AppState& app_state);
+    static bool InitializeOpenGLRenderer(Managers& managers, segmecam::AppState& app_state);
     
     // Helper methods for ConfigManager initialization to reduce complexity
     static bool CreateConfigManager(Managers& managers);

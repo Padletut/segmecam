@@ -9,7 +9,7 @@
 
 // OpenGL headers - use glcorearb.h for modern OpenGL 3.0+ functions
 #define GL_GLEXT_PROTOTYPES  // Enable function prototypes
-#include <GL/gl.h>
+#include <epoxy/gl.h>  // Modern OpenGL function loader
 #include <GL/glext.h>  // For VAO/VBO functions (OpenGL 3.0+)
 
 #include "absl/strings/str_cat.h"
@@ -163,7 +163,7 @@ absl::Status ModelLoader::ProcessMaterials(const aiScene* scene, Model& model) {
     // Transparency/Opacity
     float opacity;
     if (ai_mat->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
-      material.transparency = opacity;
+      material.opacity = opacity;
     }
     
     // Diffuse texture

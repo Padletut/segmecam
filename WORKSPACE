@@ -133,6 +133,16 @@ http_archive(
     urls = ["https://github.com/zeux/pugixml/archive/refs/tags/v1.14.tar.gz"],
 )
 
+# GLM (OpenGL Mathematics) - Header-only C++ mathematics library for graphics
+# Used for matrix/vector operations in 3D rendering
+http_archive(
+    name = "glm",
+    build_file = "@//third_party:glm.BUILD",
+    sha256 = "7d508ab72cb5d43227a3711420f06ff99b0a0cb63ee2f93631b162bfe1fe9592",
+    strip_prefix = "glm-0.9.9.8",
+    urls = ["https://github.com/g-truc/glm/archive/refs/tags/0.9.9.8.tar.gz"],
+)
+
 # Load Zlib before initializing TensorFlow and the iOS build rules to guarantee
 # that the target @zlib//:mini_zlib is available
 http_archive(

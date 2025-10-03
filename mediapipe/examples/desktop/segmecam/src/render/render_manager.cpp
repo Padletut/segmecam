@@ -1,8 +1,13 @@
 #include "include/render/render_manager.h"
+#include "include/render/shader_program.h"
+#include "include/ar_filters/model_loader.h"
 
 #include <iostream>
 #include <cstdio>
-#include <GL/gl.h>
+// Note: epoxy/gl.h is already included via render_manager.h
+
+#include "absl/log/log.h"
+#include "absl/log/absl_log.h"
 
 namespace segmecam {
 
@@ -186,6 +191,143 @@ void RenderManager::SetVSync(bool enabled) {
     SDL_GL_SetSwapInterval(enabled ? 1 : 0);
     state_.vsync_enabled = enabled;
     std::cout << "🔄 VSync " << (enabled ? "enabled" : "disabled") << std::endl;
+}
+
+// ===== 3D RENDERING IMPLEMENTATION (Phase 3 Step 8) =====
+
+bool RenderManager::Initialize3DRendering() {
+    LOG(INFO) << "Initializing 3D rendering system...";
+    
+    // Create shader program
+    model_shader_ = std::make_unique<render::ShaderProgram>();
+    
+    // Load shaders from files
+    if (!model_shader_->LoadFromFiles(
+        "mediapipe/examples/desktop/segmecam/shaders/model_vertex.glsl",
+        "mediapipe/examples/desktop/segmecam/shaders/model_fragment.glsl")) {
+        LOG(ERROR) << "Failed to load 3D model shaders";
+        return false;
+    }
+    
+    // Set up lighting parameters
+    light_direction_ = glm::vec3(0.0f, -1.0f, -0.5f); // Slight downward angle
+    light_color_ = glm::vec3(1.0f, 1.0f, 1.0f);       // White light
+    ambient_color_ = glm::vec3(0.3f, 0.3f, 0.3f);     // 30% ambient
+    camera_position_ = glm::vec3(0.0f, 0.0f, 0.0f);   // Camera at origin
+    
+    // Initialize matrices (will be updated later)
+    projection_matrix_ = glm::mat4(1.0f);
+    view_matrix_ = glm::mat4(1.0f);
+    
+    // Enable depth testing for 3D rendering
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    
+    // Enable blending for transparency
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    // Enable face culling (don't render back faces)
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW); // Counter-clockwise winding order
+    
+    LOG(INFO) << "✅ 3D rendering system initialized successfully";
+    return true;
+}
+
+void RenderManager::UpdateProjectionMatrix(int width, int height) {
+    if (width <= 0 || height <= 0) {
+        LOG(WARNING) << "Invalid viewport dimensions: " << width << "x" << height;
+        return;
+    }
+    
+    // Perspective projection parameters
+    float fov = glm::radians(45.0f);  // 45 degree field of view
+    float aspect = static_cast<float>(width) / static_cast<float>(height);
+    float near_plane = 0.1f;
+    float far_plane = 100.0f;
+    
+    // Create perspective projection matrix
+    projection_matrix_ = glm::perspective(fov, aspect, near_plane, far_plane);
+    
+    // Simple view matrix (camera at origin looking down -Z axis)
+    view_matrix_ = glm::lookAt(
+        camera_position_,               // Camera position
+        glm::vec3(0.0f, 0.0f, -1.0f),  // Look at point (down -Z)
+        glm::vec3(0.0f, 1.0f, 0.0f)    // Up vector (+Y is up)
+    );
+    
+    LOG(INFO) << "Updated projection matrix for viewport: " << width << "x" << height;
+}
+
+void RenderManager::Render3DModel(
+    const ar_filters::Model& model,
+    const glm::mat4& model_matrix,
+    const ar_filters::Material& material) {
+    
+    if (!model_shader_ || !model_shader_->IsValid()) {
+        LOG(WARNING) << "Attempting to render 3D model without valid shader";
+        return;
+    }
+    
+    // Use shader program
+    model_shader_->Use();
+    
+    // Set transformation matrices
+    model_shader_->SetMat4("uModel", glm::value_ptr(model_matrix));
+    model_shader_->SetMat4("uView", glm::value_ptr(view_matrix_));
+    model_shader_->SetMat4("uProjection", glm::value_ptr(projection_matrix_));
+    
+    // Calculate normal matrix (inverse transpose of model matrix)
+    // This handles non-uniform scaling correctly
+    glm::mat3 normal_matrix = glm::mat3(glm::transpose(glm::inverse(model_matrix)));
+    model_shader_->SetMat3("uNormalMatrix", glm::value_ptr(normal_matrix));
+    
+    // Set camera position (for specular calculations)
+    model_shader_->SetVec3("uCameraPos", 
+        camera_position_.x, camera_position_.y, camera_position_.z);
+    
+    // Set lighting parameters
+    model_shader_->SetVec3("uLightDir", 
+        light_direction_.x, light_direction_.y, light_direction_.z);
+    model_shader_->SetVec3("uLightColor",
+        light_color_.x, light_color_.y, light_color_.z);
+    model_shader_->SetVec3("uAmbientColor",
+        ambient_color_.x, ambient_color_.y, ambient_color_.z);
+    
+    // Set material properties from MTL file
+    model_shader_->SetVec3("uMaterialAmbient",
+        material.ambient[0], material.ambient[1], material.ambient[2]);
+    model_shader_->SetVec3("uMaterialDiffuse",
+        material.diffuse[0], material.diffuse[1], material.diffuse[2]);
+    model_shader_->SetVec3("uMaterialSpecular",
+        material.specular[0], material.specular[1], material.specular[2]);
+    model_shader_->SetFloat("uMaterialShininess", material.shininess);
+    model_shader_->SetFloat("uMaterialOpacity", material.opacity);
+    
+    // Render each mesh in the model
+    for (const auto& mesh : model.meshes) {
+        if (mesh.vao == 0) {
+            LOG(WARNING) << "Mesh has invalid VAO, skipping";
+            continue;
+        }
+        
+        // Bind vertex array object
+        glBindVertexArray(mesh.vao);
+        
+        // Draw indexed triangles
+        glDrawElements(GL_TRIANGLES, mesh.index_count, GL_UNSIGNED_INT, 0);
+        
+        // Unbind VAO
+        glBindVertexArray(0);
+    }
+    
+    // Check for OpenGL errors
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        LOG(ERROR) << "OpenGL error during 3D model rendering: " << error;
+    }
 }
 
 void RenderManager::Cleanup() {

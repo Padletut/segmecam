@@ -9,7 +9,7 @@
 #include "third_party/imgui/backends/imgui_impl_opengl3.h"
 
 // Include SDL for OpenGL context
-#include <SDL_opengl.h>
+// Removed SDL_opengl.h - using epoxy/gl.h instead
 
 #include <iostream>
 

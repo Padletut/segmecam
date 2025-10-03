@@ -1,7 +1,8 @@
 #pragma once
 
 #include <SDL.h>
-#include <SDL_opengl.h>
+// Note: Don't include SDL_opengl.h when using epoxy - use epoxy/gl.h instead
+#include <epoxy/gl.h>  // Modern OpenGL function loader
 #include "mediapipe/framework/port/opencv_core_inc.h"
 #include "mediapipe/framework/port/opencv_imgproc_inc.h"
 #include <memory>
@@ -87,6 +88,9 @@ private:
   bool HandleWindowEvent(const SDL_Event& event, bool& running);
   bool HandleKeyEvent(const SDL_Event& event, bool& running);
   
+  // Video background rendering
+  void RenderVideoBackgroundInternal(GLuint video_texture, int video_width, int video_height, int window_width, int window_height);
+  
   // Window state
   SDL_Window* window_ = nullptr;
   SDL_GLContext gl_context_ = nullptr;
@@ -102,7 +106,7 @@ private:
   
   // UI visibility state
   bool show_main_window_ = true;
-  bool show_video_preview_ = true;
+  bool show_video_preview_ = true;  // Enabled - shows video in borderless fullscreen window
   bool show_status_overlay_ = true;
   
   // UI layout state

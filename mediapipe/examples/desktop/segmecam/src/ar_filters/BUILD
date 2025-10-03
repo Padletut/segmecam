@@ -128,3 +128,25 @@ cc_library(
     ],
 )
 
+# Phase 3 Step 8: OpenGL 3D Renderer (Option A - Isolated from MediaPipe)
+# This library uses epoxy/gl.h and must never include MediaPipe GL headers
+cc_library(
+    name = "opengl_renderer",
+    srcs = ["opengl_renderer.cpp"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/opengl_renderer.h"],
+    includes = ["../.."],
+    visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
+    deps = [
+        ":model_loader",
+        "//mediapipe/examples/desktop/segmecam:shader_program",
+        "@glm//:glm",
+        "@com_google_absl//absl/log",
+    ],
+    copts = [
+        "-std=c++17",
+        "-I/usr/include",  # For epoxy/gl.h
+    ],
+    linkopts = [
+        "-lepoxy",  # Modern OpenGL function loader
+    ],
+)

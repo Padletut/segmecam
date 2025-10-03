@@ -5,11 +5,27 @@
 #include <memory>
 
 #include <SDL.h>
-#include <SDL_opengl.h>
+// Note: Don't include SDL_opengl.h when using epoxy - epoxy provides all OpenGL functions
+#include <epoxy/gl.h>  // Modern OpenGL function loader
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
 #include "backends/imgui_impl_opengl3.h"
 #include "mediapipe/framework/port/opencv_core_inc.h"
+
+// Forward declarations
+namespace segmecam {
+namespace render {
+    class ShaderProgram;
+}
+namespace ar_filters {
+    struct Model;
+    struct Material;
+}
+}
 
 namespace segmecam {
 
@@ -133,6 +149,41 @@ public:
      */
     void Cleanup();
 
+    // ===== 3D RENDERING API (Phase 3 Step 8) =====
+    
+    /**
+     * Initialize 3D rendering system (shaders, OpenGL state)
+     * @return true on success, false on failure
+     */
+    bool Initialize3DRendering();
+    
+    /**
+     * Update projection matrix (call on window resize)
+     * @param width Window width in pixels
+     * @param height Window height in pixels
+     */
+    void UpdateProjectionMatrix(int width, int height);
+    
+    /**
+     * Render a 3D model with given transformation and material
+     * @param model Model data (meshes with VAO/VBO/EBO)
+     * @param model_matrix Transformation matrix (position, rotation, scale)
+     * @param material Material properties (ambient, diffuse, specular, etc.)
+     */
+    void Render3DModel(const ar_filters::Model& model,
+                      const glm::mat4& model_matrix,
+                      const ar_filters::Material& material);
+    
+    /**
+     * Get current projection matrix (for external use)
+     */
+    const glm::mat4& GetProjectionMatrix() const { return projection_matrix_; }
+    
+    /**
+     * Get current view matrix (for external use)
+     */
+    const glm::mat4& GetViewMatrix() const { return view_matrix_; }
+
 private:
     RenderConfig config_;
     RenderState state_;
@@ -140,6 +191,17 @@ private:
     // SDL/OpenGL resources
     SDL_Window* window_ = nullptr;
     SDL_GLContext gl_context_ = nullptr;
+    
+    // 3D rendering resources (Phase 3 Step 8)
+    std::unique_ptr<render::ShaderProgram> model_shader_;
+    glm::mat4 projection_matrix_;
+    glm::mat4 view_matrix_;
+    
+    // Lighting parameters
+    glm::vec3 light_direction_;
+    glm::vec3 light_color_;
+    glm::vec3 ambient_color_;
+    glm::vec3 camera_position_;
     
     // Internal helper functions
     int SetupSDL();

@@ -6,8 +6,15 @@
 #include "include/ui/ui_manager_enhanced.h"
 #include "include/ui/ui_utils.h"
 #include "include/application/app_state.h"
+#include "include/ar_filters/opengl_renderer.h"
 #include <iostream>
 #include <cstring>
+
+// Managers special member functions (defined here where OpenGLRenderer is complete)
+ManagerCoordination::Managers::Managers() = default;
+ManagerCoordination::Managers::~Managers() = default;
+ManagerCoordination::Managers::Managers(Managers&&) = default;
+ManagerCoordination::Managers& ManagerCoordination::Managers::operator=(Managers&&) = default;
 
 // Helper function to reduce duplication in manager initialization
 template<typename T>
@@ -75,6 +82,12 @@ bool ManagerCoordination::SetupManagers(Managers& managers, segmecam::AppState& 
         return false;
     }
     
+    // Initialize OpenGL renderer (Phase 3 Step 8)
+    if (!InitializeOpenGLRenderer(managers, app_state)) {
+        std::cerr << "Error: Failed to initialize OpenGLRenderer" << std::endl;
+        return false;
+    }
+    
     std::cout << "Essential managers initialized successfully" << std::endl;
     return true;
 }
@@ -83,6 +96,10 @@ void ManagerCoordination::ShutdownManagers(Managers& managers) {
     std::cout << "Shutting down managers..." << std::endl;
     
     // Shutdown in reverse order to handle dependencies
+    if (managers.opengl_renderer) {
+        managers.opengl_renderer.reset();
+    }
+    
     if (managers.ui) {
         managers.ui.reset();
     }
@@ -412,4 +429,25 @@ void ManagerCoordination::ApplyCameraControlsFromProfile(Managers& managers, con
     managers.camera->SetAutoFocus(config_data.camera_controls.auto_focus);
     managers.camera->SetAutoExposure(config_data.camera_controls.auto_exposure);
     managers.camera->SetWhiteBalance(config_data.camera_controls.auto_white_balance);
+}
+
+bool ManagerCoordination::InitializeOpenGLRenderer(Managers& managers, segmecam::AppState& app_state) {
+    try {
+        managers.opengl_renderer = std::make_unique<segmecam::ar_filters::OpenGLRenderer>();
+        
+        if (!managers.opengl_renderer->Initialize()) {
+            std::cerr << "❌ OpenGLRenderer failed to initialize" << std::endl;
+            managers.opengl_renderer.reset();
+            return false;
+        }
+        
+        // Set initial projection matrix (will be updated when window resizes)
+        managers.opengl_renderer->UpdateProjectionMatrix(1280, 720);
+        
+        std::cout << "✅ OpenGLRenderer initialized successfully" << std::endl;
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Exception initializing OpenGLRenderer: " << e.what() << std::endl;
+        return false;
+    }
 }

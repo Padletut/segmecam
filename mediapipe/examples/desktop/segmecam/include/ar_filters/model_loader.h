@@ -7,9 +7,13 @@
 #include <vector>
 #include <map>
 #include <memory>
-#include <GL/gl.h>
+#include <cstdint>
 #include <opencv2/core.hpp>
 #include "absl/status/statusor.h"
+
+// NOTE: Do NOT include OpenGL headers here! This file must be includable
+// from both MediaPipe code (which uses GLES2) and OpenGL renderer code (which uses epoxy)
+// Use uint32_t instead of GLuint to avoid header dependencies
 
 // Forward declare Assimp types to avoid header pollution
 struct aiScene;
@@ -25,23 +29,23 @@ struct Material {
   cv::Vec3f diffuse;        // Kd - diffuse color
   cv::Vec3f specular;       // Ks - specular color
   float shininess;          // Ns - specular exponent
-  float transparency;       // d or Tr - transparency
+  float opacity;            // d or Tr - opacity (1.0 = opaque, 0.0 = transparent)
   std::string texture_path; // map_Kd - diffuse texture
-  GLuint texture_id;        // OpenGL texture ID (0 if not loaded)
+  uint32_t texture_id;      // OpenGL texture ID (0 if not loaded) - uint32_t instead of GLuint
   
   Material() 
     : ambient(0.2f, 0.2f, 0.2f),
       diffuse(0.8f, 0.8f, 0.8f),
       specular(1.0f, 1.0f, 1.0f),
       shininess(32.0f),
-      transparency(1.0f),
+      opacity(1.0f),
       texture_id(0) {}
 };
 
 struct Mesh {
-  GLuint vao;              // Vertex Array Object
-  GLuint vbo;              // Vertex Buffer Object (interleaved vertices)
-  GLuint ebo;              // Element Buffer Object (indices)
+  uint32_t vao;            // Vertex Array Object - uint32_t instead of GLuint
+  uint32_t vbo;            // Vertex Buffer Object (interleaved vertices)
+  uint32_t ebo;            // Element Buffer Object (indices)
   size_t index_count;      // Number of indices to draw
   std::string material_name; // Material name from model file
   
