@@ -13,6 +13,7 @@ exports_files([
     "include/ar_filters/opengl_renderer.h",
     "include/ar_filters/texture_manager.h",
     "include/ar_filters/ar_renderer.h",
+    "include/ar_filters/filter_asset.h",  # Phase 6
 ])
 
 cc_library( # type: ignore

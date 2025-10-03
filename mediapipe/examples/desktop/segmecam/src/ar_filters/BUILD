@@ -204,3 +204,25 @@ cc_library(
         "-lGL",
     ],
 )
+
+# Phase 6: FilterAsset - AR filter JSON definition and parsing
+cc_library(
+    name = "filter_asset",
+    srcs = ["filter_asset.cpp"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/filter_asset.h"],
+    includes = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:str_format",
+        "@glm//:glm",
+        "@com_github_nlohmann_json//:json",
+    ],
+    copts = [
+        "-std=c++17",
+        "-I/usr/include",
+    ],
+)
