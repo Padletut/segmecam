@@ -11,6 +11,7 @@ exports_files([
     "include/ar_filters/filter_test_demo.h",
     "include/ar_filters/filter_presets.h",
     "include/ar_filters/opengl_renderer.h",
+    "include/ar_filters/texture_manager.h",
 ])
 
 cc_library( # type: ignore

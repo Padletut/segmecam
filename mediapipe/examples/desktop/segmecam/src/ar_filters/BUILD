@@ -150,3 +150,27 @@ cc_library(
         "-lepoxy",  # Modern OpenGL function loader
     ],
 )
+
+# Phase 4 Step 1: TextureManager - Load and cache textures for 3D models
+cc_library(
+    name = "texture_manager",
+    srcs = ["texture_manager.cpp"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/texture_manager.h"],
+    includes = ["../.."],
+    visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
+    deps = [
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgcodecs",
+        "//mediapipe/framework/port:opencv_imgproc",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+    ],
+    copts = [
+        "-std=c++17",
+        "-I/usr/include",  # For epoxy/gl.h
+    ],
+    linkopts = [
+        "-lepoxy",  # Modern OpenGL function loader
+    ],
+)

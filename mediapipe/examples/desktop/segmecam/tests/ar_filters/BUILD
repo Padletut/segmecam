@@ -71,6 +71,25 @@ cc_test(
     ],
 )
 
+# Phase 4 Step 1: TextureManager Test - Verify texture loading functionality
+cc_binary(
+    name = "texture_manager_test",
+    srcs = ["texture_manager_test.cpp"],
+    includes = ["../.."],
+    deps = [
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:texture_manager",
+        "@com_google_absl//absl/log",
+    ],
+    copts = [
+        "-std=c++17",
+        "-I/usr/include/SDL2",
+    ],
+    linkopts = [
+        "-lSDL2",
+        "-lepoxy",
+    ],
+)
+
 # Test suite to run all tests
 test_suite(
     name = "ar_filters_tests",
@@ -78,5 +97,6 @@ test_suite(
         ":model_loader_test",
         ":filter_object_test",
         ":attachment_controller_test",
+        # Note: texture_manager_test is a binary, not a test
     ],
 )
