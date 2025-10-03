@@ -575,10 +575,9 @@ void ARFilterManager::ApplyShakeBehavior(const FilterBehavior& behavior,
   state.intensity = blendshape_value;
 
   // Apply shake to target attachment via ARRenderer
-  // Note: This requires ARRenderer to support offset modification
-  // For now, we log the shake event
-  LOG(INFO) << "SHAKE behavior activated for " << behavior.target_attachment_id 
-            << " with offset (" << shake_offset.x << ", " << shake_offset.y << ", " << shake_offset.z << ")";
+  if (ar_renderer_) {
+    ar_renderer_->SetModelInstanceOffset(behavior.target_attachment_id, shake_offset);
+  }
 }
 
 void ARFilterManager::ApplyScaleBehavior(const FilterBehavior& behavior, 
@@ -606,8 +605,10 @@ void ARFilterManager::ApplyScaleBehavior(const FilterBehavior& behavior,
   state.scale_multiplier = scale_factor;
   state.intensity = blendshape_value;
 
-  LOG(INFO) << "SCALE behavior activated for " << behavior.target_attachment_id 
-            << " with scale " << scale_factor;
+  // Apply scale to target attachment via ARRenderer
+  if (ar_renderer_) {
+    ar_renderer_->SetModelInstanceScaleVec(behavior.target_attachment_id, scale_vec);
+  }
 }
 
 void ARFilterManager::ApplyHideBehavior(const FilterBehavior& behavior, 
@@ -620,8 +621,9 @@ void ARFilterManager::ApplyHideBehavior(const FilterBehavior& behavior,
   state.hidden = should_hide;
   state.intensity = blendshape_value;
 
-  if (should_hide) {
-    LOG(INFO) << "HIDE behavior activated for " << behavior.target_attachment_id;
+  // Apply visibility to target attachment via ARRenderer
+  if (ar_renderer_) {
+    ar_renderer_->SetModelInstanceVisibility(behavior.target_attachment_id, !should_hide);
   }
 }
 
@@ -639,8 +641,10 @@ void ARFilterManager::ApplyRotateBehavior(const FilterBehavior& behavior,
   state.active = true;
   state.intensity = blendshape_value;
 
-  LOG(INFO) << "ROTATE behavior activated for " << behavior.target_attachment_id 
-            << " with rotation (" << rotation.x << ", " << rotation.y << ", " << rotation.z << ")";
+  // Apply rotation to target attachment via ARRenderer
+  if (ar_renderer_) {
+    ar_renderer_->SetModelInstanceRotation(behavior.target_attachment_id, rotation);
+  }
 }
 
 void ARFilterManager::ApplyFallOffBehavior(const FilterBehavior& behavior, 
@@ -669,8 +673,10 @@ void ARFilterManager::ApplyFallOffBehavior(const FilterBehavior& behavior,
   state.shake_offset = glm::vec3(0.0f, -fall_distance, 0.0f);
   state.intensity = blendshape_value;
 
-  LOG(INFO) << "FALL_OFF physics: " << behavior.target_attachment_id 
-            << " fell " << fall_distance << " units";
+  // Apply fall offset to target attachment via ARRenderer
+  if (ar_renderer_) {
+    ar_renderer_->SetModelInstanceOffset(behavior.target_attachment_id, state.shake_offset);
+  }
 }
 
 void ARFilterManager::ApplyColorChangeBehavior(const FilterBehavior& behavior, 
@@ -689,8 +695,10 @@ void ARFilterManager::ApplyColorChangeBehavior(const FilterBehavior& behavior,
   state.color_tint = color;
   state.intensity = blendshape_value;
 
-  LOG(INFO) << "COLOR_CHANGE behavior activated for " << behavior.target_attachment_id 
-            << " with color (" << color.r << ", " << color.g << ", " << color.b << ")";
+  // Apply color tint to target attachment via ARRenderer
+  if (ar_renderer_) {
+    ar_renderer_->SetModelInstanceColorTint(behavior.target_attachment_id, color);
+  }
 }
 
 } // namespace ar_filters

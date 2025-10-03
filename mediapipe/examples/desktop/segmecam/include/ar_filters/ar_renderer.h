@@ -155,6 +155,15 @@ public:
                                    const ModelInstance& config);
   void RemoveModelInstance(const std::string& instance_name);
   
+  // Phase 7: Behavior system integration
+  void SetModelInstanceOffset(const std::string& instance_name, const glm::vec3& offset);
+  void SetModelInstanceScale(const std::string& instance_name, float scale);
+  void SetModelInstanceScaleVec(const std::string& instance_name, const glm::vec3& scale);
+  void SetModelInstanceVisibility(const std::string& instance_name, bool visible);
+  void SetModelInstanceRotation(const std::string& instance_name, const glm::vec3& rotation);
+  void SetModelInstanceColorTint(const std::string& instance_name, const glm::vec3& color);
+  void ResetModelInstanceTransform(const std::string& instance_name);
+  
   // Face landmark integration
   absl::Status AttachModelToLandmarks(const std::string& instance_name,
                                       const std::vector<int>& landmark_indices);

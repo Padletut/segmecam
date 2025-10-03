@@ -10,6 +10,7 @@
 #include "mediapipe/examples/desktop/segmecam/include/render/fbo_manager.h"
 
 #include "absl/log/absl_log.h"
+#include "absl/log/log.h"
 #include "absl/status/status.h"
 
 #include <glm/glm.hpp>
@@ -265,6 +266,85 @@ absl::Status ARRenderer::UpdateModelInstance(const std::string& instance_name,
 
 void ARRenderer::RemoveModelInstance(const std::string& instance_name) {
   model_instances_.erase(instance_name);
+}
+
+// Phase 7: Behavior system integration methods
+void ARRenderer::SetModelInstanceOffset(const std::string& instance_name, const glm::vec3& offset) {
+  auto it = model_instances_.find(instance_name);
+  if (it != model_instances_.end()) {
+    it->second.position_offset = offset;
+    // Recalculate transform matrix
+    it->second.transform = glm::translate(glm::mat4(1.0f), offset) * 
+                           glm::mat4_cast(it->second.rotation_quat) *
+                           glm::scale(glm::mat4(1.0f), it->second.scale_factor);
+  }
+}
+
+void ARRenderer::SetModelInstanceScale(const std::string& instance_name, float scale) {
+  auto it = model_instances_.find(instance_name);
+  if (it != model_instances_.end()) {
+    it->second.scale_factor = glm::vec3(scale);
+    // Recalculate transform matrix
+    it->second.transform = glm::translate(glm::mat4(1.0f), it->second.position_offset) * 
+                           glm::mat4_cast(it->second.rotation_quat) *
+                           glm::scale(glm::mat4(1.0f), it->second.scale_factor);
+  }
+}
+
+void ARRenderer::SetModelInstanceScaleVec(const std::string& instance_name, const glm::vec3& scale) {
+  auto it = model_instances_.find(instance_name);
+  if (it != model_instances_.end()) {
+    it->second.scale_factor = scale;
+    // Recalculate transform matrix
+    it->second.transform = glm::translate(glm::mat4(1.0f), it->second.position_offset) * 
+                           glm::mat4_cast(it->second.rotation_quat) *
+                           glm::scale(glm::mat4(1.0f), it->second.scale_factor);
+  }
+}
+
+void ARRenderer::SetModelInstanceVisibility(const std::string& instance_name, bool visible) {
+  auto it = model_instances_.find(instance_name);
+  if (it != model_instances_.end()) {
+    it->second.visible = visible;
+  }
+}
+
+void ARRenderer::SetModelInstanceRotation(const std::string& instance_name, const glm::vec3& rotation) {
+  auto it = model_instances_.find(instance_name);
+  if (it != model_instances_.end()) {
+    // Convert Euler angles to quaternion
+    glm::quat quat_x = glm::angleAxis(rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
+    glm::quat quat_y = glm::angleAxis(rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::quat quat_z = glm::angleAxis(rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
+    it->second.rotation_quat = quat_z * quat_y * quat_x;
+    
+    // Recalculate transform matrix
+    it->second.transform = glm::translate(glm::mat4(1.0f), it->second.position_offset) * 
+                           glm::mat4_cast(it->second.rotation_quat) *
+                           glm::scale(glm::mat4(1.0f), it->second.scale_factor);
+  }
+}
+
+void ARRenderer::SetModelInstanceColorTint(const std::string& instance_name, const glm::vec3& color) {
+  auto it = model_instances_.find(instance_name);
+  if (it != model_instances_.end()) {
+    // Store color tint for shader use
+    // Note: Actual shader integration would apply this in rendering pass
+    // For now, we just log it
+    LOG(INFO) << "Color tint set for " << instance_name << ": (" 
+              << color.r << ", " << color.g << ", " << color.b << ")";
+  }
+}
+
+void ARRenderer::ResetModelInstanceTransform(const std::string& instance_name) {
+  auto it = model_instances_.find(instance_name);
+  if (it != model_instances_.end()) {
+    it->second.position_offset = glm::vec3(0.0f);
+    it->second.scale_factor = glm::vec3(1.0f);
+    it->second.rotation_quat = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);  // Identity
+    it->second.transform = glm::mat4(1.0f);
+    it->second.visible = true;
+  }
 }
 
 // Face landmarks
