@@ -277,3 +277,32 @@ cc_binary(
         "-lopencv_imgcodecs",
     ],
 )
+
+# Phase 7: AR Filter Manager - Main coordinator for AR filter system
+cc_library(
+    name = "ar_filter_manager",
+    srcs = ["ar_filter_manager.cpp"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/ar_filter_manager.h"],
+    includes = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":filter_asset",
+        ":ar_renderer",
+        "//mediapipe/framework/formats:landmark_cc_proto",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+    copts = [
+        "-std=c++17",
+        "-I/usr/include/opencv4",
+    ],
+    linkopts = [
+        "-lopencv_core",
+        "-lopencv_imgproc",
+    ],
+)
