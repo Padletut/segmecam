@@ -502,6 +502,25 @@ void DebugPanel::RenderARFilterControls() {
                 break;
             }
         }
+        
+        // Display performance metrics (Phase 8 - New System)
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Text("🔬 Performance Metrics (Phase 8)");
+        auto perf = ar_filter_mgr_->GetPerformanceStats();
+        ImGui::Text("  Update Time: %.5f ms", perf.render_time_ms);
+        ImGui::Text("  Models: %d, Triangles: %d", 
+                    perf.models_rendered_per_frame,
+                    perf.triangles_per_frame);
+        if (perf.average_fps > 0.0f) {
+            ImGui::Text("  Avg FPS: %.1f", perf.average_fps);
+        }
+        ImGui::Text("  Frames Rendered: %d", perf.frames_rendered);
+        
+        // Performance comparison hint
+        ImGui::Spacing();
+        ImGui::TextDisabled("Compare with Phase 3 'AR Filter Presets' above");
+        ImGui::TextDisabled("(Old system shows ~0.0003 ms update time)");
     } else {
         ImGui::Text("Status: No active filter");
     }
