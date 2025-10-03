@@ -12,6 +12,7 @@ exports_files([
     "include/ar_filters/filter_presets.h",
     "include/ar_filters/opengl_renderer.h",
     "include/ar_filters/texture_manager.h",
+    "include/ar_filters/ar_renderer.h",
 ])
 
 cc_library( # type: ignore
@@ -455,6 +456,7 @@ cc_library( # pyright: ignore[reportUndefinedVariable]
     srcs = ["src/render/render_manager.cpp"],
     hdrs = ["include/render/render_manager.h"],
     includes = [".", "include"],
+    visibility = ["//visibility:public"],
     deps = [
         ":shader_program",
         "//mediapipe/examples/desktop/segmecam/src/ar_filters:model_loader",
