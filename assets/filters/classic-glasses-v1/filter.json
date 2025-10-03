@@ -1,0 +1,50 @@
+{
+  "metadata": {
+    "name": "Classic Glasses",
+    "id": "classic-glasses-v1",
+    "category": "glasses",
+    "version": "1.0.0",
+    "author": "SegmeCam Team",
+    "description": "Classic black-framed glasses with shake on blink behavior",
+    "thumbnail_path": "thumbnail.png",
+    "icon_path": "icon.png"
+  },
+  "attachments": [
+    {
+      "id": "glasses_frame",
+      "anchor_name": "nose_bridge",
+      "model_path": "glasses.obj",
+      "texture_path": "glasses_texture.png",
+      "scale": [1.0, 1.0, 1.0],
+      "offset": [0.0, 0.0, 0.0],
+      "rotation": [0.0, 0.0, 0.0],
+      "visible": true,
+      "opacity": 1.0
+    }
+  ],
+  "materials": {
+    "default": {
+      "ambient": [0.2, 0.2, 0.2],
+      "diffuse": [0.1, 0.1, 0.1],
+      "specular": [0.8, 0.8, 0.8],
+      "shininess": 64.0,
+      "opacity": 1.0
+    }
+  },
+  "behaviors": [
+    {
+      "type": "SHAKE",
+      "target_attachment_id": "glasses_frame",
+      "blendshape_name": "eyeBlinkLeft",
+      "threshold": 0.7,
+      "intensity": 2.0
+    },
+    {
+      "type": "SHAKE",
+      "target_attachment_id": "glasses_frame",
+      "blendshape_name": "eyeBlinkRight",
+      "threshold": 0.7,
+      "intensity": 2.0
+    }
+  ]
+}

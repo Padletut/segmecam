@@ -307,3 +307,26 @@ cc_library(
         "-lopencv_imgproc",
     ],
 )
+
+# Phase 7 Day 3: AR Filter Visual Test Program
+cc_binary(
+    name = "ar_filter_test_visual",
+    srcs = ["ar_filter_test_visual.cpp"],
+    includes = ["../.."],
+    deps = [
+        ":ar_filter_manager",
+        ":ar_renderer",
+        ":filter_asset",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+    ],
+    copts = [
+        "-std=c++17",
+        "-I/usr/include/opencv4",
+    ],
+    linkopts = [
+        "-lopencv_core",
+        "-lopencv_imgproc",
+    ],
+)
