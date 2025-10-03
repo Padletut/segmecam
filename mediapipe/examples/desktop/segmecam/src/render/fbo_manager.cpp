@@ -229,10 +229,15 @@ absl::Status FBOManager::BlitFramebuffer(const std::string& source_name,
   if (copy_color) blit_mask |= GL_COLOR_BUFFER_BIT;
   if (copy_depth) blit_mask |= GL_DEPTH_BUFFER_BIT;
   
+  // Determine filter mode
+  // When resolving multisampled FBOs, GL_NEAREST must be used (GL spec requirement)
+  // GL_LINEAR is only valid when both FBOs have the same sample count
+  GLenum filter = (source_fbo.is_multisampled) ? GL_NEAREST : GL_LINEAR;
+  
   // Perform the blit
   glBlitFramebuffer(0, 0, source_fbo.width, source_fbo.height,
                    0, 0, dest_width, dest_height,
-                   blit_mask, GL_LINEAR);
+                   blit_mask, filter);
   
   // Check for OpenGL errors
   GLenum error = glGetError();

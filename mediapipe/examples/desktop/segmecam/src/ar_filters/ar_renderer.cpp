@@ -483,6 +483,21 @@ absl::Status ARRenderer::SetupRenderTarget() {
     return result.status();
   }
   
+  // Create resolve FBO for MSAA texture readback (if multisampling enabled)
+  // This FBO is needed to resolve the multisampled render target before
+  // reading pixels back to CPU, since glReadPixels cannot read from MSAA FBOs
+  if (config_.use_multisampling) {
+    render::FBOManager::FBOConfig resolve_config = fbo_config;
+    resolve_config.use_multisampling = false;
+    resolve_config.sample_count = 1;
+    resolve_config.use_depth_buffer = false;  // Depth not needed for readback
+    
+    auto resolve_result = fbo_manager_->CreateFBO("render_target_resolve", resolve_config);
+    if (!resolve_result.ok()) {
+      return resolve_result.status();
+    }
+  }
+  
   render_fbo_name_ = "render_target";
   return absl::OkStatus();
 }
@@ -659,24 +674,16 @@ absl::StatusOr<cv::Mat> ARRenderer::ReadFramebufferToMat(
   
   std::string read_fbo_name = fbo_name;
   
-  // If multisampled, we need to resolve to a non-MSAA FBO first
+  // If multisampled, resolve to non-MSAA FBO first
+  // The resolve FBO was pre-created during initialization
   if (source_fbo.is_multisampled) {
-    // Create or get resolve FBO (non-multisampled)
     std::string resolve_name = fbo_name + "_resolve";
     
+    // Verify resolve FBO exists (should have been created during initialization)
     if (!fbo_manager_->HasFBO(resolve_name)) {
-      // Create resolve FBO
-      render::FBOManager::FBOConfig resolve_config;
-      resolve_config.width = width;
-      resolve_config.height = height;
-      resolve_config.use_depth_buffer = false;  // Don't need depth for readback
-      resolve_config.use_multisampling = false;  // Important: no MSAA!
-      resolve_config.sample_count = 1;
-      
-      auto create_result = const_cast<render::FBOManager*>(fbo_manager_.get())->CreateFBO(resolve_name, resolve_config);
-      if (!create_result.ok()) {
-        return absl::InternalError("Failed to create resolve FBO: " + std::string(create_result.status().message()));
-      }
+      return absl::FailedPreconditionError(
+          "Resolve FBO not found: " + resolve_name + 
+          " (should have been created during initialization)");
     }
     
     // Blit (resolve) from MSAA FBO to non-MSAA FBO
