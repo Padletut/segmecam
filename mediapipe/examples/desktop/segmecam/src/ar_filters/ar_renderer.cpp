@@ -17,6 +17,10 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/quaternion.hpp>
 
+// OpenGL headers for rendering
+#include <epoxy/gl.h>
+#include <opencv2/opencv.hpp>
+
 namespace segmecam {
 namespace ar_filters {
 
@@ -284,13 +288,158 @@ absl::Status ARRenderer::SetupRenderTarget() {
 }
 
 absl::Status ARRenderer::RenderModelInstances() {
-  // TODO: Implement actual rendering
+  if (render_fbo_name_.empty() || model_instances_.empty()) {
+    return absl::OkStatus();  // Nothing to render
+  }
+
+  // Bind the offscreen FBO for rendering
+  bool bind_success = fbo_manager_->BindFramebuffer(render_fbo_name_);
+  if (!bind_success) {
+    return absl::InternalError("Failed to bind render FBO: " + render_fbo_name_);
+  }
+
+  // Clear with transparent background (important for alpha blending)
+  glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+  // Setup OpenGL state for 3D rendering
+  if (config_.enable_depth_testing) {
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+  }
+  
+  // Enable alpha blending for transparency
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  
+  // Enable face culling (render only front faces)
+  glEnable(GL_CULL_FACE);
+  glCullFace(GL_BACK);
+  glFrontFace(GL_CCW);  // Counter-clockwise winding
+
+  // Setup viewport
+  glViewport(0, 0, config_.render_width, config_.render_height);
+
+  // Setup view matrix (identity - we're rendering in screen space)
+  glm::mat4 view = glm::mat4(1.0f);
+  
+  // Setup projection matrix (orthographic for 2D overlay on video)
+  // Map [0, width] x [0, height] to normalized device coordinates [-1, 1]
+  glm::mat4 projection = glm::ortho(
+      0.0f, static_cast<float>(config_.render_width),
+      0.0f, static_cast<float>(config_.render_height),
+      -100.0f, 100.0f  // Near and far planes
+  );
+
+  // Track rendering statistics
+  int triangles_rendered = 0;
+  int models_rendered = 0;
+
+  // Render each visible model instance
+  for (const auto& [instance_name, instance] : model_instances_) {
+    if (!instance.visible) {
+      continue;
+    }
+
+    // Skip if model not loaded
+    // TODO: In future, load model on-demand via model_loader_
+    // For now, we assume models are pre-loaded
+    
+    // Calculate MVP matrix for this instance
+    glm::mat4 mvp = projection * view * instance.transform;
+    
+    // TODO Phase 5 Day 2: Actual model rendering
+    // This requires integrating with ModelLoader to get VAO/VBO data
+    // For now, we track that we would render this instance
+    models_rendered++;
+    
+    // Placeholder: In a full implementation, we would:
+    // 1. Get Model data from model_loader_ (VAO, VBO, materials)
+    // 2. Bind VAO: glBindVertexArray(mesh.vao)
+    // 3. Setup shader uniforms (MVP matrix, opacity, lighting)
+    // 4. Bind textures from texture_manager_
+    // 5. Draw: glDrawElements(GL_TRIANGLES, mesh.index_count, GL_UNSIGNED_INT, 0)
+    // 6. Track triangle count
+  }
+
+  // Unbind FBO (restore default framebuffer)
+  fbo_manager_->UnbindFramebuffer();
+
+  // Update statistics
+  last_models_rendered_ = models_rendered;
+  last_triangles_rendered_ = triangles_rendered;
+
   return absl::OkStatus();
 }
 
 absl::Status ARRenderer::CompositeWithBackground(const uint8_t* background_frame,
                                                  int frame_width, int frame_height) {
-  // TODO: Implement background compositing
+  if (!background_frame) {
+    return absl::InvalidArgumentError("Background frame is null");
+  }
+
+  if (render_fbo_name_.empty()) {
+    return absl::FailedPreconditionError("Render FBO not initialized");
+  }
+
+  // Get the rendered AR layer texture from FBO
+  GLuint ar_texture_id = fbo_manager_->GetColorTexture(render_fbo_name_);
+  if (ar_texture_id == 0) {
+    return absl::InternalError("Failed to get AR texture from FBO");
+  }
+
+  // Download AR layer from GPU to CPU
+  // Create OpenCV mat to hold the AR layer (RGBA format)
+  cv::Mat ar_layer(config_.render_height, config_.render_width, CV_8UC4);
+  
+  // Bind the texture and read pixels
+  glBindTexture(GL_TEXTURE_2D, ar_texture_id);
+  glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, ar_layer.data);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  
+  // Flip vertically (OpenGL origin is bottom-left, OpenCV is top-left)
+  cv::flip(ar_layer, ar_layer, 0);
+
+  // Create OpenCV mat from background frame (assuming RGB format)
+  cv::Mat background(frame_height, frame_width, CV_8UC3, 
+                     const_cast<uint8_t*>(background_frame));
+
+  // Resize AR layer to match background if needed
+  if (ar_layer.cols != frame_width || ar_layer.rows != frame_height) {
+    cv::resize(ar_layer, ar_layer, cv::Size(frame_width, frame_height));
+  }
+
+  // Convert background to RGBA for alpha blending
+  cv::Mat background_rgba;
+  cv::cvtColor(background, background_rgba, cv::COLOR_RGB2RGBA);
+
+  // Composite: blend AR layer over background using alpha channel
+  // For each pixel: output = bg * (1 - alpha) + fg * alpha
+  for (int y = 0; y < frame_height; y++) {
+    for (int x = 0; x < frame_width; x++) {
+      cv::Vec4b& bg_pixel = background_rgba.at<cv::Vec4b>(y, x);
+      const cv::Vec4b& ar_pixel = ar_layer.at<cv::Vec4b>(y, x);
+      
+      float alpha = ar_pixel[3] / 255.0f;  // Alpha channel (0-1)
+      
+      // Blend each channel
+      for (int c = 0; c < 3; c++) {  // RGB channels only
+        bg_pixel[c] = static_cast<uint8_t>(
+            bg_pixel[c] * (1.0f - alpha) + ar_pixel[c] * alpha
+        );
+      }
+    }
+  }
+
+  // Convert back to RGB for output
+  cv::Mat output_rgb;
+  cv::cvtColor(background_rgba, output_rgb, cv::COLOR_RGBA2RGB);
+
+  // Copy result back to background_frame buffer
+  std::memcpy(const_cast<uint8_t*>(background_frame), 
+              output_rgb.data, 
+              frame_width * frame_height * 3);
+
   return absl::OkStatus();
 }
 
