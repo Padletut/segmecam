@@ -651,12 +651,55 @@ absl::StatusOr<cv::Mat> ARRenderer::ReadFramebufferToMat(
     return absl::FailedPreconditionError("FBO manager not initialized");
   }
   
+  // Check if source FBO is multisampled
+  auto source_fbo = fbo_manager_->GetFBO(fbo_name);
+  if (!source_fbo.IsValid()) {
+    return absl::NotFoundError("Source FBO not found: " + fbo_name);
+  }
+  
+  std::string read_fbo_name = fbo_name;
+  
+  // If multisampled, we need to resolve to a non-MSAA FBO first
+  if (source_fbo.is_multisampled) {
+    // Create or get resolve FBO (non-multisampled)
+    std::string resolve_name = fbo_name + "_resolve";
+    
+    if (!fbo_manager_->HasFBO(resolve_name)) {
+      // Create resolve FBO
+      render::FBOManager::FBOConfig resolve_config;
+      resolve_config.width = width;
+      resolve_config.height = height;
+      resolve_config.use_depth_buffer = false;  // Don't need depth for readback
+      resolve_config.use_multisampling = false;  // Important: no MSAA!
+      resolve_config.sample_count = 1;
+      
+      auto create_result = const_cast<render::FBOManager*>(fbo_manager_.get())->CreateFBO(resolve_name, resolve_config);
+      if (!create_result.ok()) {
+        return absl::InternalError("Failed to create resolve FBO: " + std::string(create_result.status().message()));
+      }
+    }
+    
+    // Blit (resolve) from MSAA FBO to non-MSAA FBO
+    auto blit_status = fbo_manager_->BlitFramebuffer(
+        fbo_name,      // source (MSAA)
+        resolve_name,  // dest (non-MSAA)
+        true,          // copy color
+        false);        // don't copy depth
+    
+    if (!blit_status.ok()) {
+      return absl::InternalError("Failed to resolve MSAA FBO: " + std::string(blit_status.message()));
+    }
+    
+    // Read from the resolved FBO instead
+    read_fbo_name = resolve_name;
+  }
+  
   // Allocate buffer for pixel data (RGBA format)
   std::vector<uint8_t> pixel_buffer(width * height * 4);
   
   // Read pixels from FBO using FBOManager
   auto read_status = fbo_manager_->ReadPixels(
-      fbo_name, 
+      read_fbo_name, 
       0, 0,          // x, y offset
       width, height, // read dimensions
       pixel_buffer.data(), 
