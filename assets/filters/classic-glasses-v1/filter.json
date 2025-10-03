@@ -1,20 +1,20 @@
 {
-  "metadata": {
-    "name": "Classic Glasses",
-    "id": "classic-glasses-v1",
-    "category": "glasses",
+  "filter": {
+    "name": "Classic Glasses V1",
+    "id": "classic-glasses-v1-enhanced",
+    "category": "accessories",
     "version": "1.0.0",
     "author": "SegmeCam Team",
     "description": "Classic black-framed glasses with shake on blink behavior",
-    "thumbnail_path": "thumbnail.png",
-    "icon_path": "icon.png"
+    "thumbnail": "thumbnail.png",
+    "icon": "icon.png"
   },
   "attachments": [
     {
       "id": "glasses_frame",
-      "anchor_name": "nose_bridge",
-      "model_path": "glasses.obj",
-      "texture_path": "glasses_texture.png",
+      "anchor": "nose_bridge",
+      "model": "glasses.obj",
+      "texture": "glasses_texture.png",
       "scale": [1.0, 1.0, 1.0],
       "offset": [0.0, 0.0, 0.0],
       "rotation": [0.0, 0.0, 0.0],
@@ -31,20 +31,20 @@
       "opacity": 1.0
     }
   },
-  "behaviors": [
-    {
-      "type": "SHAKE",
-      "target_attachment_id": "glasses_frame",
-      "blendshape_name": "eyeBlinkLeft",
+  "behaviors": {
+    "shake_on_blink_left": {
+      "type": "shake",
+      "target": "glasses_frame",
+      "blendshape": "eyeBlinkLeft",
       "threshold": 0.7,
       "intensity": 2.0
     },
-    {
-      "type": "SHAKE",
-      "target_attachment_id": "glasses_frame",
-      "blendshape_name": "eyeBlinkRight",
+    "shake_on_blink_right": {
+      "type": "shake",
+      "target": "glasses_frame",
+      "blendshape": "eyeBlinkRight",
       "threshold": 0.7,
       "intensity": 2.0
     }
-  ]
+  }
 }
