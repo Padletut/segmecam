@@ -693,7 +693,88 @@ public:
 
 ---
 
-### Phase 5: Filter Asset Definition (Week 5)
+### Phase 5: Complete ARRenderer Rendering Logic (Week 5)
+
+**Status**: 🔄 **READY TO START**  
+**Target Start**: October 3, 2025  
+**Estimated Duration**: 3-5 days (1 week)
+
+**Goal**: Implement the actual rendering logic in ARRenderer (transform calculations, model rendering, compositing)
+
+**See [PHASE_5_PLAN.md](project-docs/ar-filters/phase-5/PHASE_5_PLAN.md) for detailed implementation plan.**
+
+#### Day 1: Transform System Implementation
+
+**Goal**: Connect face landmarks to model transforms
+
+**Tasks**:
+
+- Implement `UpdateInstanceTransformsFromLandmarks()`
+- Implement helper methods (`GetAnchorPosition`, `CalculateHeadPose`, etc.)
+- Map landmarks to attachment anchors (nose bridge, ears, forehead)
+- Calculate model matrices with head pose
+- Add transform smoothing to reduce jitter
+
+#### Day 2: Model Rendering Implementation
+
+**Goal**: Render 3D models with OpenGL
+
+**Tasks**:
+
+- Implement `RenderModelInstances()`
+- Implement `RenderModel()` helper
+- Setup OpenGL state (depth test, blending)
+- Integrate with ModelLoader vertex data
+- Setup MVP matrices and textures
+
+#### Day 3: Background Compositing
+
+**Goal**: Blend AR layer with video background
+
+**Tasks**:
+
+- Implement `CompositeWithBackground()`
+- Convert OpenGL texture to cv::Mat
+- Implement alpha blending formula
+- Handle format conversions (RGB/RGBA)
+
+#### Day 4: RenderToTexture Integration
+
+**Goal**: Connect all pieces in main render method
+
+**Tasks**:
+
+- Implement `RenderToTexture()`
+- Coordinate transform update → rendering → compositing
+- Update statistics (render time, triangles drawn)
+- Return complete RenderResult
+
+#### Day 5: Testing & Optimization
+
+**Goal**: Comprehensive testing and performance optimization
+
+**Tasks**:
+
+- Update test suite with rendering tests
+- Add compositing tests
+- Performance profiling and optimization
+- Visual validation with `simple_glasses.obj`
+- Ensure 30+ FPS maintained
+
+**Success Criteria**:
+
+- ✅ All TODO stubs implemented
+- ✅ 3D models render aligned with face landmarks
+- ✅ Smooth tracking during head movement
+- ✅ Alpha transparency works correctly
+- ✅ Performance maintains 30+ FPS
+- ✅ Visual validation: See textured glasses on face! 🥽
+
+**Next Phase**: Phase 6 - Filter Asset Definition and JSON metadata
+
+---
+
+### Phase 6: Filter Asset Definition (Week 6)
 
 **Goal**: Define filter metadata and asset packaging format
 
@@ -792,7 +873,7 @@ public:
 
 ---
 
-### Phase 6: AR Filter Manager (Week 6-7)
+### Phase 7: AR Filter Manager (Week 7-8)
 
 **Goal**: Main coordinator for AR filter system
 
@@ -862,7 +943,7 @@ private:
 
 ---
 
-### Phase 7: OpenGL Shaders for 3D Rendering (Week 7)
+### Phase 8: OpenGL Shaders for 3D Rendering (Week 8)
 
 **Goal**: Create GLSL shaders for 3D model rendering with lighting
 
@@ -949,7 +1030,7 @@ void main() {
 
 ---
 
-### Phase 8: UI Integration (Week 8)
+### Phase 9: UI Integration (Week 9)
 
 **Goal**: Add filter selection UI to SegmeCam interface
 
@@ -1011,7 +1092,7 @@ private:
 
 ---
 
-### Phase 9: Sample Filters Creation (Week 9)
+### Phase 10: Sample Filters Creation (Week 10)
 
 **Goal**: Create 3-5 sample AR filters for testing and demonstration
 
@@ -1058,7 +1139,7 @@ private:
 
 ---
 
-### Phase 9.5: Expression-Driven Filter Behaviors (Week 10)
+### Phase 10.5: Expression-Driven Filter Behaviors (Week 11)
 
 **Goal**: Make filters respond to facial expressions using blendshape data
 
@@ -1230,7 +1311,7 @@ glm::vec4 ApplyColorChangeBehavior(const BehaviorConfig& config, float blendshap
 
 ---
 
-### Phase 10: Performance Optimization (Week 11)
+### Phase 11: Performance Optimization (Week 12)
 
 **Goal**: Ensure AR filters maintain 30 FPS target
 
@@ -1277,7 +1358,7 @@ glm::vec4 ApplyColorChangeBehavior(const BehaviorConfig& config, float blendshap
 
 ---
 
-### Phase 11: Testing & Refinement (Week 11-12)
+### Phase 12: Testing & Refinement (Week 13-14)
 
 **Goal**: Comprehensive testing and bug fixing
 
