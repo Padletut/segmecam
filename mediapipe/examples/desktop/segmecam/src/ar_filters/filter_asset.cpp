@@ -337,17 +337,16 @@ absl::Status FilterAsset::ParseBehaviors(const json& j,
   }
   
   for (auto it = behaviors_json.begin(); it != behaviors_json.end(); ++it) {
-    const std::string& blendshape_name = it.key();
+    const std::string& behavior_id = it.key();
     const json& behavior_json = it.value();
     
     FilterBehavior behavior;
-    behavior.blendshape_name = blendshape_name;
     
     // Required: type
     if (!behavior_json.contains("type")) {
       return absl::InvalidArgumentError(
           absl::StrFormat("Missing required field: behaviors[%s].type",
-                         blendshape_name));
+                         behavior_id));
     }
     
     std::string type_str = behavior_json["type"].get<std::string>();
@@ -361,9 +360,17 @@ absl::Status FilterAsset::ParseBehaviors(const json& j,
     if (!behavior_json.contains("target")) {
       return absl::InvalidArgumentError(
           absl::StrFormat("Missing required field: behaviors[%s].target",
-                         blendshape_name));
+                         behavior_id));
     }
     behavior.target_attachment_id = behavior_json["target"].get<std::string>();
+    
+    // Required: blendshape
+    if (!behavior_json.contains("blendshape")) {
+      return absl::InvalidArgumentError(
+          absl::StrFormat("Missing required field: behaviors[%s].blendshape",
+                         behavior_id));
+    }
+    behavior.blendshape_name = behavior_json["blendshape"].get<std::string>();
     
     // Optional fields
     behavior.threshold = behavior_json.value("threshold", 0.5f);

@@ -12,6 +12,7 @@
 Phase 6 defines the **asset format and metadata schema** for AR filters. This establishes how filters are packaged, configured, and loaded into SegmeCam.
 
 **Goal**: Create a flexible, JSON-based filter definition system that supports:
+
 - Multiple 3D models per filter
 - Face anchor attachment points
 - Material and lighting properties
@@ -98,6 +99,7 @@ Phase 6 defines the **asset format and metadata schema** for AR filters. This es
 **File**: `include/ar_filters/filter_asset.h`
 
 **Structures**:
+
 ```cpp
 namespace segmecam {
 namespace ar_filters {
@@ -251,6 +253,7 @@ cc_library(
 #### Task 2.1: Create Sample Filter Assets
 
 **Directory Structure**:
+
 ```
 assets/filters/
 ├── classic-glasses/
@@ -275,6 +278,7 @@ assets/filters/
 ```
 
 **Sample filter.json for classic-glasses**:
+
 ```json
 {
   "filter": {
@@ -331,6 +335,7 @@ assets/filters/
 **File**: `src/ar_filters/filter_asset_test.cpp`
 
 **Test Cases**:
+
 1. Load valid filter JSON
 2. Parse all metadata fields correctly
 3. Load multiple attachments
@@ -381,6 +386,7 @@ absl::Status UnloadFilter(const std::string& filter_id);
 ## Next Phase Preview
 
 **Phase 7: AR Filter Manager** will:
+
 - Use FilterAsset to load/unload filters
 - Manage active filter state
 - Connect filter definitions to ARRenderer

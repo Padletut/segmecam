@@ -226,3 +226,21 @@ cc_library(
         "-I/usr/include",
     ],
 )
+
+# FilterAsset unit tests
+cc_binary(
+    name = "filter_asset_test",
+    srcs = ["filter_asset_test.cpp"],
+    includes = ["../.."],
+    deps = [
+        ":filter_asset",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+    ],
+    copts = [
+        "-std=c++17",
+        "-I/usr/include",
+    ],
+)
