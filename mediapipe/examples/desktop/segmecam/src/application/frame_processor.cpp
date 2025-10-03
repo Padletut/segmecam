@@ -8,6 +8,7 @@
 #include "include/ui/ui_utils.h"
 #include "include/application/app_state.h"
 #include "include/ar_filters/model_loader.h"
+#include "include/ar_filters/ar_filter_manager.h"  // Phase 8: For ARFilterManager methods
 
 // For 3D rendering (Phase 3 Step 8)
 #include "include/render/render_manager.h"
@@ -495,6 +496,33 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
     const mediapipe::NormalizedLandmarkList* landmarks_ptr = (output_data.have_lms) ? &output_data.latest_lms : nullptr;
     display_rgb = ProcessAndDisplayFrame(frame_bgr, output_data.last_mask_u8, landmarks_ptr,
                                         *params.managers.effects, params.app_state, output_data.have_lms);
+
+    // Phase 8: Update and render AR filters (after effects, before overlays)
+    if (params.managers.ar_filter_manager && params.app_state.ar_filters_enabled) {
+        // Update AR filter transforms based on face landmarks
+        if (output_data.have_lms && params.managers.ar_filter_manager->HasActiveFilter()) {
+            // Convert protobuf repeated field to vector
+            std::vector<mediapipe::NormalizedLandmark> landmarks_vec(
+                output_data.latest_lms.landmark().begin(),
+                output_data.latest_lms.landmark().end()
+            );
+            
+            params.managers.ar_filter_manager->Update(
+                landmarks_vec,
+                frame_bgr.cols,
+                frame_bgr.rows
+            );
+        }
+        
+        // Render AR filter effects onto frame
+        if (params.managers.ar_filter_manager->HasActiveFilter()) {
+            cv::Mat display_bgr;
+            cv::cvtColor(display_rgb, display_bgr, cv::COLOR_RGB2BGR);
+            
+            display_bgr = params.managers.ar_filter_manager->Render(display_bgr);
+            cv::cvtColor(display_bgr, display_rgb, cv::COLOR_BGR2RGB);
+        }
+    }
 
     // Add face mesh visualization overlay if enabled
     if (params.app_state.show_mesh && params.app_state.face_mesh_available) {

@@ -200,7 +200,12 @@ cc_library( # type: ignore
     includes = [".", "include"],
     deps = [
         ":app_state",
+        ":application_run",  # Phase 8: Needed for ApplicationRun types
         ":camera_manager",
+        ":effects_manager",  # Phase 8: EffectsManager included in cpp
+        ":ui_manager",  # Phase 8: UIManager included in cpp
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:opengl_renderer",  # Phase 8: OpenGLRenderer for AR rendering
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:ar_filter_manager",  # Phase 8: AR filter system
         "//mediapipe/examples/desktop/segmecam/src/config:config_manager",
     ],
 )
@@ -857,6 +862,7 @@ cc_binary( # pyright: ignore[reportUndefinedVariable]
         "//mediapipe/examples/desktop/segmecam/src/ar_filters:blendshape_processor",
         "//mediapipe/examples/desktop/segmecam/src/ar_filters:attachment_controller",
         "//mediapipe/examples/desktop/segmecam/src/ar_filters:opengl_renderer",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:ar_filter_manager",  # Phase 8: AR filter manager
         "//mediapipe/framework:calculator_graph",
         "//mediapipe/framework/port:file_helpers",
         "//mediapipe/framework/port:opencv_core",

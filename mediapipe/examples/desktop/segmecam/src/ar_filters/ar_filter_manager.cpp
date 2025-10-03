@@ -352,12 +352,15 @@ absl::Status ARFilterManager::ScanFiltersDirectory() {
   
   LOG(INFO) << "Found " << filter_paths.size() << " filter definitions";
 
-  for (const auto& filter_path : filter_paths) {
+  for (const auto& filter_dir : filter_paths) {
+    // Construct path to filter.json
+    std::string json_path = filter_dir + "/filter.json";
+    
     // Load filter metadata (without loading full assets yet)
-    auto asset_or = FilterAsset::LoadFromFile(filter_path);
+    auto asset_or = FilterAsset::LoadFromFile(json_path);
     
     if (!asset_or.ok()) {
-      LOG(WARNING) << "Failed to load filter from " << filter_path 
+      LOG(WARNING) << "Failed to load filter from " << json_path 
                    << ": " << asset_or.status().message();
       continue;
     }

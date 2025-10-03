@@ -25,6 +25,7 @@ namespace segmecam {
 namespace segmecam {
 namespace ar_filters {
     class OpenGLRenderer;
+    class ARFilterManager;  // Phase 8: AR Filter system coordinator
 }
 }
 
@@ -37,6 +38,7 @@ public:
         std::unique_ptr<segmecam::EffectsManager> effects;
         std::unique_ptr<segmecam::UIManager> ui;
         std::unique_ptr<segmecam::ar_filters::OpenGLRenderer> opengl_renderer;
+        std::unique_ptr<segmecam::ar_filters::ARFilterManager> ar_filter_manager;  // Phase 8: AR filters
         
         // TODO: Add other managers when their dependencies are resolved
         // std::unique_ptr<segmecam::MediaPipeManager> mediapipe;
@@ -70,6 +72,7 @@ private:
     static bool InitializeEffectsManager(Managers& managers, segmecam::AppState& app_state);
     static bool InitializeUIManager(Managers& managers, segmecam::AppState& app_state);
     static bool InitializeOpenGLRenderer(Managers& managers, segmecam::AppState& app_state);
+    static bool InitializeARFilterManager(Managers& managers, segmecam::AppState& app_state);  // Phase 8
     
     // Helper methods for ConfigManager initialization to reduce complexity
     static bool CreateConfigManager(Managers& managers);
