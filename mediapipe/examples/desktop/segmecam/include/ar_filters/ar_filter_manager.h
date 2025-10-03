@@ -39,7 +39,8 @@ struct ARFilterManagerConfig {
 
 // Filter information for UI/enumeration
 struct FilterInfo {
-  std::string id;                    // Unique filter ID
+  std::string id;                    // Unique filter ID (from JSON)
+  std::string directory_path;        // Actual directory path (for loading)
   std::string name;                  // Display name
   std::string category;              // Category (glasses, hats, masks, etc.)
   std::string author;                // Filter author

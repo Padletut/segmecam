@@ -367,10 +367,11 @@ absl::Status ARFilterManager::ScanFiltersDirectory() {
 
     // Create FilterInfo for UI
     FilterInfo info = CreateFilterInfo(asset_or.value());
+    info.directory_path = filter_dir;  // Store actual directory path for loading
     state_.available_filters.push_back(info);
     state_.category_map[info.id] = info.category;
 
-    LOG(INFO) << "Discovered filter: " << info.name << " (" << info.id << ")";
+    LOG(INFO) << "Discovered filter: " << info.name << " (" << info.id << ") at " << filter_dir;
   }
 
   return absl::OkStatus();
@@ -382,8 +383,22 @@ absl::Status ARFilterManager::LoadFilterAsset(const std::string& filter_id) {
     return absl::OkStatus();
   }
 
-  // Find filter path
-  std::string filter_path = config_.filters_directory + "/" + filter_id + "/filter.json";
+  // Find filter by ID to get its directory path
+  std::string filter_dir;
+  for (const auto& filter : state_.available_filters) {
+    if (filter.id == filter_id) {
+      filter_dir = filter.directory_path;
+      break;
+    }
+  }
+  
+  if (filter_dir.empty()) {
+    return absl::NotFoundError(
+        absl::StrFormat("Filter not found in available filters: %s", filter_id));
+  }
+
+  // Construct path to filter.json using actual directory
+  std::string filter_path = filter_dir + "/filter.json";
   
   // Load FilterAsset (returns StatusOr<FilterAsset>)
   auto asset_or = FilterAsset::LoadFromFile(filter_path);
