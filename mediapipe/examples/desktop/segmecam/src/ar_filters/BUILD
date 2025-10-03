@@ -172,5 +172,34 @@ cc_library(
     ],
     linkopts = [
         "-lepoxy",  # Modern OpenGL function loader
+        "-lopencv_core",
+        "-lopencv_imgproc",
+        "-lopencv_imgcodecs",
+    ],
+)
+
+# Phase 4 Step 3: ARRenderer - Complete 3D model rendering integration
+cc_library(
+    name = "ar_renderer",
+    srcs = ["ar_renderer.cpp"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/ar_renderer.h"],
+    includes = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":model_loader",
+        ":texture_manager",
+        "//mediapipe/examples/desktop/segmecam:fbo_manager",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+    ],
+    copts = [
+        "-std=c++17",
+        "-I/usr/include",
+    ],
+    linkopts = [
+        "-lepoxy",
+        "-lGL",
     ],
 )

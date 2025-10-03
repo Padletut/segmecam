@@ -49,6 +49,30 @@ cc_test(
     ],
 )
 
+# ARRenderer Tests - Phase 4 Step 3
+cc_test(
+    name = "ar_renderer_test",
+    size = "medium",
+    srcs = ["ar_renderer_test.cpp"],
+    copts = [
+        "-std=c++17",
+    ],
+    includes = ["../.."],
+    linkopts = [
+        "-lSDL2",
+        "-lGL",
+        "-lGLU",
+        "-lopencv_core",
+        "-lopencv_imgproc",
+        "-lopencv_imgcodecs",
+    ],
+    deps = [
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:ar_renderer",
+        "@com_google_googletest//:gtest_main",
+        "@linux_opencv//:opencv",
+    ],
+)
+
 # AttachmentController Tests
 cc_test(
     name = "attachment_controller_test",
