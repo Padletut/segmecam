@@ -361,13 +361,6 @@ void DebugPanel::RenderARFilterControls() {
     ImGui::Text("🎭 AR Filters (Phase 8)");
     ImGui::Separator();
     
-    // Warning about rendering not yet implemented
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.0f, 1.0f));
-    ImGui::TextWrapped("⚠️  RENDERING DISABLED: GPU texture readback not yet implemented");
-    ImGui::TextWrapped("Filter loading/testing works, but visual rendering is disabled to prevent video corruption.");
-    ImGui::PopStyleColor();
-    ImGui::Spacing();
-    
     // Enable/Disable toggle
     bool ar_enabled = state_.ar_filters_enabled;
     if (ImGui::Checkbox("Enable AR Filters", &ar_enabled)) {
@@ -377,7 +370,7 @@ void DebugPanel::RenderARFilterControls() {
     }
     
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Enable/disable AR filter system (rendering currently disabled)");
+        ImGui::SetTooltip("Enable/disable AR filter system with full GPU rendering");
     }
     
     // Get available filters

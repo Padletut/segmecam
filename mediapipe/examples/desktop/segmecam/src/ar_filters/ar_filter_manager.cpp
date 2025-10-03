@@ -293,11 +293,18 @@ cv::Mat ARFilterManager::Render(const cv::Mat& input_frame) {
   state_.performance_stats.models_rendered_per_frame = result.models_rendered;
   state_.performance_stats.triangles_per_frame = result.triangles_rendered;
 
-  // Convert output texture to cv::Mat (placeholder - needs GPU texture readback)
-  // For now, return original frame as we need to implement texture-to-Mat conversion
-  // TODO Phase 7 Day 3: Implement GPU texture readback for composited result
-  LOG(WARNING) << "GPU texture to cv::Mat conversion not yet implemented";
-  return input_frame.clone();
+  // Phase 8 Day 3: GPU texture readback implementation
+  // Read the rendered FBO texture back to CPU as cv::Mat
+  auto readback_result = ar_renderer_->ReadFramebufferToMat(
+      "render_target", input_frame.cols, input_frame.rows);
+  
+  if (!readback_result.ok()) {
+    LOG(WARNING) << "GPU texture readback failed: " << readback_result.status().message();
+    return input_frame.clone();
+  }
+  
+  // Return the composited frame with AR filters rendered
+  return readback_result.value();
 }
 
 // Performance monitoring

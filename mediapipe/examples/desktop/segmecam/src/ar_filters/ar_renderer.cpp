@@ -643,6 +643,45 @@ absl::Status ARRenderer::CompositeWithBackground(const uint8_t* background_frame
   return absl::OkStatus();
 }
 
+// GPU texture readback - Phase 8 Day 3
+absl::StatusOr<cv::Mat> ARRenderer::ReadFramebufferToMat(
+    const std::string& fbo_name, int width, int height) const {
+  
+  if (!fbo_manager_) {
+    return absl::FailedPreconditionError("FBO manager not initialized");
+  }
+  
+  // Allocate buffer for pixel data (RGBA format)
+  std::vector<uint8_t> pixel_buffer(width * height * 4);
+  
+  // Read pixels from FBO using FBOManager
+  auto read_status = fbo_manager_->ReadPixels(
+      fbo_name, 
+      0, 0,          // x, y offset
+      width, height, // read dimensions
+      pixel_buffer.data(), 
+      pixel_buffer.size());
+  
+  if (!read_status.ok()) {
+    return read_status;
+  }
+  
+  // Create cv::Mat from pixel buffer
+  // OpenGL reads bottom-to-top, so we need to flip vertically
+  cv::Mat rgba_image(height, width, CV_8UC4, pixel_buffer.data());
+  
+  // Flip vertically (OpenGL Y-axis is inverted relative to OpenCV)
+  cv::Mat rgba_flipped;
+  cv::flip(rgba_image, rgba_flipped, 0);  // 0 = flip around x-axis (vertical flip)
+  
+  // Convert RGBA to BGR (OpenCV standard format)
+  cv::Mat bgr_image;
+  cv::cvtColor(rgba_flipped, bgr_image, cv::COLOR_RGBA2BGR);
+  
+  // Return a deep copy since pixel_buffer is temporary
+  return bgr_image.clone();
+}
+
 void ARRenderer::UpdateInstanceTransformsFromLandmarks() {
   if (current_face_landmarks_.empty() || model_instances_.empty()) {
     return;

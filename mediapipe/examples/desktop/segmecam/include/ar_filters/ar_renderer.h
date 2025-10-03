@@ -187,6 +187,10 @@ public:
   // Viewport management
   void SetViewport(int x, int y, int width, int height);
   void GetViewport(int* x, int* y, int* width, int* height) const;
+  
+  // GPU texture readback - Phase 8 Day 3
+  absl::StatusOr<cv::Mat> ReadFramebufferToMat(const std::string& fbo_name,
+                                                 int width, int height) const;
 
 private:
   // Internal rendering methods
