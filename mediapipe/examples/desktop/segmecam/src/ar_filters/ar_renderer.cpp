@@ -6,6 +6,7 @@
 #include "mediapipe/examples/desktop/segmecam/include/ar_filters/ar_renderer.h"
 #include "mediapipe/examples/desktop/segmecam/include/ar_filters/model_loader.h"
 #include "mediapipe/examples/desktop/segmecam/include/ar_filters/texture_manager.h"
+#include "mediapipe/examples/desktop/segmecam/include/ar_filters/filter_asset.h"  // Phase 6
 #include "mediapipe/examples/desktop/segmecam/include/render/fbo_manager.h"
 
 #include "absl/log/absl_log.h"
@@ -112,6 +113,111 @@ bool ARRenderer::HasModel(const std::string& name) const {
     }
   }
   return false;
+}
+
+// Phase 6: Filter asset integration
+absl::Status ARRenderer::LoadFilter(const FilterAsset& filter) {
+  if (!initialized_) {
+    return absl::FailedPreconditionError("ARRenderer not initialized");
+  }
+  
+  const auto& metadata = filter.GetMetadata();
+  const auto& attachments = filter.GetAttachments();
+  const auto& materials = filter.GetMaterials();
+  
+  ABSL_LOG(INFO) << "Loading filter: " << metadata.name << " (" << metadata.id << ")";
+  
+  // Check if filter already loaded
+  if (loaded_filters_.count(metadata.id) > 0) {
+    return absl::AlreadyExistsError("Filter already loaded: " + metadata.id);
+  }
+  
+  std::vector<std::string> instance_names;
+  
+  // Load each attachment as a model instance
+  for (const auto& attachment : attachments) {
+    // Construct full model path from filter directory
+    std::string model_path = filter.GetFilterDirectory() + "/" + attachment.model_path;
+    
+    // Load the model
+    auto load_result = model_loader_->LoadModel(model_path);
+    if (!load_result.ok()) {
+      ABSL_LOG(WARNING) << "Failed to load model for attachment " 
+                        << attachment.id << ": " << load_result.status();
+      // Continue loading other attachments
+      continue;
+    }
+    
+    // Create model instance
+    ModelInstance instance;
+    instance.model_name = attachment.id;
+    instance.model_path = model_path;
+    instance.attachment_anchor = attachment.anchor_name;
+    instance.visible = attachment.visible;
+    instance.opacity = attachment.opacity;
+    instance.attach_to_landmarks = true;
+    
+    // Set transform from attachment
+    instance.position_offset = attachment.offset;
+    instance.scale_factor = attachment.scale;
+    
+    // Convert Euler angles (degrees) to quaternion
+    glm::vec3 rotation_rad = glm::radians(attachment.rotation);
+    instance.rotation_quat = glm::quat(rotation_rad);
+    
+    // Store instance
+    std::string instance_name = metadata.id + "_" + attachment.id;
+    model_instances_[instance_name] = instance;
+    instance_names.push_back(instance_name);
+    
+    ABSL_LOG(INFO) << "  Loaded attachment: " << attachment.id 
+                   << " (anchor: " << attachment.anchor_name << ")";
+    
+    // Load texture if specified
+    if (!attachment.texture_path.empty()) {
+      std::string texture_path = filter.GetFilterDirectory() + "/" + attachment.texture_path;
+      auto tex_result = texture_manager_->LoadTexture(texture_path);
+      if (!tex_result.ok()) {
+        ABSL_LOG(WARNING) << "Failed to load texture: " << texture_path;
+      } else {
+        ABSL_LOG(INFO) << "    Loaded texture: " << attachment.texture_path;
+      }
+    }
+  }
+  
+  // Track loaded filter
+  loaded_filters_[metadata.id] = instance_names;
+  
+  ABSL_LOG(INFO) << "Filter loaded successfully: " << metadata.name 
+                 << " (" << instance_names.size() << " attachments)";
+  
+  return absl::OkStatus();
+}
+
+absl::Status ARRenderer::UnloadFilter(const std::string& filter_id) {
+  if (!initialized_) {
+    return absl::FailedPreconditionError("ARRenderer not initialized");
+  }
+  
+  auto it = loaded_filters_.find(filter_id);
+  if (it == loaded_filters_.end()) {
+    return absl::NotFoundError("Filter not loaded: " + filter_id);
+  }
+  
+  // Remove all instances for this filter
+  for (const auto& instance_name : it->second) {
+    model_instances_.erase(instance_name);
+    ABSL_LOG(INFO) << "  Unloaded instance: " << instance_name;
+  }
+  
+  loaded_filters_.erase(it);
+  
+  ABSL_LOG(INFO) << "Filter unloaded: " << filter_id;
+  return absl::OkStatus();
+}
+
+bool ARRenderer::HasFilter(const std::string& filter_id) const {
+  return loaded_filters_.count(filter_id) > 0;
 }
 
 // Model instance management

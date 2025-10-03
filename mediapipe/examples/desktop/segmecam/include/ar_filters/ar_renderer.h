@@ -23,6 +23,7 @@ namespace segmecam {
 namespace ar_filters {
 class TextureManager;
 class ModelLoader;
+class FilterAsset;  // Phase 6: Filter asset definition
 }
 namespace render {
 class FBOManager;
@@ -139,6 +140,11 @@ public:
   absl::Status UnloadModel(const std::string& name);
   bool HasModel(const std::string& name) const;
   
+  // Phase 6: Filter asset integration
+  absl::Status LoadFilter(const FilterAsset& filter);
+  absl::Status UnloadFilter(const std::string& filter_id);
+  bool HasFilter(const std::string& filter_id) const;
+  
   // Model instance management
   absl::Status CreateModelInstance(const std::string& instance_name, 
                                    const std::string& model_name,
@@ -204,6 +210,9 @@ private:
   // Model and instance management
   std::map<std::string, ModelInstance> model_instances_;
   std::vector<float> current_face_landmarks_;
+  
+  // Phase 6: Filter tracking
+  std::map<std::string, std::vector<std::string>> loaded_filters_; // filter_id -> instance_names
   
   // Rendering state
   std::string render_fbo_name_;

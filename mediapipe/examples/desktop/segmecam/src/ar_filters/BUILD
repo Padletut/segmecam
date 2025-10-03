@@ -62,6 +62,7 @@ cc_library(
     copts = [
         "-std=c++17",
         "-DGL_GLEXT_PROTOTYPES",  # Enable OpenGL extension function prototypes
+        "-I/usr/include/opencv4",  # For OpenCV headers
     ],
     linkopts = [
         "-lGL",
@@ -169,6 +170,7 @@ cc_library(
     copts = [
         "-std=c++17",
         "-I/usr/include",  # For epoxy/gl.h
+        "-I/usr/include/opencv4",  # For OpenCV headers
     ],
     linkopts = [
         "-lepoxy",  # Modern OpenGL function loader
@@ -188,7 +190,10 @@ cc_library(
     deps = [
         ":model_loader",
         ":texture_manager",
+        ":filter_asset",  # Phase 6: Filter asset integration
         "//mediapipe/examples/desktop/segmecam:fbo_manager",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
         "@glm//:glm",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -198,10 +203,13 @@ cc_library(
     copts = [
         "-std=c++17",
         "-I/usr/include",
+        "-I/usr/include/opencv4",  # For OpenCV headers
     ],
     linkopts = [
         "-lepoxy",
         "-lGL",
+        "-lopencv_core",
+        "-lopencv_imgproc",
     ],
 )
 
@@ -242,5 +250,30 @@ cc_binary(
     copts = [
         "-std=c++17",
         "-I/usr/include",
+    ],
+)
+
+# Phase 6: ARRenderer + FilterAsset integration tests
+cc_binary(
+    name = "ar_renderer_filter_test",
+    srcs = ["ar_renderer_filter_test.cpp"],
+    includes = ["../.."],
+    deps = [
+        ":ar_renderer",
+        ":filter_asset",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+    ],
+    copts = [
+        "-std=c++17",
+        "-I/usr/include",
+        "-I/usr/include/opencv4",  # For OpenCV headers
+    ],
+    linkopts = [
+        "-lopencv_core",
+        "-lopencv_imgproc",
+        "-lopencv_imgcodecs",
     ],
 )
