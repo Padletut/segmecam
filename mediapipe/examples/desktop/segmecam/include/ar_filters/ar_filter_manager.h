@@ -22,6 +22,9 @@
 
 // Forward declarations
 namespace segmecam {
+
+struct HeadPose;  // From transform_calculator.h
+
 namespace ar_filters {
 
 class FilterAsset;
@@ -86,6 +89,7 @@ public:
 
   // Main update and render
   void Update(const std::vector<mediapipe::NormalizedLandmark>& face_landmarks,
+              const HeadPose& head_pose,
               int frame_width, int frame_height);
   cv::Mat Render(const cv::Mat& input_frame);  // DEPRECATED Phase 8 Day 3 - causes 40ms freeze
   

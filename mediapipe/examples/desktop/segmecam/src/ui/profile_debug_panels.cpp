@@ -402,12 +402,19 @@ void DebugPanel::RenderARFilterControls() {
     if (filter_names.size() != filters.size() + 1) {  // +1 for "(None)"
         filter_names.clear();
         filter_items.clear();
+        
+        // First, build all the strings (reserve to avoid reallocation)
+        filter_names.reserve(filters.size() + 1);
         filter_names.push_back("(None)");
-        filter_items.push_back(filter_names.back().c_str());
         
         for (const auto& filter : filters) {
             filter_names.push_back(filter.name + " (" + filter.category + ")");
-            filter_items.push_back(filter_names.back().c_str());
+        }
+        
+        // Now that all strings are in place and won't move, get the c_str() pointers
+        filter_items.reserve(filter_names.size());
+        for (const auto& name : filter_names) {
+            filter_items.push_back(name.c_str());
         }
         
         selected_filter_idx = 0;  // Reset to "None" when list changes
@@ -448,8 +455,10 @@ void DebugPanel::RenderARFilterControls() {
             const auto& selected_filter = filters[selected_filter_idx - 1];
             auto status = ar_filter_mgr_->LoadFilter(selected_filter.id);
             if (status.ok()) {
+                // Auto-enable AR filters when successfully loading a filter
+                state_.ar_filters_enabled = true;
                 std::cout << "[DebugPanel] ✅ Loaded filter: " 
-                          << selected_filter.name << std::endl;
+                          << selected_filter.name << " (AR filters auto-enabled)" << std::endl;
                 // Don't reset dropdown - it will sync automatically via GetActiveFilterId()
             } else {
                 std::cerr << "[DebugPanel] ❌ Failed to load filter: " 

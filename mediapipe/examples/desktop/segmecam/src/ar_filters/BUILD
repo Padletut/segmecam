@@ -192,6 +192,7 @@ cc_library(
         ":texture_manager",
         ":filter_asset",  # Phase 6: Filter asset integration
         "//mediapipe/examples/desktop/segmecam:fbo_manager",
+        "//mediapipe/examples/desktop/segmecam:shader_program",  # PHASE 5: Shader support
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
         "@glm//:glm",
@@ -288,6 +289,7 @@ cc_library(
     deps = [
         ":filter_asset",
         ":ar_renderer",
+        ":transform_calculator",
         "//mediapipe/framework/formats:landmark_cc_proto",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",

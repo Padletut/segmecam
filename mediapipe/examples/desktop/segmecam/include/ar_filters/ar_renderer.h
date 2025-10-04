@@ -24,9 +24,11 @@ namespace ar_filters {
 class TextureManager;
 class ModelLoader;
 class FilterAsset;  // Phase 6: Filter asset definition
+struct Model;  // Forward declare Model from model_loader.h
 }
 namespace render {
 class FBOManager;
+class ShaderProgram;  // PHASE 5: Shader support for modern OpenGL
 }
 }
 
@@ -169,6 +171,9 @@ public:
                                       const std::vector<int>& landmark_indices);
   absl::Status UpdateFaceLandmarks(const std::vector<float>& landmarks_3d);
   
+  // Head pose (from MediaPipe face landmark transform)
+  void SetHeadPoseRotation(const glm::quat& rotation);
+  
   // Rendering pipeline
   absl::StatusOr<RenderResult> RenderToTexture(
       const uint8_t* input_frame, int frame_width, int frame_height);
@@ -223,10 +228,13 @@ private:
   std::unique_ptr<ModelLoader> model_loader_;
   std::unique_ptr<TextureManager> texture_manager_;
   std::unique_ptr<render::FBOManager> fbo_manager_;
+  std::unique_ptr<render::ShaderProgram> shader_;  // PHASE 5: Shader for modern OpenGL rendering
   
   // Model and instance management
+  std::map<std::string, std::shared_ptr<Model>> loaded_models_;  // PHASE 5: Cache of loaded models (model_path -> Model ptr)
   std::map<std::string, ModelInstance> model_instances_;
   std::vector<float> current_face_landmarks_;
+  glm::quat head_pose_rotation_{1.0f, 0.0f, 0.0f, 0.0f};  // From MediaPipe (identity quaternion)
   
   // Phase 6: Filter tracking
   std::map<std::string, std::vector<std::string>> loaded_filters_; // filter_id -> instance_names

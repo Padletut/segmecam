@@ -109,14 +109,16 @@ void RenderUtils::RenderFrame(UIManager& ui_manager,
                              const cv::Mat& display_rgb,
                              SDL_Window* window,
                              int frame_count,
-                             bool& running) {
+                             bool& running,
+                             bool skip_texture_upload) {
     // Get window size for rendering
     int dw, dh;
     SDL_GL_GetDrawableSize(window, &dw, &dh);
     glViewport(0, 0, dw, dh);
 
     // Upload video texture to UI manager for preview window
-    if (!display_rgb.empty()) {
+    // Skip if AR filters already rendered directly to GPU texture
+    if (!skip_texture_upload && !display_rgb.empty()) {
         ui_manager.UploadTexture(display_rgb);
     }
 

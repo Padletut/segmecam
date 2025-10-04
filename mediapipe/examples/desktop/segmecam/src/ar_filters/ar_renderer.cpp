@@ -8,6 +8,7 @@
 #include "mediapipe/examples/desktop/segmecam/include/ar_filters/texture_manager.h"
 #include "mediapipe/examples/desktop/segmecam/include/ar_filters/filter_asset.h"  // Phase 6
 #include "mediapipe/examples/desktop/segmecam/include/render/fbo_manager.h"
+#include "include/render/shader_program.h"  // PHASE 5
 
 #include "absl/log/absl_log.h"
 #include "absl/log/log.h"
@@ -18,6 +19,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <epoxy/gl.h>  // PHASE 5: OpenGL functions
 #include <glm/gtx/quaternion.hpp>
 
 // OpenGL headers for rendering
@@ -53,6 +55,16 @@ absl::Status ARRenderer::Initialize() {
   model_loader_ = std::make_unique<ModelLoader>();
   texture_manager_ = std::make_unique<TextureManager>();
   fbo_manager_ = std::make_unique<render::FBOManager>();
+  
+  // PHASE 5: Initialize shader program for modern OpenGL rendering
+  shader_ = std::make_unique<render::ShaderProgram>();
+  const std::string vertex_path = "mediapipe/examples/desktop/segmecam/shaders/model_vertex.glsl";
+  const std::string fragment_path = "mediapipe/examples/desktop/segmecam/shaders/model_fragment.glsl";
+  
+  if (!shader_->LoadFromFiles(vertex_path, fragment_path)) {
+    return absl::InternalError("Failed to load shaders for AR rendering");
+  }
+  ABSL_LOG(INFO) << "ARRenderer shaders loaded successfully";
 
   auto setup_status = SetupRenderTarget();
   if (!setup_status.ok()) {
@@ -81,12 +93,21 @@ absl::Status ARRenderer::LoadModel(const std::string& name, const std::string& m
     return absl::FailedPreconditionError("Not initialized");
   }
   
+  // Check if already loaded
+  if (loaded_models_.find(model_path) != loaded_models_.end()) {
+    ABSL_LOG(INFO) << "Model already loaded: " << name << " from " << model_path;
+    return absl::OkStatus();
+  }
+  
+  // Load model and store in cache
   auto result = model_loader_->LoadModel(model_path);
   if (!result.ok()) {
     return result.status();
   }
   
-  ABSL_LOG(INFO) << "Loaded model: " << name;
+  loaded_models_[model_path] = std::make_shared<Model>(std::move(*result));
+  
+  ABSL_LOG(INFO) << "Loaded and cached model: " << name << " from " << model_path;
   return absl::OkStatus();
 }
 
@@ -141,11 +162,11 @@ absl::Status ARRenderer::LoadFilter(const FilterAsset& filter) {
     // Construct full model path from filter directory
     std::string model_path = filter.GetFilterDirectory() + "/" + attachment.model_path;
     
-    // Load the model
-    auto load_result = model_loader_->LoadModel(model_path);
-    if (!load_result.ok()) {
+    // Load the model using caching LoadModel (not model_loader_ directly!)
+    auto load_status = LoadModel(attachment.id, model_path);
+    if (!load_status.ok()) {
       ABSL_LOG(WARNING) << "Failed to load model for attachment " 
-                        << attachment.id << ": " << load_result.status();
+                        << attachment.id << ": " << load_status.message();
       // Continue loading other attachments
       continue;
     }
@@ -365,6 +386,10 @@ absl::Status ARRenderer::UpdateFaceLandmarks(const std::vector<float>& landmarks
   return absl::OkStatus();
 }
 
+void ARRenderer::SetHeadPoseRotation(const glm::quat& rotation) {
+  head_pose_rotation_ = rotation;
+}
+
 // Rendering
 absl::StatusOr<ARRenderer::RenderResult> ARRenderer::RenderToTexture(
     const uint8_t* input_frame, int frame_width, int frame_height) {
@@ -504,19 +529,20 @@ absl::Status ARRenderer::SetupRenderTarget() {
 }
 
 absl::Status ARRenderer::RenderModelInstances() {
-  if (render_fbo_name_.empty() || model_instances_.empty()) {
+  ABSL_LOG(INFO) << "  🎬 RenderModelInstances START - instances=" << model_instances_.size()
+                 << " loaded_models=" << loaded_models_.size();
+  
+  if (model_instances_.empty()) {
+    ABSL_LOG(WARNING) << "  ⚠️ No model instances to render!";
     return absl::OkStatus();  // Nothing to render
   }
 
-  // Bind the offscreen FBO for rendering
-  bool bind_success = fbo_manager_->BindFramebuffer(render_fbo_name_);
-  if (!bind_success) {
-    return absl::InternalError("Failed to bind render FBO: " + render_fbo_name_);
-  }
-
+  // PHASE 8 FIX: Don't bind FBO here - render to currently bound FBO
+  // This allows RenderToTexture() to control where we render (video texture FBO)
+  
   // Clear with transparent background (important for alpha blending)
-  glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  // Only clear depth, preserve color (video frame)
+  glClear(GL_DEPTH_BUFFER_BIT);
 
   // Setup OpenGL state for 3D rendering
   if (config_.enable_depth_testing) {
@@ -528,10 +554,10 @@ absl::Status ARRenderer::RenderModelInstances() {
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   
-  // Enable face culling (render only front faces)
-  glEnable(GL_CULL_FACE);
-  glCullFace(GL_BACK);
-  glFrontFace(GL_CCW);  // Counter-clockwise winding
+  // 🔧 DISABLE face culling for head rotation support
+  // Face culling causes glasses to disappear when rotated because back faces become visible
+  // With head pose tracking, we need to render both sides
+  glDisable(GL_CULL_FACE);
 
   // Setup viewport
   glViewport(0, 0, config_.render_width, config_.render_height);
@@ -550,36 +576,129 @@ absl::Status ARRenderer::RenderModelInstances() {
   // Track rendering statistics
   int triangles_rendered = 0;
   int models_rendered = 0;
+  
+  // PHASE 5: Use shader program for modern OpenGL rendering
+  if (!shader_) {
+    return absl::FailedPreconditionError("Shader not initialized");
+  }
+  
+  shader_->Use();
+  
+  // Set projection and view matrices (uniforms)
+  shader_->SetMat4("uProjection", glm::value_ptr(projection));
+  shader_->SetMat4("uView", glm::value_ptr(view));
+  
+  // Simple lighting (no shadows for now) - match shader uniform names!
+  shader_->SetVec3("uLightDir", 0.0f, 0.0f, -1.0f);  // uLightDir not uLightDirection
+  shader_->SetVec3("uLightColor", 1.0f, 1.0f, 1.0f);
+  shader_->SetVec3("uAmbientColor", 0.3f, 0.3f, 0.3f);
+  shader_->SetVec3("uCameraPos", 0.0f, 0.0f, 0.0f);  // uCameraPos not uCameraPosition
+  
+  static int debug_render_count = 0;
+  bool debug_this_render = true;  // FORCE DEBUG - testing rendering
 
   // Render each visible model instance
   for (const auto& [instance_name, instance] : model_instances_) {
     if (!instance.visible) {
+      if (debug_this_render) {
+        ABSL_LOG(INFO) << "  Skipping invisible instance: " << instance_name;
+      }
       continue;
     }
 
-    // Skip if model not loaded
-    // TODO: In future, load model on-demand via model_loader_
-    // For now, we assume models are pre-loaded
+    // Look up the loaded model from cache
+    auto model_it = loaded_models_.find(instance.model_path);
+    if (model_it == loaded_models_.end()) {
+      ABSL_LOG(WARNING) << "Model not loaded: " << instance.model_path;
+      continue;
+    }
     
-    // Calculate MVP matrix for this instance
-    glm::mat4 mvp = projection * view * instance.transform;
+    const Model& model = *model_it->second;  // Dereference shared_ptr
     
-    // TODO Phase 5 Day 2: Actual model rendering
-    // This requires integrating with ModelLoader to get VAO/VBO data
-    // For now, we track that we would render this instance
+    if (debug_this_render) {
+      ABSL_LOG(INFO) << "  Rendering instance: " << instance_name 
+                     << " with " << model.meshes.size() << " meshes";
+      ABSL_LOG(INFO) << "    Transform position: [" 
+                     << instance.transform[3][0] << ", "
+                     << instance.transform[3][1] << ", "
+                     << instance.transform[3][2] << "]";
+      ABSL_LOG(INFO) << "    Viewport: " << config_.render_width << "x" << config_.render_height;
+    }
+    
+    // Set model matrix
+    shader_->SetMat4("uModel", glm::value_ptr(instance.transform));
+    
+    // Calculate normal matrix (inverse transpose)
+    glm::mat3 normal_matrix = glm::mat3(glm::transpose(glm::inverse(instance.transform)));
+    shader_->SetMat3("uNormalMatrix", glm::value_ptr(normal_matrix));
+    
+    // � BOOSTED MATERIAL: Original is too dark (Ka=0.02, Kd=0.1), multiply by 5x for visibility
+    // Original: Ka(0.02, 0.02, 0.02) Kd(0.1, 0.1, 0.1) Ks(0.3, 0.3, 0.3)
+    // Boosted: Full white diffuse for maximum visibility
+    shader_->SetVec3("uMaterialAmbient", 0.2f, 0.2f, 0.2f);    // 0.02 * 10 = 0.2
+    shader_->SetVec3("uMaterialDiffuse", 1.0f, 1.0f, 1.0f);    // 0.1 * 10 = 1.0 (full white)
+    shader_->SetVec3("uMaterialSpecular", 0.8f, 0.8f, 0.8f);   // Bright highlights
+    shader_->SetFloat("uMaterialShininess", 60.0f);            // From model
+    shader_->SetFloat("uMaterialOpacity", instance.opacity);   // Use instance opacity
+    
+    // Render each mesh
+    for (const auto& mesh : model.meshes) {
+      if (mesh.vao == 0) {
+        ABSL_LOG(WARNING) << "Mesh has invalid VAO";
+        continue;
+      }
+      
+      if (debug_this_render) {
+        ABSL_LOG(INFO) << "    Drawing mesh: VAO=" << mesh.vao 
+                       << " indices=" << mesh.index_count;
+      }
+      
+      // Bind VAO and draw
+      glBindVertexArray(mesh.vao);
+      
+      if (debug_this_render) {
+        // Check OpenGL state before draw
+        GLint current_program;
+        glGetIntegerv(GL_CURRENT_PROGRAM, &current_program);
+        GLint viewport[4];
+        glGetIntegerv(GL_VIEWPORT, viewport);
+        GLboolean depth_test = glIsEnabled(GL_DEPTH_TEST);
+        GLboolean blend = glIsEnabled(GL_BLEND);
+        GLint fbo;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
+        
+        ABSL_LOG(INFO) << "    GL State: program=" << current_program 
+                       << " viewport=[" << viewport[0] << "," << viewport[1] << "," 
+                       << viewport[2] << "x" << viewport[3] << "]"
+                       << " depth=" << (depth_test ? "ON" : "OFF")
+                       << " blend=" << (blend ? "ON" : "OFF")
+                       << " FBO=" << fbo;
+      }
+      
+      glDrawElements(GL_TRIANGLES, mesh.index_count, GL_UNSIGNED_INT, nullptr);
+      glBindVertexArray(0);
+      
+      // Check for GL errors
+      GLenum err = glGetError();
+      if (err != GL_NO_ERROR && debug_this_render) {
+        ABSL_LOG(ERROR) << "    OpenGL error after draw: " << err;
+      }
+      
+      triangles_rendered += mesh.index_count / 3;
+    }
+    
     models_rendered++;
-    
-    // Placeholder: In a full implementation, we would:
-    // 1. Get Model data from model_loader_ (VAO, VBO, materials)
-    // 2. Bind VAO: glBindVertexArray(mesh.vao)
-    // 3. Setup shader uniforms (MVP matrix, opacity, lighting)
-    // 4. Bind textures from texture_manager_
-    // 5. Draw: glDrawElements(GL_TRIANGLES, mesh.index_count, GL_UNSIGNED_INT, 0)
-    // 6. Track triangle count
   }
+  
+  debug_render_count++;
 
-  // Unbind FBO (restore default framebuffer)
-  fbo_manager_->UnbindFramebuffer();
+  // PHASE 8 FIX: Don't unbind FBO here - let caller control FBO binding
+  // This allows RenderToTexture() to keep the video texture FBO bound
+  
+  if (debug_this_render) {
+    ABSL_LOG(INFO) << "  📊 Rendered " << models_rendered << " models, " 
+                   << triangles_rendered << " triangles";
+  }
 
   // Update statistics
   last_models_rendered_ = models_rendered;
@@ -745,6 +864,17 @@ absl::StatusOr<cv::Mat> ARRenderer::ReadFramebufferToMat(
 
 // Phase 8 Day 4: Direct GPU-to-GPU rendering
 absl::Status ARRenderer::RenderToTexture(unsigned int texture_id, int width, int height) {
+  static int render_call_count = 0;
+  bool debug_this_call = true;  // FORCE DEBUG - testing viewport fix
+  
+  if (debug_this_call) {
+    ABSL_LOG(INFO) << "🎨 ARRenderer::RenderToTexture call #" << render_call_count
+                   << " - texture_id=" << texture_id 
+                   << " | ACTUAL FRAME: " << width << "x" << height
+                   << " | CONFIG DEFAULT: " << config_.render_width << "x" << config_.render_height
+                   << " | instances=" << model_instances_.size();
+  }
+  
   if (!initialized_) {
     return absl::FailedPreconditionError("ARRenderer not initialized");
   }
@@ -754,6 +884,10 @@ absl::Status ARRenderer::RenderToTexture(unsigned int texture_id, int width, int
   }
   
   if (model_instances_.empty()) {
+    if (debug_this_call) {
+      ABSL_LOG(INFO) << "  No model instances to render";
+    }
+    render_call_count++;
     return absl::OkStatus();  // Nothing to render
   }
   
@@ -791,6 +925,19 @@ absl::Status ARRenderer::RenderToTexture(unsigned int texture_id, int width, int
   // Set viewport to match texture size
   glViewport(0, 0, width, height);
   
+  // 🔧 PHASE 8 FIX: Temporarily update config dimensions to match actual texture size
+  // This ensures projection matrix and coordinates work with ANY webcam resolution
+  int saved_width = config_.render_width;
+  int saved_height = config_.render_height;
+  config_.render_width = width;
+  config_.render_height = height;
+  
+  if (debug_this_call) {
+    ABSL_LOG(INFO) << "  📐 Override: Config " << saved_width << "x" << saved_height 
+                   << " → Frame " << width << "x" << height 
+                   << " (supports ANY resolution!)";
+  }
+  
   // Enable blending for proper alpha compositing
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -799,12 +946,27 @@ absl::Status ARRenderer::RenderToTexture(unsigned int texture_id, int width, int
   // Clear depth buffer but preserve color (video frame)
   glClear(GL_DEPTH_BUFFER_BIT);
   
+  // CRITICAL: Update model transforms from face landmarks before rendering!
+  UpdateInstanceTransformsFromLandmarks();
+  
+  if (debug_this_call) {
+    ABSL_LOG(INFO) << "  Calling RenderModelInstances() with " << model_instances_.size() << " instances";
+  }
+  
   // Render all AR filter model instances
   absl::Status render_status = RenderModelInstances();
+  
+  if (debug_this_call) {
+    ABSL_LOG(INFO) << "  RenderModelInstances() returned: " << render_status.message();
+  }
   
   // Cleanup temp FBO
   glBindFramebuffer(GL_FRAMEBUFFER, prev_fbo);
   glDeleteFramebuffers(1, &temp_fbo);
+  
+  // 🔧 PHASE 8 FIX: Restore original config dimensions
+  config_.render_width = saved_width;
+  config_.render_height = saved_height;
   
   // Restore previous OpenGL state
   glUseProgram(prev_program);
@@ -820,11 +982,31 @@ absl::Status ARRenderer::RenderToTexture(unsigned int texture_id, int width, int
     return absl::InternalError(absl::StrCat("OpenGL error during RenderToTexture: ", gl_error));
   }
   
+  if (debug_this_call) {
+    ABSL_LOG(INFO) << "  ✅ RenderToTexture completed successfully";
+  }
+  
+  render_call_count++;
   return render_status;
 }
 
 void ARRenderer::UpdateInstanceTransformsFromLandmarks() {
+  static int update_call_count = 0;
+  bool debug_this_call = true;  // FORCE DEBUG - testing viewport fix
+  
+  if (debug_this_call) {
+    ABSL_LOG(INFO) << "🔄 UpdateInstanceTransformsFromLandmarks #" << update_call_count
+                   << " - landmarks=" << current_face_landmarks_.size()
+                   << " instances=" << model_instances_.size();
+  }
+  
   if (current_face_landmarks_.empty() || model_instances_.empty()) {
+    if (debug_this_call) {
+      ABSL_LOG(WARNING) << "  ⚠️ Skipping: " 
+                        << (current_face_landmarks_.empty() ? "no landmarks" : "")
+                        << (model_instances_.empty() ? "no instances" : "");
+    }
+    update_call_count++;
     return;
   }
   
@@ -840,12 +1022,74 @@ void ARRenderer::UpdateInstanceTransformsFromLandmarks() {
     );
   }
   
+  if (debug_this_call) {
+    ABSL_LOG(INFO) << "  Parsed " << landmark_points.size() << " landmark points";
+  }
+  
+  // 🔧 FACE SCALE CALCULATION: Calculate face size to scale glasses proportionally
+  // Use distance between eyes as reference (more stable than face width)
+  // Left eye outer corner: landmark 33, Right eye outer corner: landmark 263
+  cv::Point3f left_eye_outer = landmark_points[33];
+  cv::Point3f right_eye_outer = landmark_points[263];
+  
+  // Calculate eye distance in normalized space [0-1]
+  float eye_distance_normalized = cv::norm(left_eye_outer - right_eye_outer);
+  
+  // Average adult eye distance is ~63mm (0.063m), typical on-screen at normal distance is ~0.15-0.25 in normalized space
+  // When face is close: eye_distance > 0.20, when far: eye_distance < 0.10
+  // Base scale of 700 is for reference distance (eye_distance ≈ 0.18)
+  float reference_eye_distance = 0.18f;  // Calibrated reference distance
+  float face_scale_factor = eye_distance_normalized / reference_eye_distance;
+  
+  if (debug_this_call) {
+    ABSL_LOG(INFO) << "  👁️ Eye distance (normalized): " << eye_distance_normalized;
+    ABSL_LOG(INFO) << "  📏 Face scale factor: " << face_scale_factor 
+                   << " (close=" << (face_scale_factor > 1.0f ? "YES" : "NO") << ")";
+  }
+  
+  // 🔧 HEAD ROTATION: Calculate STABLE roll from eye line (ignore noisy MediaPipe quaternion)
+  // MediaPipe's head_pose rotation is too unstable (roll jumps ±40° between frames)
+  // Use simple, stable eye line angle instead
+  cv::Point3f eye_vector = right_eye_outer - left_eye_outer;
+  float roll = atan2(eye_vector.y, eye_vector.x);  // Positive for correct direction (removed negative sign)
+  glm::quat head_rotation = glm::angleAxis(roll, glm::vec3(0.0f, 0.0f, 1.0f));
+  
+  if (debug_this_call) {
+    ABSL_LOG(INFO) << "  🎭 Head rotation (stable eye line): roll=" << (roll * 180.0f / M_PI) << "°";
+  }
+
   // Update each model instance's transform based on its anchor point
   for (auto& [id, instance] : model_instances_) {
     if (!instance.visible) continue;
     
-    // Get anchor position from landmarks
+    // Get anchor position from landmarks (normalized [0-1] space)
     cv::Point3f anchor_pos = GetAnchorPosition(landmark_points, instance.attachment_anchor);
+    
+    // 🔧 PHASE 8 FIX: Convert normalized coordinates to pixel coordinates
+    // MediaPipe landmarks are in [0-1] space, but our projection matrix expects pixel coordinates
+    anchor_pos.x *= config_.render_width;   // e.g., 0.46 → 588 pixels
+    anchor_pos.y *= config_.render_height;  // e.g., 0.53 → 381 pixels
+    
+    // 🔧 Adjust upward on nose - SCALE WITH FACE SIZE!
+    // When face is close (scale_factor=1.5): offset = -30 * 1.5 = -45px
+    // When face is far (scale_factor=0.5): offset = -30 * 0.5 = -15px
+    // This keeps glasses at same relative position on nose regardless of distance
+    float scaled_y_offset = -30.0f * face_scale_factor;
+    anchor_pos.y += scaled_y_offset;
+    
+    // z coordinate stays as-is (depth in world space)
+    
+    if (debug_this_call) {
+      ABSL_LOG(INFO) << "  🎯 Instance '" << id << "'";
+      ABSL_LOG(INFO) << "    Position (pixel space): (" << anchor_pos.x << ", " << anchor_pos.y << ", " << anchor_pos.z << ")";
+      ABSL_LOG(INFO) << "    Instance scale: (" << instance.scale_factor.x << ", " 
+                     << instance.scale_factor.y << ", " << instance.scale_factor.z << ")";
+    }
+    
+    if (debug_this_call) {
+      ABSL_LOG(INFO) << "  Instance '" << id << "' anchor=" << instance.attachment_anchor
+                     << " pos=(" << anchor_pos.x << "," << anchor_pos.y << "," << anchor_pos.z << ")";
+    }
     
     // Build transform matrix: Translation * Rotation * Scale
     glm::mat4 translation = glm::translate(glm::mat4(1.0f), 
@@ -854,14 +1098,33 @@ void ARRenderer::UpdateInstanceTransformsFromLandmarks() {
     // Apply any user-defined offset
     translation = glm::translate(translation, instance.position_offset);
     
-    // Apply rotation (from instance or head pose)
-    glm::mat4 rotation = glm::mat4_cast(instance.rotation_quat);
+    // Apply rotation: Use stable eye-line roll (not noisy MediaPipe quaternion)
+    glm::mat4 rotation = glm::mat4_cast(head_rotation * instance.rotation_quat);
     
-    // Apply scale
-    glm::mat4 scale = glm::scale(glm::mat4(1.0f), instance.scale_factor);
+    // 🔧 SCALE FIX: Model is in meters (0.11m = 11cm), need massive scale boost
+    // Base scale of 1300x, multiplied by face_scale_factor for distance compensation
+    // When close (face_scale > 1): glasses get bigger
+    // When far (face_scale < 1): glasses get smaller
+    glm::vec3 boosted_scale = instance.scale_factor * 1300.0f * face_scale_factor;
+    
+    if (debug_this_call) {
+      ABSL_LOG(INFO) << "  Scale: base=1300x, face_factor=" << face_scale_factor 
+                     << " → final=(" << boosted_scale.x << ", " 
+                     << boosted_scale.y << ", " << boosted_scale.z << ")";
+    }
+    
+    // Apply scale (using the boosted temporary value, NOT modifying instance.scale_factor)
+    glm::mat4 scale = glm::scale(glm::mat4(1.0f), boosted_scale);
     
     // Combine: T * R * S
     glm::mat4 new_transform = translation * rotation * scale;
+    
+    if (debug_this_call) {
+      ABSL_LOG(INFO) << "  Transform matrix [0,0]=" << new_transform[0][0] 
+                     << " [3,0]=" << new_transform[3][0]
+                     << " [3,1]=" << new_transform[3][1]
+                     << " [3,2]=" << new_transform[3][2];
+    }
     
     // Smooth transform to reduce jitter (exponential moving average)
     float smoothing = 0.3f;  // Lower = smoother but more lag
@@ -877,6 +1140,8 @@ void ARRenderer::UpdateInstanceTransformsFromLandmarks() {
     }
     instance.last_transform = new_transform;
   }
+  
+  update_call_count++;
 }
 
 void ARRenderer::CalculateModelTransform(const ModelInstance& instance,

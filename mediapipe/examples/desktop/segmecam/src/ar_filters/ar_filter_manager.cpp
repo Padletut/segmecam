@@ -5,6 +5,7 @@
 #include "mediapipe/examples/desktop/segmecam/include/ar_filters/ar_filter_manager.h"
 #include "mediapipe/examples/desktop/segmecam/include/ar_filters/filter_asset.h"
 #include "mediapipe/examples/desktop/segmecam/include/ar_filters/ar_renderer.h"
+#include "mediapipe/examples/desktop/segmecam/include/ar_filters/transform_calculator.h"
 
 #include <filesystem>
 #include <chrono>
@@ -57,6 +58,22 @@ absl::Status ARFilterManager::Initialize(const ARFilterManagerConfig& config) {
   state_.initialized = true;
   LOG(INFO) << "ARFilterManager initialized with " << state_.available_filters.size() 
             << " filters";
+  
+  // 🔧 DEBUG: Auto-load Simple Glasses for faster testing
+  if (!state_.available_filters.empty()) {
+    // Try to load "Simple Glasses" by default
+    for (const auto& filter : state_.available_filters) {
+      if (filter.name == "Simple Glasses" || filter.id == "simple_glasses") {
+        auto load_status = LoadFilter(filter.id);
+        if (load_status.ok()) {
+          LOG(INFO) << "🕶️ AUTO-LOADED Simple Glasses for debugging";
+        } else {
+          LOG(WARNING) << "Failed to auto-load Simple Glasses: " << load_status.message();
+        }
+        break;
+      }
+    }
+  }
   
   return absl::OkStatus();
 }
@@ -228,6 +245,7 @@ std::string ARFilterManager::GetActiveFilterId() const {
 
 // Main update and render
 void ARFilterManager::Update(const std::vector<mediapipe::NormalizedLandmark>& face_landmarks,
+                              const HeadPose& head_pose,
                               int frame_width, int frame_height) {
   if (!state_.initialized || !HasActiveFilter()) {
     return;
@@ -247,6 +265,15 @@ void ARFilterManager::Update(const std::vector<mediapipe::NormalizedLandmark>& f
   if (!status.ok()) {
     LOG(WARNING) << "Failed to update face landmarks: " << status.message();
   }
+  
+  // 🔧 UPDATE: Pass head pose rotation to renderer
+  // Convert OpenCV quaternion (w,x,y,z) to GLM quaternion (w,x,y,z)
+  ar_renderer_->SetHeadPoseRotation(
+      glm::quat(head_pose.rotation_quat[0],  // w
+                head_pose.rotation_quat[1],  // x
+                head_pose.rotation_quat[2],  // y
+                head_pose.rotation_quat[3])  // z
+  );
 
   // Apply behaviors if enabled
   if (config_.enable_behaviors) {

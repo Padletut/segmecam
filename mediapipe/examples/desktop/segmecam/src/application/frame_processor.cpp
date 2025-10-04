@@ -510,6 +510,7 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
             
             params.managers.ar_filter_manager->Update(
                 landmarks_vec,
+                params.app_state.head_pose,  // Pass head pose from MediaPipe
                 frame_bgr.cols,
                 frame_bgr.rows
             );
@@ -566,7 +567,9 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
     }
     
     // Render AR filter primitives (Phase 2 Step 5)
-    if (params.app_state.ar_filters_enabled && params.app_state.transform_data_available) {
+    // 🚨 DISABLED when Phase 8 GPU rendering is active (conflicts with GPU-to-GPU pipeline)
+    // Phase 3 draws 2D circles on CPU which overwrites the GPU-rendered glasses
+    if (false && params.app_state.ar_filters_enabled && params.app_state.transform_data_available) {
         cv::Mat display_bgr;
         cv::cvtColor(display_rgb, display_bgr, cv::COLOR_RGB2BGR);
         
@@ -609,6 +612,13 @@ bool FrameProcessor::ProcessFrameUIAndRender(FrameProcessingParams& params, cons
             // Get the video texture ID from UI manager
             unsigned int video_texture_id = params.ui_manager.GetTexture();
             
+            static int debug_render_count = 0;
+            if (debug_render_count < 3 || debug_render_count % 60 == 0) {
+                ABSL_LOG(INFO) << "🎨 AR Render attempt #" << debug_render_count 
+                               << " - texture_id=" << video_texture_id
+                               << " size=" << display_rgb.cols << "x" << display_rgb.rows;
+            }
+            
             if (video_texture_id != 0) {
                 // Render AR filters directly onto the video texture
                 auto render_status = params.managers.ar_filter_manager->RenderToTexture(
@@ -620,13 +630,24 @@ bool FrameProcessor::ProcessFrameUIAndRender(FrameProcessingParams& params, cons
                 if (!render_status.ok()) {
                     ABSL_LOG(WARNING) << "AR filter GPU rendering failed: " 
                                       << render_status.message();
+                } else if (debug_render_count < 3) {
+                    ABSL_LOG(INFO) << "✅ AR render successful!";
+                }
+            } else {
+                if (debug_render_count < 3) {
+                    ABSL_LOG(WARNING) << "❌ Video texture ID is 0, cannot render AR filters";
                 }
             }
+            debug_render_count++;
         }
     }
 
     // Render complete frame
-    RenderUtils::RenderFrame(params.ui_manager, display_rgb, params.window, params.frame_count, params.running);
+    // Skip texture upload if AR filters were rendered (already on GPU texture)
+    bool ar_was_rendered = params.managers.ar_filter_manager && 
+                           params.app_state.ar_filters_enabled && 
+                           params.managers.ar_filter_manager->HasActiveFilter();
+    RenderUtils::RenderFrame(params.ui_manager, display_rgb, params.window, params.frame_count, params.running, ar_was_rendered);
 
     return true;
 }

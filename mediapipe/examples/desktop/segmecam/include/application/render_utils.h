@@ -59,7 +59,8 @@ public:
                            const cv::Mat& display_rgb,
                            SDL_Window* window,
                            int frame_count,
-                           bool& running);
+                           bool& running,
+                           bool skip_texture_upload = false);
 };
 
 } // namespace segmecam

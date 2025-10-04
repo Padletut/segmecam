@@ -46,11 +46,11 @@ struct AppState {
   
   // Attachment controller (AR filter management) - Phase 2 Step 5
   AttachmentController attachment_controller; // Manages filter-to-anchor bindings
-  bool ar_filters_enabled = false; // Global enable/disable for AR filters
+  bool ar_filters_enabled = true; // Global enable/disable for AR filters (AUTO-ENABLED for debugging)
   
   // Phase 3 Step 8: 3D OpenGL rendering for MODEL_3D filters
   bool ar_render_3d_models = true;          // Use OpenGL 3D rendering (true) or 2D circles (false)
-  bool ar_3d_rendering_available = false;   // Set to true after RenderManager::Initialize3DRendering() succeeds
+  bool ar_3d_rendering_available = true;   // Set to true after RenderManager::Initialize3DRendering() succeeds
   
   // Filter test demo (Phase 2 Step 5.5) - Creates 7 test filters for validation
   FilterTestDemo filter_test_demo;
