@@ -294,9 +294,22 @@ cv::Mat ARFilterManager::Render(const cv::Mat& input_frame) {
   state_.performance_stats.triangles_per_frame = result.triangles_rendered;
 
   // Phase 8 Day 3: GPU texture readback implementation
+  // TODO: This synchronous readback is causing UI freezes - need async solution
+  // For now, return input frame to keep app responsive
+  ABSL_LOG(WARNING) << "GPU readback disabled temporarily - returning input frame";
+  return input_frame.clone();
+  
+  /* DISABLED - CAUSES UI FREEZE
+  // Get the actual FBO dimensions (may differ from input frame size)
+  int fbo_x = 0, fbo_y = 0, fbo_width = 0, fbo_height = 0;
+  ar_renderer_->GetViewport(&fbo_x, &fbo_y, &fbo_width, &fbo_height);
+  
+  ABSL_LOG(INFO) << "Reading FBO: " << fbo_width << "x" << fbo_height 
+                 << " (input frame: " << input_frame.cols << "x" << input_frame.rows << ")";
+  
   // Read the rendered FBO texture back to CPU as cv::Mat
   auto readback_result = ar_renderer_->ReadFramebufferToMat(
-      "render_target", input_frame.cols, input_frame.rows);
+      "render_target", fbo_width, fbo_height);
   
   if (!readback_result.ok()) {
     LOG(WARNING) << "GPU texture readback failed: " << readback_result.status().message();
@@ -305,6 +318,48 @@ cv::Mat ARFilterManager::Render(const cv::Mat& input_frame) {
   
   // Return the composited frame with AR filters rendered
   return readback_result.value();
+  */
+}
+
+// Phase 8 Day 4: Direct GPU-to-GPU rendering (no CPU readback)
+absl::Status ARFilterManager::RenderToTexture(unsigned int video_texture_id, int width, int height) {
+  if (!state_.initialized) {
+    return absl::FailedPreconditionError("ARFilterManager not initialized");
+  }
+  
+  if (state_.active_filter_id.empty()) {
+    return absl::OkStatus();  // No active filter, nothing to render
+  }
+  
+  if (!ar_renderer_) {
+    return absl::InternalError("ARRenderer not available");
+  }
+  
+  auto start_time = std::chrono::high_resolution_clock::now();
+  
+  // Render AR filters directly onto the video texture (GPU-to-GPU, no CPU copy)
+  absl::Status render_status = ar_renderer_->RenderToTexture(video_texture_id, width, height);
+  
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+  
+  // Update performance stats
+  state_.performance_stats.render_time_ms = duration_us.count() / 1000.0f;
+  state_.frame_count++;
+  
+  // Calculate FPS every 30 frames
+  if (state_.frame_count % 30 == 0) {
+    uint64_t current_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    
+    if (state_.last_update_time_us > 0) {
+      uint64_t elapsed_us = current_time_us - state_.last_update_time_us;
+      state_.performance_stats.average_fps = 30.0f / (elapsed_us / 1000000.0f);
+    }
+    state_.last_update_time_us = current_time_us;
+  }
+  
+  return render_status;
 }
 
 // Performance monitoring

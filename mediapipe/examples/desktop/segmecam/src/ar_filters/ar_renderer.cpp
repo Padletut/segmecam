@@ -12,6 +12,7 @@
 #include "absl/log/absl_log.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -662,6 +663,8 @@ absl::Status ARRenderer::CompositeWithBackground(const uint8_t* background_frame
 absl::StatusOr<cv::Mat> ARRenderer::ReadFramebufferToMat(
     const std::string& fbo_name, int width, int height) const {
   
+  ABSL_LOG(INFO) << "ReadFramebufferToMat: " << fbo_name << " (" << width << "x" << height << ")";
+  
   if (!fbo_manager_) {
     return absl::FailedPreconditionError("FBO manager not initialized");
   }
@@ -671,6 +674,8 @@ absl::StatusOr<cv::Mat> ARRenderer::ReadFramebufferToMat(
   if (!source_fbo.IsValid()) {
     return absl::NotFoundError("Source FBO not found: " + fbo_name);
   }
+  
+  ABSL_LOG(INFO) << "  Source FBO is multisampled: " << source_fbo.is_multisampled;
   
   std::string read_fbo_name = fbo_name;
   
@@ -701,9 +706,11 @@ absl::StatusOr<cv::Mat> ARRenderer::ReadFramebufferToMat(
     read_fbo_name = resolve_name;
   }
   
+  ABSL_LOG(INFO) << "  Allocating pixel buffer: " << (width * height * 4 / 1024 / 1024) << " MB";
   // Allocate buffer for pixel data (RGBA format)
   std::vector<uint8_t> pixel_buffer(width * height * 4);
   
+  ABSL_LOG(INFO) << "  Reading pixels from FBO: " << read_fbo_name;
   // Read pixels from FBO using FBOManager
   auto read_status = fbo_manager_->ReadPixels(
       read_fbo_name, 
@@ -716,20 +723,104 @@ absl::StatusOr<cv::Mat> ARRenderer::ReadFramebufferToMat(
     return read_status;
   }
   
+  ABSL_LOG(INFO) << "  Creating cv::Mat from pixel buffer";
   // Create cv::Mat from pixel buffer
   // OpenGL reads bottom-to-top, so we need to flip vertically
   cv::Mat rgba_image(height, width, CV_8UC4, pixel_buffer.data());
   
+  ABSL_LOG(INFO) << "  Flipping image vertically";
   // Flip vertically (OpenGL Y-axis is inverted relative to OpenCV)
   cv::Mat rgba_flipped;
   cv::flip(rgba_image, rgba_flipped, 0);  // 0 = flip around x-axis (vertical flip)
   
+  ABSL_LOG(INFO) << "  Converting RGBA to BGR";
   // Convert RGBA to BGR (OpenCV standard format)
   cv::Mat bgr_image;
   cv::cvtColor(rgba_flipped, bgr_image, cv::COLOR_RGBA2BGR);
   
+  ABSL_LOG(INFO) << "  Returning cloned BGR image";
   // Return a deep copy since pixel_buffer is temporary
   return bgr_image.clone();
+}
+
+// Phase 8 Day 4: Direct GPU-to-GPU rendering
+absl::Status ARRenderer::RenderToTexture(unsigned int texture_id, int width, int height) {
+  if (!initialized_) {
+    return absl::FailedPreconditionError("ARRenderer not initialized");
+  }
+  
+  if (texture_id == 0) {
+    return absl::InvalidArgumentError("Invalid texture ID (0)");
+  }
+  
+  if (model_instances_.empty()) {
+    return absl::OkStatus();  // Nothing to render
+  }
+  
+  // Save current OpenGL state to restore later (prevent corruption)
+  GLint prev_fbo = 0, prev_program = 0, prev_texture = 0;
+  GLint prev_viewport[4] = {0};
+  GLboolean prev_blend = GL_FALSE, prev_depth_test = GL_FALSE;
+  GLint prev_blend_src = 0, prev_blend_dst = 0;
+  
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prev_fbo);
+  glGetIntegerv(GL_CURRENT_PROGRAM, &prev_program);
+  glGetIntegerv(GL_TEXTURE_BINDING_2D, &prev_texture);
+  glGetIntegerv(GL_VIEWPORT, prev_viewport);
+  prev_blend = glIsEnabled(GL_BLEND);
+  prev_depth_test = glIsEnabled(GL_DEPTH_TEST);
+  glGetIntegerv(GL_BLEND_SRC_ALPHA, &prev_blend_src);
+  glGetIntegerv(GL_BLEND_DST_ALPHA, &prev_blend_dst);
+  
+  // Create a temporary FBO to attach the video texture
+  GLuint temp_fbo = 0;
+  glGenFramebuffers(1, &temp_fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, temp_fbo);
+  
+  // Attach the video texture as color attachment
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture_id, 0);
+  
+  // Verify FBO is complete
+  GLenum fbo_status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+  if (fbo_status != GL_FRAMEBUFFER_COMPLETE) {
+    glBindFramebuffer(GL_FRAMEBUFFER, prev_fbo);
+    glDeleteFramebuffers(1, &temp_fbo);
+    return absl::InternalError(absl::StrCat("FBO incomplete: ", fbo_status));
+  }
+  
+  // Set viewport to match texture size
+  glViewport(0, 0, width, height);
+  
+  // Enable blending for proper alpha compositing
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glEnable(GL_DEPTH_TEST);
+  
+  // Clear depth buffer but preserve color (video frame)
+  glClear(GL_DEPTH_BUFFER_BIT);
+  
+  // Render all AR filter model instances
+  absl::Status render_status = RenderModelInstances();
+  
+  // Cleanup temp FBO
+  glBindFramebuffer(GL_FRAMEBUFFER, prev_fbo);
+  glDeleteFramebuffers(1, &temp_fbo);
+  
+  // Restore previous OpenGL state
+  glUseProgram(prev_program);
+  glBindTexture(GL_TEXTURE_2D, prev_texture);
+  glViewport(prev_viewport[0], prev_viewport[1], prev_viewport[2], prev_viewport[3]);
+  if (prev_blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+  if (prev_depth_test) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+  glBlendFunc(prev_blend_src, prev_blend_dst);
+  
+  // Check for GL errors
+  GLenum gl_error = glGetError();
+  if (gl_error != GL_NO_ERROR) {
+    return absl::InternalError(absl::StrCat("OpenGL error during RenderToTexture: ", gl_error));
+  }
+  
+  return render_status;
 }
 
 void ARRenderer::UpdateInstanceTransformsFromLandmarks() {

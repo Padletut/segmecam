@@ -188,9 +188,13 @@ public:
   void SetViewport(int x, int y, int width, int height);
   void GetViewport(int* x, int* y, int* width, int* height) const;
   
-  // GPU texture readback - Phase 8 Day 3
+  // GPU texture readback - Phase 8 Day 3 (deprecated - causes 40ms freeze)
   absl::StatusOr<cv::Mat> ReadFramebufferToMat(const std::string& fbo_name,
                                                  int width, int height) const;
+  
+  // GPU-to-GPU direct rendering - Phase 8 Day 4
+  // Render AR filters directly onto an existing OpenGL texture (no CPU readback)
+  absl::Status RenderToTexture(unsigned int texture_id, int width, int height);
 
 private:
   // Internal rendering methods

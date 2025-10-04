@@ -87,7 +87,10 @@ public:
   // Main update and render
   void Update(const std::vector<mediapipe::NormalizedLandmark>& face_landmarks,
               int frame_width, int frame_height);
-  cv::Mat Render(const cv::Mat& input_frame);
+  cv::Mat Render(const cv::Mat& input_frame);  // DEPRECATED Phase 8 Day 3 - causes 40ms freeze
+  
+  // Phase 8 Day 4: Direct GPU-to-GPU rendering (no CPU readback)
+  absl::Status RenderToTexture(unsigned int video_texture_id, int width, int height);
 
   // Behavior control
   void SetBehaviorsEnabled(bool enabled);

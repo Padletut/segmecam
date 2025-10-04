@@ -203,6 +203,7 @@ absl::Status FBOManager::BlitFramebuffer(const std::string& source_name,
   // Get destination FBO (empty name means default framebuffer)
   GLuint dest_fbo_id = 0;
   int dest_width = 0, dest_height = 0;
+  bool dest_is_multisampled = false;
   
   if (!dest_name.empty()) {
     FBO dest_fbo = GetFBO(dest_name);
@@ -212,6 +213,7 @@ absl::Status FBOManager::BlitFramebuffer(const std::string& source_name,
     dest_fbo_id = dest_fbo.framebuffer_id;
     dest_width = dest_fbo.width;
     dest_height = dest_fbo.height;
+    dest_is_multisampled = dest_fbo.is_multisampled;
   } else {
     // Default framebuffer - get current viewport
     GLint viewport[4];
@@ -220,9 +222,66 @@ absl::Status FBOManager::BlitFramebuffer(const std::string& source_name,
     dest_height = viewport[3];
   }
   
+  // Validate MSAA resolve constraints
+  if (source_fbo.is_multisampled && !dest_is_multisampled) {
+    // When resolving MSAA, dimensions must match exactly
+    if (source_fbo.width != dest_width || source_fbo.height != dest_height) {
+      return absl::InvalidArgumentError(
+          "MSAA resolve requires matching dimensions: source=" + 
+          std::to_string(source_fbo.width) + "x" + std::to_string(source_fbo.height) +
+          " dest=" + std::to_string(dest_width) + "x" + std::to_string(dest_height));
+    }
+    // Cannot copy depth buffer when resolving MSAA
+    if (copy_depth) {
+      return absl::InvalidArgumentError(
+          "Cannot copy depth buffer when resolving MSAA FBO");
+    }
+  }
+  
+  // Clear any previous OpenGL errors (with safety limit to prevent infinite loops)
+  int error_clear_count = 0;
+  const int MAX_ERROR_CLEAR = 100;
+  while (glGetError() != GL_NO_ERROR && error_clear_count++ < MAX_ERROR_CLEAR) {}
+  
+  if (error_clear_count >= MAX_ERROR_CLEAR) {
+    ABSL_LOG(WARNING) << "Too many pending GL errors, may indicate GL state corruption";
+  }
+  
+  ABSL_LOG(INFO) << "BlitFramebuffer: " << source_name << " (" << source_fbo.width << "x" << source_fbo.height 
+                 << ", MSAA=" << source_fbo.is_multisampled << ") -> " << dest_name 
+                 << " (" << dest_width << "x" << dest_height << ")";
+  
+  // Unbind any active shader program (can interfere with blits)
+  glUseProgram(0);
+  ABSL_LOG(INFO) << "  Unbound shader programs";
+  
   // Bind source and destination framebuffers
   glBindFramebuffer(GL_READ_FRAMEBUFFER, source_fbo.framebuffer_id);
+  GLenum error1 = glGetError();
+  if (error1 != GL_NO_ERROR) {
+    return absl::InternalError("Error binding read framebuffer: " + std::to_string(error1));
+  }
+  ABSL_LOG(INFO) << "  Bound read framebuffer: " << source_fbo.framebuffer_id;
+  
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dest_fbo_id);
+  GLenum error2 = glGetError();
+  if (error2 != GL_NO_ERROR) {
+    return absl::InternalError("Error binding draw framebuffer: " + std::to_string(error2));
+  }
+  ABSL_LOG(INFO) << "  Bound draw framebuffer: " << dest_fbo_id;
+  
+  // Verify framebuffer completeness
+  GLenum read_status = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
+  if (read_status != GL_FRAMEBUFFER_COMPLETE) {
+    return absl::InternalError("Read framebuffer incomplete: " + std::to_string(read_status));
+  }
+  ABSL_LOG(INFO) << "  Read framebuffer complete";
+  
+  GLenum draw_status = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+  if (draw_status != GL_FRAMEBUFFER_COMPLETE) {
+    return absl::InternalError("Draw framebuffer incomplete: " + std::to_string(draw_status));
+  }
+  ABSL_LOG(INFO) << "  Draw framebuffer complete";
   
   // Determine what to blit
   GLbitfield blit_mask = 0;
@@ -232,12 +291,16 @@ absl::Status FBOManager::BlitFramebuffer(const std::string& source_name,
   // Determine filter mode
   // When resolving multisampled FBOs, GL_NEAREST must be used (GL spec requirement)
   // GL_LINEAR is only valid when both FBOs have the same sample count
-  GLenum filter = (source_fbo.is_multisampled) ? GL_NEAREST : GL_LINEAR;
+  GLenum filter = (source_fbo.is_multisampled && !dest_is_multisampled) ? GL_NEAREST : GL_LINEAR;
+  
+  ABSL_LOG(INFO) << "  Calling glBlitFramebuffer with filter=" << (filter == GL_NEAREST ? "GL_NEAREST" : "GL_LINEAR");
   
   // Perform the blit
   glBlitFramebuffer(0, 0, source_fbo.width, source_fbo.height,
                    0, 0, dest_width, dest_height,
                    blit_mask, filter);
+  
+  ABSL_LOG(INFO) << "  glBlitFramebuffer completed, checking errors...";
   
   // Check for OpenGL errors
   GLenum error = glGetError();
@@ -245,12 +308,16 @@ absl::Status FBOManager::BlitFramebuffer(const std::string& source_name,
     return absl::InternalError("OpenGL error during framebuffer blit: " + std::to_string(error));
   }
   
+  ABSL_LOG(INFO) << "  Blit successful!";
+  
   return absl::OkStatus();
 }
 
 absl::Status FBOManager::ReadPixels(const std::string& name, 
                                    int x, int y, int width, int height,
                                    void* pixel_buffer, size_t buffer_size) const {
+  ABSL_LOG(INFO) << "ReadPixels: " << name << " region=(" << x << "," << y << "," << width << "x" << height << ") buffer_size=" << buffer_size;
+  
   FBO fbo = GetFBO(name);
   if (!fbo.IsValid()) {
     return absl::NotFoundError("FBO not found: " + name);
@@ -268,11 +335,14 @@ absl::Status FBOManager::ReadPixels(const std::string& name,
     return absl::InvalidArgumentError("Buffer too small for pixel data");
   }
   
+  ABSL_LOG(INFO) << "  Binding FBO " << fbo.framebuffer_id << " for reading...";
   // Bind FBO for reading
   glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo.framebuffer_id);
   
+  ABSL_LOG(INFO) << "  Calling glReadPixels (" << (required_size / 1024 / 1024) << " MB)...";
   // Read pixels
   glReadPixels(x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixel_buffer);
+  ABSL_LOG(INFO) << "  glReadPixels completed";
   
   // Check for OpenGL errors
   GLenum error = glGetError();

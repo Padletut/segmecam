@@ -110,6 +110,12 @@ public:
     void UploadTexture(const cv::Mat& rgb_image);
 
     /**
+     * Get the current video texture ID for direct GPU rendering
+     * @return OpenGL texture ID, or 0 if no texture exists
+     */
+    unsigned int GetVideoTextureId() const { return state_.current_texture; }
+
+    /**
      * Render background image/texture behind UI elements
      * @param show_preview Whether to show the camera preview
      */

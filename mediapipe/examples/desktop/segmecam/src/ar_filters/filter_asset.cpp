@@ -115,23 +115,9 @@ std::vector<std::string> FilterAsset::EnumerateFilters(
 absl::Status FilterAsset::ValidateAssets() const {
   std::vector<std::string> missing_files;
   
-  // Check thumbnail
-  if (!metadata_.thumbnail_path.empty()) {
-    std::string path = GetAssetPath(metadata_.thumbnail_path);
-    if (!fs::exists(path)) {
-      missing_files.push_back(path);
-    }
-  }
+  // Note: Thumbnail and icon are optional UI assets - not validated
   
-  // Check icon
-  if (!metadata_.icon_path.empty()) {
-    std::string path = GetAssetPath(metadata_.icon_path);
-    if (!fs::exists(path)) {
-      missing_files.push_back(path);
-    }
-  }
-  
-  // Check attachment assets
+  // Check attachment assets (required)
   for (const auto& attachment : attachments_) {
     // Check model file
     std::string model_path = GetAssetPath(attachment.model_path);

@@ -497,7 +497,8 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
     display_rgb = ProcessAndDisplayFrame(frame_bgr, output_data.last_mask_u8, landmarks_ptr,
                                         *params.managers.effects, params.app_state, output_data.have_lms);
 
-    // Phase 8: Update and render AR filters (after effects, before overlays)
+    // Phase 8 Day 4: Update and render AR filters directly to GPU texture
+    // Uses new RenderToTexture() method - no CPU readback, no freeze!
     if (params.managers.ar_filter_manager && params.app_state.ar_filters_enabled) {
         // Update AR filter transforms based on face landmarks
         if (output_data.have_lms && params.managers.ar_filter_manager->HasActiveFilter()) {
@@ -512,15 +513,9 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
                 frame_bgr.cols,
                 frame_bgr.rows
             );
-        }
-        
-        // Phase 8 Day 3: Render AR filter effects onto frame (GPU texture readback now implemented!)
-        if (params.managers.ar_filter_manager->HasActiveFilter()) {
-            cv::Mat display_bgr;
-            cv::cvtColor(display_rgb, display_bgr, cv::COLOR_RGB2BGR);
             
-            display_bgr = params.managers.ar_filter_manager->Render(display_bgr);
-            cv::cvtColor(display_bgr, display_rgb, cv::COLOR_BGR2RGB);
+            // Note: AR rendering will be done directly on GPU texture after upload
+            // See below where we call RenderToTexture() after texture upload
         }
     }
 
@@ -605,6 +600,29 @@ bool FrameProcessor::ProcessFrameUIAndRender(FrameProcessingParams& params, cons
     // Update UI texture with processed video frame
     if (!display_rgb.empty()) {
         params.ui_manager.UploadTexture(display_rgb);
+        
+        // Phase 8 Day 4: Render AR filters directly to GPU texture (GPU-to-GPU, no CPU copy)
+        if (params.managers.ar_filter_manager && 
+            params.app_state.ar_filters_enabled && 
+            params.managers.ar_filter_manager->HasActiveFilter()) {
+            
+            // Get the video texture ID from UI manager
+            unsigned int video_texture_id = params.ui_manager.GetTexture();
+            
+            if (video_texture_id != 0) {
+                // Render AR filters directly onto the video texture
+                auto render_status = params.managers.ar_filter_manager->RenderToTexture(
+                    video_texture_id, 
+                    display_rgb.cols, 
+                    display_rgb.rows
+                );
+                
+                if (!render_status.ok()) {
+                    ABSL_LOG(WARNING) << "AR filter GPU rendering failed: " 
+                                      << render_status.message();
+                }
+            }
+        }
     }
 
     // Render complete frame
