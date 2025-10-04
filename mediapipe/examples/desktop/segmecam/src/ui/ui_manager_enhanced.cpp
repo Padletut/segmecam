@@ -1,5 +1,6 @@
 #include "include/ui/ui_manager_enhanced.h"
 #include "include/ui/ui_panels.h"
+#include "include/ui/ar_filter_panel.h"  // Phase 9
 #include "include/application/app_state.h"
 #include "include/camera/camera_manager.h"
 #include "src/config/config_manager.h"
@@ -143,6 +144,13 @@ void UIManager::InitializePanels(AppState& state,
     
     RegisterPanel(std::make_unique<BackgroundPanel>(state));
     RegisterPanel(std::make_unique<BeautyPanel>(state, effects_mgr));
+    
+    // AR Filter Panel (Phase 9)
+    if (ar_filter_mgr) {
+        auto ar_filter_panel = std::make_unique<ARFilterPanel>(state, *ar_filter_mgr);
+        ar_filter_panel->Initialize();
+        RegisterPanel(std::move(ar_filter_panel));
+    }
     
     // Debug and Status panels (Phase 8 Day 2: Pass ar_filter_mgr to DebugPanel)
     auto debug_panel = std::make_unique<DebugPanel>(state);

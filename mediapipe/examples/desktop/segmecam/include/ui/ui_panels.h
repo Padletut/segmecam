@@ -15,6 +15,7 @@ namespace segmecam {
 // Forward declarations
 class EffectsManager;
 class ProfileManager;
+class ARFilterPanel;  // Phase 9
 
 } // namespace segmecam
 

@@ -567,10 +567,11 @@ absl::Status ARRenderer::RenderModelInstances() {
   
   // Setup projection matrix (orthographic for 2D overlay on video)
   // Map [0, width] x [0, height] to normalized device coordinates [-1, 1]
+  // Extended far plane to -1000 to accommodate head_crown anchor (back of head)
   glm::mat4 projection = glm::ortho(
       0.0f, static_cast<float>(config_.render_width),
       0.0f, static_cast<float>(config_.render_height),
-      -100.0f, 100.0f  // Near and far planes
+      -1000.0f, 1000.0f  // Near and far planes (extended for head-mounted filters)
   );
 
   // Track rendering statistics
@@ -1095,17 +1096,19 @@ void ARRenderer::UpdateInstanceTransformsFromLandmarks() {
     glm::mat4 translation = glm::translate(glm::mat4(1.0f), 
         glm::vec3(anchor_pos.x, anchor_pos.y, anchor_pos.z));
     
-    // Apply any user-defined offset
-    translation = glm::translate(translation, instance.position_offset);
-    
-    // Apply rotation: Use stable eye-line roll (not noisy MediaPipe quaternion)
-    glm::mat4 rotation = glm::mat4_cast(head_rotation * instance.rotation_quat);
-    
     // 🔧 SCALE FIX: Model is in meters (0.11m = 11cm), need massive scale boost
     // Base scale of 1300x, multiplied by face_scale_factor for distance compensation
     // When close (face_scale > 1): glasses get bigger
     // When far (face_scale < 1): glasses get smaller
     glm::vec3 boosted_scale = instance.scale_factor * 1300.0f * face_scale_factor;
+    
+    // Apply user-defined offset - MUST be scaled to match model scaling!
+    // Otherwise offset stays in tiny model space while model is huge in pixel space
+    glm::vec3 scaled_offset = instance.position_offset * 1300.0f * face_scale_factor;
+    translation = glm::translate(translation, scaled_offset);
+    
+    // Apply rotation: Use stable eye-line roll (not noisy MediaPipe quaternion)
+    glm::mat4 rotation = glm::mat4_cast(head_rotation * instance.rotation_quat);
     
     if (debug_this_call) {
       ABSL_LOG(INFO) << "  Scale: base=1300x, face_factor=" << face_scale_factor 
@@ -1187,6 +1190,24 @@ cv::Point3f ARRenderer::GetAnchorPosition(
   else if (anchor_name == "forehead" || anchor_name == "top_head") {
     // Forehead center (landmark 10)
     return landmarks[10];
+  }
+  else if (anchor_name == "head_crown") {
+    // 🎩 HEAD CROWN: Top of head for hats/beanies
+    // MediaPipe only tracks FRONT of face, so we position slightly above and behind forehead
+    cv::Point3f forehead = landmarks[10];
+    cv::Point3f chin = landmarks[152];
+    
+    // Calculate face height to determine how far to move up
+    float face_height_norm = std::abs(forehead.y - chin.y);
+    
+    // Position at top of head: move UP from forehead
+    // In MediaPipe: Y=0 is top, Y=1 is bottom, so SUBTRACT to move up
+    cv::Point3f head_crown;
+    head_crown.x = forehead.x;  // Center horizontally
+    head_crown.y = forehead.y - face_height_norm * 0.25f;  // Move up 25% of face height
+    head_crown.z = forehead.z - 0.05f;  // Move slightly back (5% in normalized space)
+    
+    return head_crown;
   }
   else if (anchor_name == "chin") {
     // Chin (landmark 152)

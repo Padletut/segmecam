@@ -538,6 +538,7 @@ cc_library( # type: ignore
         "src/ui/pipewire_output_panel.cpp",
         "src/ui/camera_controls_panel.cpp",
         "src/ui/profile_debug_panels.cpp",
+        "src/ui/ar_filter_panel.cpp",  # Phase 9
     ],
     hdrs = [
         "include/ui/ui_panels.h",
@@ -546,6 +547,7 @@ cc_library( # type: ignore
         "include/ui/virtual_camera_panel.h",
         "include/ui/pipewire_output_panel.h",
         "include/ui/camera_controls_panel.h",
+        "include/ui/ar_filter_panel.h",  # Phase 9
     ],
     includes = [".", "include"],
     deps = [
@@ -561,6 +563,7 @@ cc_library( # type: ignore
         "//mediapipe/examples/desktop/segmecam/src/ar_filters:ar_filter_manager",  # Phase 8 Day 2
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
+        "//mediapipe/framework/port:opencv_imgcodecs",  # Phase 9: Thumbnail loading
         "//mediapipe/framework/port:opencv_highgui",
         "//third_party/imgui:imgui",
     ],
@@ -900,5 +903,21 @@ cc_binary( # pyright: ignore[reportUndefinedVariable]
         "-lGLU",
         "-lSDL2",
         "-lopencv_photo",
+        "-lopencv_imgproc",
+        "-lopencv_core",
+    ],
+)
+
+# Test tool for Snapchat lens loading with Assimp
+cc_binary(
+    name = "test_snap_lens_load",
+    srcs = ["tools/test_snap_lens_load.cpp"],
+    deps = [
+        "@assimp//:assimp",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+    ],
+    copts = [
+        "-std=c++17",
     ],
 )

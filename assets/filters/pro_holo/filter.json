@@ -1,0 +1,39 @@
+{
+  "filter": {
+    "name": "Holo Visor",
+    "id": "holo-visor",
+    "category": "futuristic",
+    "version": "1.0.0",
+    "author": "Padletut",
+    "description": "Curved holographic visor demo asset.",
+    "thumbnail": "thumb.png",
+    "icon": "icon.png"
+  },
+  "attachments": [
+    {
+      "id": "visor",
+      "anchor": "forehead",
+      "model": "visor.obj",
+      "mtl": "visor.mtl",
+      "texture": "visor_tex.png",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "offset": [
+        0.0,
+        0.02,
+        0.08
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "visible": true,
+      "blend_mode": "additive",
+      "opacity": 0.85
+    }
+  ]
+}

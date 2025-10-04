@@ -38,6 +38,7 @@ private:
     void LoadLandmarkSettings(const ConfigData& config);
     void LoadBeautySettings(const ConfigData& config);
     void LoadPerformanceSettings(const ConfigData& config);
+    void LoadARFilterSettings(const ConfigData& config);  // Phase 9
     
     // Saving methods
     void SaveCameraSettings(ConfigData& config);
@@ -50,6 +51,7 @@ private:
     void SaveLipSettings(ConfigData& config);
     void SaveTeethSettings(ConfigData& config);
     void SavePerformanceSettings(ConfigData& config);
+    void SaveARFilterSettings(ConfigData& config);  // Phase 9
     bool SaveProfileToManager(const std::string& profile_name, const ConfigData& config);
     
     // Utility methods

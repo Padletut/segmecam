@@ -181,6 +181,13 @@ struct AppState {
   // PipeWire output status
   bool pipewire_output_active = false;
   
+  // AR Filter settings (Phase 9)
+  struct ARFilterSettings {
+    std::string active_filter_id = "";  // Currently selected filter (e.g., "cat-ears-v1")
+    bool filters_enabled = true;         // Global AR filters toggle
+    int thumbnail_size = 128;            // Configurable thumbnail size
+  } ar_filters;
+  
   // Profile management
   int ui_profile_idx = -1;
   char profile_name_buf[128] = {0};
@@ -199,6 +206,7 @@ struct AppState {
   void LoadWrinkleSettings(const cv::FileNode& root);
   void LoadLipEffectSettings(const cv::FileNode& root);
   void LoadTeethSettings(const cv::FileNode& root);
+  void LoadARFilterSettings(const cv::FileNode& root);  // Phase 9
   
   // Shared background image loading function
   bool LoadBackgroundImageFromPath(const std::string& path);
