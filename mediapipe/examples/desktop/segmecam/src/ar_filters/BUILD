@@ -131,6 +131,7 @@ cc_library(
 
 # Phase 3 Step 8: OpenGL 3D Renderer (Option A - Isolated from MediaPipe)
 # This library uses epoxy/gl.h and must never include MediaPipe GL headers
+# **UPDATED for Option B**: Added face landmark and PnP dependencies
 cc_library(
     name = "opengl_renderer",
     srcs = ["opengl_renderer.cpp"],
@@ -140,12 +141,15 @@ cc_library(
     deps = [
         ":model_loader",
         "//mediapipe/examples/desktop/segmecam:shader_program",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_calib3d",  # For solvePnP (head pose)
         "@glm//:glm",
         "@com_google_absl//absl/log",
     ],
     copts = [
         "-std=c++17",
         "-I/usr/include",  # For epoxy/gl.h
+        "-I/usr/include/opencv4",  # For OpenCV headers
     ],
     linkopts = [
         "-lepoxy",  # Modern OpenGL function loader

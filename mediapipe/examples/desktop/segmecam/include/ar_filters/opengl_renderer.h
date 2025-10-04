@@ -11,9 +11,17 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <map>
 
 // Include Material for complete type definition
 #include "ar_filters/model_loader.h"
+
+// For OpenCV types (face landmarks)
+#include <opencv2/core.hpp>
+
+// GLM for transform calculations
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 // Forward declarations - no OpenGL headers in this public interface
 namespace segmecam {
@@ -27,6 +35,55 @@ namespace render {
 
 namespace segmecam {
 namespace ar_filters {
+
+// Model instance configuration for AR filter rendering
+struct ModelInstance {
+  std::string id;                    // Unique instance identifier
+  std::string model_path;            // Path to 3D model file
+  std::string anchor_name;           // Face anchor point (nose_bridge, forehead, etc.)
+  glm::vec3 offset;                  // Position offset from anchor
+  glm::vec3 rotation_euler;          // Rotation in degrees (pitch, yaw, roll)
+  glm::vec3 scale;                   // Scale factor
+  bool visible;                      // Visibility flag
+  
+  // Cached rendering data (managed internally)
+  const Model* model_ptr;            // Pointer to loaded model (non-owning)
+  glm::mat4 cached_transform;        // Cached model matrix
+  bool transform_dirty;              // Flag to recalculate transform
+  
+  ModelInstance()
+      : offset(0.0f),
+        rotation_euler(0.0f),
+        scale(1.0f),
+        visible(true),
+        model_ptr(nullptr),
+        cached_transform(1.0f),
+        transform_dirty(true) {}
+};
+
+// Head pose tracking result from PnP algorithm
+struct HeadPose {
+  glm::vec3 euler_angles;            // Pitch, yaw, roll in radians
+  glm::quat rotation;                // Quaternion representation
+  glm::vec3 translation;             // Head position in camera space
+  float confidence;                  // 0-1 tracking confidence
+  
+  HeadPose()
+      : euler_angles(0.0f),
+        rotation(1.0f, 0.0f, 0.0f, 0.0f),
+        translation(0.0f),
+        confidence(0.0f) {}
+};
+
+// Transform cache for smoothing
+struct TransformCache {
+  glm::mat4 previous_mvp;
+  float smoothing_alpha;
+  
+  TransformCache()
+      : previous_mvp(1.0f),
+        smoothing_alpha(0.3f) {}
+};
 
 // Render command for 3D model rendering
 // Plain C-style struct with no OpenGL types - safe to use anywhere
@@ -68,6 +125,51 @@ class OpenGLRenderer {
   // Returns number of models successfully rendered
   int RenderModels(const std::vector<RenderCommand>& commands);
 
+  // **NEW: FBO Rendering (Phase 2 Step 2.1)**
+  // Render to framebuffer object for compositing
+  bool RenderToFBO(unsigned int fbo_id, unsigned int texture_id, int width, int height);
+
+  // **NEW: Model Instance Management (Phase 2 Step 2.2)**
+  // Load a 3D model from file and cache it
+  // Returns model ID on success, empty string on failure
+  std::string LoadModel(const std::string& path);
+  
+  // Create a new model instance attached to a face anchor
+  // Returns instance ID on success, empty string on failure
+  std::string CreateInstance(
+      const std::string& model_id,
+      const std::string& anchor,
+      const glm::vec3& offset = glm::vec3(0.0f),
+      const glm::vec3& rotation = glm::vec3(0.0f),
+      const glm::vec3& scale = glm::vec3(1.0f)
+  );
+  
+  // Update instance properties
+  void SetInstanceVisible(const std::string& instance_id, bool visible);
+  void SetInstanceOffset(const std::string& instance_id, const glm::vec3& offset);
+  void SetInstanceRotation(const std::string& instance_id, const glm::vec3& rotation);
+  void SetInstanceScale(const std::string& instance_id, const glm::vec3& scale);
+  
+  // Remove an instance
+  void RemoveInstance(const std::string& instance_id);
+  
+  // Clear all instances
+  void ClearAllInstances();
+
+  // **NEW: Face Landmark Integration (Phase 2 Step 2.3)**
+  // Update face landmarks for anchor point calculation
+  void UpdateFaceLandmarks(const std::vector<cv::Point3f>& landmarks);
+  
+  // Get anchor position from face landmarks
+  cv::Point3f GetAnchorPosition(const std::string& anchor_name) const;
+
+  // **NEW: Head Pose Tracking (Phase 3)**
+  // Calculate head pose from face landmarks using PnP
+  HeadPose CalculateHeadPose(int image_width, int image_height);
+
+  // Render all model instances with head pose tracking
+  int RenderInstances();
+
   // Clear depth buffer (call before rendering)
   void ClearDepth();
 
@@ -101,6 +203,23 @@ class OpenGLRenderer {
   float projection_matrix_[16];
   float view_matrix_[16];
 
+  // **NEW: Model instance management**
+  std::map<std::string, std::unique_ptr<Model>> loaded_models_;  // Model cache
+  std::map<std::string, ModelInstance> instances_;               // Active instances
+  int next_instance_id_;                                         // ID counter
+  
+  // **NEW: Face landmark tracking**
+  std::vector<cv::Point3f> face_landmarks_;                      // Current face landmarks
+  std::vector<cv::Point3f> canonical_face_model_;                // 3D canonical face model for PnP
+  float face_scale_factor_;                                      // Calculated from eye distance
+  cv::Mat camera_matrix_;                                        // Camera intrinsics
+  cv::Mat dist_coeffs_;                                          // Distortion coefficients
+  
+  // **NEW: Transform smoothing**
+  std::map<std::string, TransformCache> transform_caches_;       // Per-instance smoothing
+  HeadPose current_head_pose_;                                   // Cached head pose
+  bool head_pose_valid_;                                         // Head pose validity flag
+
   // Internal helper: Render a single model
   void RenderSingleModel(const RenderCommand& command);
   
@@ -109,6 +228,19 @@ class OpenGLRenderer {
   
   // Internal helper: Restore GL state after rendering
   void RestoreGLState();
+  
+  // **NEW: Internal helpers for Phase 2**
+  // Initialize canonical face model for PnP
+  void InitializeCanonicalModel();
+  
+  // Calculate model matrix for an instance
+  glm::mat4 CalculateInstanceTransform(const ModelInstance& instance, const HeadPose& head_pose);
+  
+  // Apply transform smoothing
+  glm::mat4 GetSmoothedTransform(const glm::mat4& current, TransformCache& cache);
+  
+  // Render a single model instance
+  void RenderModelInstance(const ModelInstance& instance, const HeadPose& head_pose);
 };
 
 } // namespace ar_filters
