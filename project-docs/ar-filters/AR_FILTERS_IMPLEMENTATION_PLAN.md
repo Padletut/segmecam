@@ -1133,7 +1133,7 @@ private:
 
 **ARFilterPanel Responsibilities**:
 
-1. Display available filters with thumbnails
+1. Display available filters (text buttons, thumbnails in Phase 10)
 2. Allow filter selection
 3. Show "No Filter" option
 4. Display filter name/author
