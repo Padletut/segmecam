@@ -28,7 +28,7 @@ struct HeadPose;  // From transform_calculator.h
 namespace ar_filters {
 
 class FilterAsset;
-class ARRenderer;
+class OpenGLRenderer;  // CHANGED: Using OpenGLRenderer instead of ARRenderer
 struct FilterBehavior;
 
 // Configuration for ARFilterManager
@@ -155,8 +155,11 @@ private:
   ManagerState state_;
   
   // Component managers (created in Initialize)
-  std::unique_ptr<ARRenderer> ar_renderer_;
+  std::unique_ptr<OpenGLRenderer> opengl_renderer_;  // CHANGED: Using OpenGLRenderer
   std::map<std::string, std::unique_ptr<FilterAsset>> loaded_filter_assets_;
+  
+  // NEW: Model instance tracking for OpenGLRenderer
+  std::map<std::string, std::string> filter_instance_ids_;  // filter_id -> OpenGL instance_id
   
   // Blendshape state for behaviors (updated each frame)
   std::map<std::string, float> blendshape_values_;

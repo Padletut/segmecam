@@ -284,6 +284,7 @@ cc_binary(
 )
 
 # Phase 7: AR Filter Manager - Main coordinator for AR filter system
+# **UPDATED for Option B**: Now uses opengl_renderer instead of ar_renderer
 cc_library(
     name = "ar_filter_manager",
     srcs = ["ar_filter_manager.cpp"],
@@ -292,7 +293,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":filter_asset",
-        ":ar_renderer",
+        ":opengl_renderer",  # CHANGED: from :ar_renderer to :opengl_renderer
         ":transform_calculator",
         "//mediapipe/framework/formats:landmark_cc_proto",
         "//mediapipe/framework/port:opencv_core",
