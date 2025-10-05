@@ -916,20 +916,61 @@ glm::mat4 OpenGLRenderer::CalculateInstanceTransform(const ModelInstance& instan
   // 1. Translate to final world position
   model = glm::translate(model, world_position);
   
-  // 2. Apply head rotation from PnP (try re-enabling for tilt tracking)
-  // Use the rotation to make models tilt with head orientation
-  static int rotation_log_count = 0;
-  if (rotation_log_count < 20 || rotation_log_count % 30 == 0) {
-    glm::vec3 euler = glm::eulerAngles(head_pose.rotation);
-    ABSL_LOG(INFO) << "[HEAD ROTATION] pitch=" << glm::degrees(euler.x) 
-                   << "° yaw=" << glm::degrees(euler.y) 
-                   << "° roll=" << glm::degrees(euler.z) << "°";
+  // 2. Calculate head rotation from landmarks (more reliable than PnP for tilt)
+  glm::quat head_rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);  // Identity by default
+  
+  if (!face_landmarks_.empty() && face_landmarks_.size() > 454) {
+    // Use eye corners and nose to calculate head tilt (roll) and pitch
+    cv::Point3f left_eye = face_landmarks_[33];   // Left eye outer corner
+    cv::Point3f right_eye = face_landmarks_[263]; // Right eye outer corner
+    cv::Point3f nose_tip = face_landmarks_[1];    // Nose tip
+    cv::Point3f forehead = face_landmarks_[10];   // Forehead
+    cv::Point3f chin = face_landmarks_[152];      // Chin
+    
+    // Calculate ROLL (tilt left/right) from eye line angle
+    float eye_delta_y = right_eye.y - left_eye.y;  // Y difference between eyes
+    float eye_delta_x = right_eye.x - left_eye.x;  // X difference between eyes
+    float roll_angle = std::atan2(eye_delta_y, eye_delta_x) * 0.5f;  // Radians * 0.5 = half sensitivity
+    
+    // Calculate PITCH (tilt forward/backward) from face vertical alignment
+    // When looking down: nose moves down relative to forehead
+    // When looking up: nose moves up relative to forehead
+    float face_center_y = (forehead.y + chin.y) / 2.0f;
+    float nose_offset = nose_tip.y - face_center_y;
+    float face_height = std::abs(chin.y - forehead.y);
+    float pitch_ratio = nose_offset / (face_height * 0.5f);  // -1 to +1 range
+    float pitch_angle = -pitch_ratio * 0.3f;  // Scale to ~±17 degrees max (INVERTED with negative sign)
+    
+    // Calculate YAW (turn left/right) from nose horizontal position
+    float face_center_x = (left_eye.x + right_eye.x) / 2.0f;
+    float nose_offset_x = nose_tip.x - face_center_x;
+    float face_width = std::abs(right_eye.x - left_eye.x);
+    float yaw_ratio = nose_offset_x / (face_width * 0.5f);
+    float yaw_angle = yaw_ratio * 0.25f;  // Scale to ~±14 degrees max (reduced from 0.5)
+    
+    // Create rotation quaternion from Euler angles (apply in order: yaw, pitch, roll)
+    glm::quat yaw_quat = glm::angleAxis(yaw_angle, glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::quat pitch_quat = glm::angleAxis(pitch_angle, glm::vec3(1.0f, 0.0f, 0.0f));
+    glm::quat roll_quat = glm::angleAxis(roll_angle, glm::vec3(0.0f, 0.0f, 1.0f));
+    head_rotation = yaw_quat * pitch_quat * roll_quat;
+    
+    static int rotation_log_count = 0;
+    if (rotation_log_count < 20 || rotation_log_count % 30 == 0) {
+      ABSL_LOG(INFO) << "[LANDMARK ROTATION] "
+                     << "pitch=" << glm::degrees(pitch_angle) << "° "
+                     << "yaw=" << glm::degrees(yaw_angle) << "° "
+                     << "roll=" << glm::degrees(roll_angle) << "°";
+    }
+    rotation_log_count++;
   }
-  rotation_log_count++;
   
-  model = model * glm::mat4_cast(head_pose.rotation);
+  // Apply head rotation to model
+  model = model * glm::mat4_cast(head_rotation);
   
-  // 3. No hardcoded rotation - use filter.json rotation values instead
+  // 3. Add 180° rotation around X-axis to flip models right-side up
+  // The head tracking gives us the head orientation, but we need to flip
+  // the model so it appears correctly oriented (not upside down)
+  model = glm::rotate(model, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
   
   // 4. Apply instance rotation (Euler angles from filter.json)
   model = glm::rotate(model, glm::radians(instance.rotation_euler.x), glm::vec3(1,0,0));  // Pitch
@@ -1216,10 +1257,11 @@ void OpenGLRenderer::RenderDebugAnchors(const HeadPose& head_pose) {
   glBegin(GL_POINTS);
   
   // Forehead (landmark 10) - RED
+  glm::vec3 forehead_world;
   if (face_landmarks_.size() > 10) {
     glColor3f(1.0f, 0.0f, 0.0f);
-    glm::vec3 forehead = LandmarkToWorld(face_landmarks_[10]);
-    glVertex3f(forehead.x, forehead.y, forehead.z);
+    forehead_world = LandmarkToWorld(face_landmarks_[10]);
+    glVertex3f(forehead_world.x, forehead_world.y, forehead_world.z);
   }
   
   // Chin (landmark 152) - BLUE
@@ -1258,9 +1300,15 @@ void OpenGLRenderer::RenderDebugAnchors(const HeadPose& head_pose) {
   glm::vec3 crown_world = LandmarkToWorld(crown_anchor);
   
   // Debug: Log world position
-  if (crown_debug_count < 5) {
+  static int world_debug_count = 0;
+  if (world_debug_count < 10 || world_debug_count % 60 == 0) {
     ABSL_LOG(INFO) << "[DEBUG] Crown world: [" << crown_world.x << "," << crown_world.y << "," << crown_world.z << "]";
+    if (face_landmarks_.size() > 10) {
+      ABSL_LOG(INFO) << "[DEBUG] Forehead world: [" << forehead_world.x << "," << forehead_world.y << "," << forehead_world.z << "]";
+      ABSL_LOG(INFO) << "[WORLD ALIGNMENT] X diff = " << (crown_world.x - forehead_world.x) << " (should be ~0!)";
+    }
   }
+  world_debug_count++;
   
   // Make sure point rendering is enabled and size is set
   glEnable(GL_POINT_SMOOTH);  // Smooth points
