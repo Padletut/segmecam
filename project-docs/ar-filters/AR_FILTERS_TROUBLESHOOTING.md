@@ -15,14 +15,15 @@
 - Filters can be selected from AR Filter Panel ✅
 - Filter loading logs show succ---
 
-**Status**: 🟢 **TESTING PHASE - 3 Critical Fixes Applied**  
-**Last Updated**: 2025-01-04 (head_crown Anchor Fix)  
-**Priority**: HIGH - Ready for head tracking validation  
+**Status**: 🟢 **TESTING PHASE - Crown Positioning Refined**  
+**Last Updated**: 2025-10-05 (Crown Position Compensation & Clamping)  
+**Priority**: HIGH - Ready for comprehensive filter testing  
 **Progress**: 
 - ✅ Finding #1 FIXED: Model path resolution (models now load successfully)
 - ✅ Finding #2 FIXED: FBO integration (filters now visible on video)
-- ✅ Finding #3 FIXED: head_crown anchor implementation (beanie should track head movement!)
-- ⏳ Next: Load beanie filter, move head, verify tracking works
+- ✅ Finding #3 FIXED: head_crown anchor implementation (beanie tracks head movement!)
+- ✅ Finding #6 FIXED: Crown positioning issues (perspective compensation + safety clamp)
+- ⏳ Next: Test all 8 filters (cat ears, glasses, party hat, etc.)
 , "cozy-beanie" loads) ✅
 - Projection matrix updates correctly (1280x720 detected) ✅
 - **Models now load with absolute paths** ✅ (Finding #1 FIXED)
@@ -517,30 +518,127 @@ glm::vec3 anchor_world = glm::vec3(
 
 ## ✅ Resolution Checklist
 
-Once filters are visible:
+**Core AR System**:
 - [x] Beanie filter loads without errors
 - [x] Anchor position no longer returns (0,0,0)
 - [x] PnP head pose tracking operational
-- [ ] Beanie visible at proper depth (not clipped)
-- [ ] Head pose tracking works (pitch/yaw/roll)
-- [ ] Beanie positioned on top of head (not forehead)
-- [ ] All 8 filters render correctly
-- [ ] Performance is acceptable (>30 FPS)
-- [ ] No crashes or errors
-- [ ] Document solution in this file
-- [ ] Update OPTION_B_PROGRESS.md
-- [ ] Create completion document
+- [x] Beanie visible at proper depth (not clipped)
+- [x] Head pose tracking works (pitch/yaw/roll)
+- [x] Beanie positioned on top of head with position compensation
+- [x] Crown positioning stable at all distances and vertical positions
+- [x] W/S/U/D keyboard controls work correctly
+
+**Comprehensive Filter Testing** (Next Phase):
+- [ ] Cat Ears filter renders correctly
+- [ ] Classic Glasses render at nose bridge
+- [ ] Classic Glasses v1 render correctly
+- [ ] Simple Glasses render correctly
+- [ ] Party Hat renders on forehead
+- [ ] Cozy Beanie fully validated (in progress)
+- [ ] Holo Visor renders correctly
+- [ ] Pixel Shades render correctly
+- [ ] All filters track head movement smoothly
+- [ ] Performance is acceptable (>30 FPS with filters)
+- [ ] No crashes or errors during filter switching
+
+**Documentation**:
+- [x] Document all findings in this file
+- [x] Update OPTION_B_PROGRESS.md
+- [ ] Create Phase 8 completion document (after full testing)
 
 ---
 
 ---
 
-### Finding #5: 2025-10-05 - Anchor Offset Scaling Too Conservative ⚠️ IN PROGRESS
-**Issue**: Beanie visible and right-side up but "barely moving" - does not follow head accurately  
+### Finding #5: 2025-10-05 - Crown Positioning with Distance/Position Changes ✅ FIXED
+**Issue**: Crown position unstable when sitting high in frame and moving closer to camera  
 **Evidence**: 
 ```
-I0000 [DEBUG] anchor=[0.432621,0.378898] → camera=[-0.0700871,0.125969,0] → world=[-0.142282,-0.0818401,1.07341]
-I0000 [DEBUG] UpdateFaceLandmarks called with 478 points
+User reports: "when I get closer to camera then the head_crown anchor point moves down"
+User reports: "if I sit at high position then it moves down when I get closer"
+Screenshot shows: Crown visible at eye level instead of head top
+```
+
+**Root Cause Analysis**:
+Multiple interconnected issues:
+1. **Uninitialized Variable**: `crown_depth_offset_` contained garbage value (1.06464e+24)
+2. **Constant Offsets Don't Scale**: Fixed Y-offset (0.10m) appears different at varying distances
+3. **Perspective Distortion**: High vertical positions + close distance amplified offset errors
+4. **No Safety Bounds**: Crown could drift below forehead position in normalized space
+
+**Evolution of Solutions Attempted**:
+1. ❌ Fixed world-space Y-offset (0.10m) - worked at distance, failed when close
+2. ❌ View-ray offset (along camera-to-head direction) - complex behavior at high positions
+3. ❌ Depth-proportional offsets (both Y and Z) - didn't solve high+close scenario
+4. ❌ Normalized space offset (% of face height) - completely wrong positioning
+5. ✅ **FINAL SOLUTION**: Position-compensated offset + safety clamp
+
+**Solution Implementation**:
+```cpp
+// In GetAnchorPosition() for head_crown:
+cv::Point3f crown = face_landmarks_[10];  // Forehead base
+cv::Point3f forehead_original = face_landmarks_[10];  // For clamping
+
+// Calculate vertical position factor (0=top, 1=bottom of frame)
+float vertical_position = crown.y;
+
+// Increase offset when higher in frame to compensate for perspective
+float position_compensation = 1.0f + (0.5f - vertical_position) * 2.0f;
+position_compensation = std::max(0.5f, std::min(3.0f, position_compensation));
+
+// Apply compensated offset
+const float BASE_OFFSET = 0.05f;
+float offset = BASE_OFFSET * crown_offset_multiplier_ * position_compensation;
+crown.y -= offset;
+
+// CRITICAL: Safety clamp - crown can never go below forehead
+if (crown.y > forehead_original.y) {
+  crown.y = forehead_original.y;
+}
+```
+
+**Depth Offset (W/S Keys)**:
+```cpp
+// In CalculateInstanceTransform() for head_crown:
+// Z-offset proportional to distance (maintains visual angle)
+float depth_ratio = crown_depth_offset_ * 0.1f;  // 10% per unit
+float depth_offset_meters = original_z * depth_ratio;
+
+// Prevent near-plane clipping
+const float MIN_Z_DISTANCE = 0.15f;
+float new_z = original_z - depth_offset_meters;
+if (new_z < MIN_Z_DISTANCE) {
+  depth_offset_meters = original_z - MIN_Z_DISTANCE;
+  new_z = MIN_Z_DISTANCE;
+}
+world_position.z = new_z;
+```
+
+**Key Features**:
+1. **Position Compensation**: Offset increases up to 3x when sitting high in frame
+2. **Safety Clamp**: Crown can never appear below forehead (worst case = at forehead)
+3. **Distance Scaling**: Z-offset proportional to depth (consistent visual angle)
+4. **Near-Plane Protection**: Crown stays at least 0.15m from camera (0.1m = near plane)
+
+**Files Modified**:
+- `mediapipe/examples/desktop/segmecam/src/ar_filters/opengl_renderer.cpp` (GetAnchorPosition, CalculateInstanceTransform)
+- `mediapipe/examples/desktop/segmecam/include/ar_filters/opengl_renderer.h` (crown_depth_offset_ initialized to 0.0f)
+
+**Status**: ✅ FIXED - User accepted solution after extensive testing
+**Tested Scenarios**:
+- ✅ Sitting low + far from camera - stable
+- ✅ Sitting low + close to camera - stable  
+- ✅ Sitting high + far from camera - stable
+- ✅ Sitting high + close to camera - stable (was failing before)
+- ✅ W/S keys adjust depth correctly without breaking position
+- ✅ U/D keys adjust vertical offset as expected
+
+**Lessons Learned**:
+- Perspective projection creates non-linear distortion at extreme positions
+- Simple mathematical solutions (constant offsets, proportional scaling) fail at edge cases
+- Position-dependent compensation required for robust tracking
+- Safety clamps prevent catastrophic failures (crown at eye level)
+- User testing at extreme positions reveals issues unit tests miss
 I0000 [DEBUG] Face scale factor: 0.712077
 I0000 [DEBUG] RenderModelInstance called: id=instance_2 anchor=head_crown visible=true
 ```

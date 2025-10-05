@@ -38,7 +38,8 @@ OpenGLRenderer::OpenGLRenderer()
       face_scale_factor_(1.0f),
       head_pose_valid_(false),
       debug_anchors_enabled_(true),     // Enable debug by default
-      crown_offset_multiplier_(0.4f) {  // Default 40% above forehead
+      crown_offset_multiplier_(0.4f),   // Default 40% above forehead
+      crown_depth_offset_(0.0f) {       // Default no depth offset (INITIALIZE THIS!)
   // Initialize lighting to reasonable defaults
   light_direction_[0] = 0.0f;
   light_direction_[1] = 0.0f;
@@ -555,21 +556,29 @@ cv::Point3f OpenGLRenderer::GetAnchorPosition(const std::string& anchor_name) co
     return face_landmarks_[10];
   }
   else if (anchor_name == "head_crown") {
-    // Top of head - calculate from forehead with upward offset
-    // Use ONLY forehead as base to ensure alignment with forehead anchor
-    cv::Point3f forehead = face_landmarks_[10];
-    cv::Point3f chin = face_landmarks_[152];
+    // Top of head - apply offset with vertical position compensation
+    cv::Point3f crown = face_landmarks_[10];  // Start with forehead
+    cv::Point3f forehead_original = face_landmarks_[10];  // Keep original for clamping
     
-    // Calculate face height in normalized coordinates
-    float face_height = std::abs(chin.y - forehead.y);
+    // Calculate how high in frame we are (0 = top, 1 = bottom in normalized space)
+    // When forehead.y is small (high in frame), we need MORE offset
+    float vertical_position = crown.y;  // 0.0 = top of frame, 1.0 = bottom
     
-    // Crown position: same X/Z as forehead, offset Y upward
-    // IMPORTANT: In MediaPipe coordinates, Y increases DOWNWARD (Y=0 is TOP, Y=1 is BOTTOM)
-    // So to move UP (above forehead), we SUBTRACT from Y
-    // Note: Z-offset (depth adjustment) is applied later in world space, not here
-    cv::Point3f crown = forehead;  // Start with forehead position
-    crown.y -= face_height * crown_offset_multiplier_;  // SUBTRACT to move UP
-    // crown.z is kept same as forehead (depth offset applied in CalculateInstanceTransform)
+    // Increase offset when higher in frame (smaller Y value)
+    // This compensates for perspective distortion at extreme positions
+    float position_compensation = 1.0f + (0.5f - vertical_position) * 2.0f;  // 2x at top, 1x at center, 0x at bottom
+    position_compensation = std::max(0.5f, std::min(3.0f, position_compensation));  // Clamp 0.5x to 3x
+    
+    // Apply offset with compensation
+    const float BASE_OFFSET = 0.05f;  // 5% base offset
+    float offset = BASE_OFFSET * crown_offset_multiplier_ * position_compensation;
+    crown.y -= offset;
+    
+    // CRITICAL: Ensure crown never goes below (higher Y value than) forehead
+    // In normalized space: Y=0 is top, Y=1 is bottom, so crown.y must be <= forehead.y
+    if (crown.y > forehead_original.y) {
+      crown.y = forehead_original.y;
+    }
     
     return crown;
   }
@@ -851,30 +860,36 @@ glm::mat4 OpenGLRenderer::CalculateInstanceTransform(const ModelInstance& instan
       depth                                                                           // Z = estimated depth
   );
   
-  // Apply crown depth offset in world space (meters)
-  // This allows W/S keys to move crown forward/backward
+  // Apply crown offset - ONLY DEPTH (Z) in world space
+  // Vertical (Y) is handled in normalized space in GetAnchorPosition
   if (instance.anchor_name == "head_crown") {
-    // Calculate face height for scaling the offset
     if (!face_landmarks_.empty() && face_landmarks_.size() > 152) {
-      cv::Point3f forehead = face_landmarks_[10];
-      cv::Point3f chin = face_landmarks_[152];
-      float face_height = std::abs(chin.y - forehead.y);
+      // Store original Z for proportional calculations
+      float original_z = world_position.z;
       
-      // Apply depth offset: positive = forward (closer), negative = backward (farther)
-      // Scale by face height and depth to make offset proportional to face size
-      // CRITICAL: SUBTRACT offset because OpenGL Z-axis points backward (positive Z = away)
-      float depth_offset_world = crown_depth_offset_ * face_height * depth;
-      world_position.z -= depth_offset_world;  // Subtract to match intuitive direction
+      // Apply depth offset PROPORTIONAL to current depth
+      // This prevents perspective distortion when moving closer/farther
+      float depth_ratio = crown_depth_offset_ * 0.1f;  // 10% per unit
+      float depth_offset_meters = original_z * depth_ratio;
       
-      static int depth_offset_log = 0;
-      if (depth_offset_log < 10 || depth_offset_log % 30 == 0) {
-        ABSL_LOG(INFO) << "[CROWN DEPTH] offset_multiplier=" << crown_depth_offset_ 
-                       << " face_height=" << face_height
-                       << " depth=" << depth << "m"
-                       << " world_offset=" << depth_offset_world << "m"
-                       << " final_z=" << world_position.z << "m";
+      // IMPORTANT: Prevent crown from going behind camera or too close to near plane
+      // Near plane is at 0.1m, so keep crown at least 0.15m away
+      const float MIN_Z_DISTANCE = 0.15f;
+      float new_z = original_z - depth_offset_meters;
+      if (new_z < MIN_Z_DISTANCE) {
+        depth_offset_meters = original_z - MIN_Z_DISTANCE;
+        new_z = MIN_Z_DISTANCE;
       }
-      depth_offset_log++;
+      world_position.z = new_z;
+      
+      static int crown_offset_log = 0;
+      if (crown_offset_log < 10 || crown_offset_log % 30 == 0) {
+        ABSL_LOG(INFO) << "[CROWN NORMALIZED-Y + PROP-Z] "
+                       << "orig_z=" << original_z << "m "
+                       << "z_offset=" << depth_offset_meters << "m "
+                       << "world_pos=[" << world_position.x << "," << world_position.y << "," << world_position.z << "]m";
+      }
+      crown_offset_log++;
     }
   }
   
@@ -1168,7 +1183,7 @@ void OpenGLRenderer::SetCrownOffsetMultiplier(float multiplier) {
 
 void OpenGLRenderer::SetCrownDepthOffset(float offset) {
   crown_depth_offset_ = offset;
-  ABSL_LOG(INFO) << "Crown depth offset set to " << offset << " (" << (offset * 100.0f) << "% " << (offset > 0 ? "backward" : "forward") << ")";
+  ABSL_LOG(INFO) << "Crown depth offset set to " << offset << " (" << (offset * 200.0f) << "% " << (offset > 0 ? "backward" : "forward") << ")";
 }
 
 void OpenGLRenderer::RenderDebugAnchors(const HeadPose& head_pose) {
