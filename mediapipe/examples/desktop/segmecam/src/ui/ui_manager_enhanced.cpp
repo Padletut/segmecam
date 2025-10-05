@@ -264,12 +264,37 @@ bool UIManager::HandleKeyEvent(const SDL_Event& event, bool& running, ar_filters
         }
         return false;
     }
+    if (event.key.keysym.sym == SDLK_w) {
+        // W = Move crown BACKWARD (away from camera) - to reach top/back of head
+        std::cout << "⬅️ Crown BACKWARD (W key)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->AdjustCrownDepth(-0.2f);  // Negative = backward (away)
+            float current = ar_filter_mgr->GetCrownDepth();
+            std::cout << "   Crown depth now: " << current << " (" << (current * 100.0f) << "% " << (current < 0 ? "backward" : "forward") << ")" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
+    if (event.key.keysym.sym == SDLK_s) {
+        // S = Move crown FORWARD (toward camera) - closer to face
+        std::cout << "➡️ Crown FORWARD (S key)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->AdjustCrownDepth(+0.2f);  // Positive = forward (closer)
+            float current = ar_filter_mgr->GetCrownDepth();
+            std::cout << "   Crown depth now: " << current << " (" << (current * 100.0f) << "% " << (current > 0 ? "forward" : "backward") << ")" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
     if (event.key.keysym.sym == SDLK_r && (event.key.keysym.mod & KMOD_CTRL)) {
         // Ctrl+R = RESET to default
         std::cout << "🔄 Crown RESET (Ctrl+R)" << std::endl;
         if (ar_filter_mgr) {
             ar_filter_mgr->SetCrownOffset(0.4f);  // Default 40%
-            std::cout << "   Crown offset reset to: 0.4 (40%)" << std::endl;
+            ar_filter_mgr->SetCrownDepth(0.0f);   // Reset depth too
+            std::cout << "   Crown offset reset to: 0.4 (40%), depth reset to 0.0" << std::endl;
         } else {
             std::cout << "   ⚠️ AR filter manager not available" << std::endl;
         }

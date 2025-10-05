@@ -200,6 +200,10 @@ class OpenGLRenderer {
   void SetCrownOffsetMultiplier(float multiplier);
   float GetCrownOffsetMultiplier() const { return crown_offset_multiplier_; }
   
+  // Adjust crown anchor depth offset (forward/backward, default 0.0)
+  void SetCrownDepthOffset(float offset);
+  float GetCrownDepthOffset() const { return crown_depth_offset_; }
+  
   // Render debug markers for anchor points
   void RenderDebugAnchors(const HeadPose& head_pose);
 
@@ -244,6 +248,7 @@ class OpenGLRenderer {
   // **NEW: Debug visualization**
   bool debug_anchors_enabled_;                                   // Show anchor debug markers
   float crown_offset_multiplier_;                                 // Crown anchor Y-offset (default 0.4)
+  float crown_depth_offset_;                                      // Crown anchor Z-offset (default 0.0)
 
   // Internal helper: Render a single model
   void RenderSingleModel(const RenderCommand& command);

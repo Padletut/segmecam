@@ -105,9 +105,13 @@ public:
   void SetDebugAnchorsEnabled(bool enabled);
   
   // **NEW: Crown anchor adjustment (Finding #8)**
-  void AdjustCrownOffset(float delta);      // Adjust crown offset by delta
-  void SetCrownOffset(float multiplier);     // Set absolute offset multiplier
-  float GetCrownOffset() const;              // Get current offset multiplier
+  void AdjustCrownOffset(float delta);      // Adjust crown Y-offset by delta
+  void SetCrownOffset(float multiplier);     // Set absolute Y-offset multiplier
+  float GetCrownOffset() const;              // Get current Y-offset multiplier
+  
+  void AdjustCrownDepth(float delta);        // Adjust crown Z-offset (depth) by delta
+  void SetCrownDepth(float offset);          // Set absolute Z-offset
+  float GetCrownDepth() const;               // Get current Z-offset
 
   // Performance monitoring
   FilterPerformanceStats GetPerformanceStats() const;

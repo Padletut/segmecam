@@ -81,13 +81,7 @@ int ApplicationRun::ExecuteMainLoop(
     // Main application loop
     while (params.running) {
         try {
-            // Process SDL events and UI (pass ARFilterManager for keyboard controls)
-            if (!managers.ui->ProcessEvents(params.running, managers.ar_filter_manager.get())) {
-                std::cout << "🛑 UI requested exit" << std::endl;
-                break;
-            }
-
-            // Process one complete frame
+            // Process one complete frame (includes UI event processing inside FrameProcessor)
             if (!FrameProcessor::ProcessFrame(params)) {
                 std::cout << "⚠️  Frame processing failed, continuing..." << std::endl;
             }

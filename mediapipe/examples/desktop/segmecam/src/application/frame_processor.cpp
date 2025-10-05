@@ -589,8 +589,8 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
 }
 
 bool FrameProcessor::ProcessFrameUIAndRender(FrameProcessingParams& params, const cv::Mat& display_rgb) {
-    // Let UIManager handle events first
-    if (!params.ui_manager.ProcessEvents(params.running)) {
+    // Let UIManager handle events first (pass AR filter manager for keyboard controls)
+    if (!params.ui_manager.ProcessEvents(params.running, params.managers.ar_filter_manager.get())) {
         std::cout << "🛑 UIManager ProcessEvents returned false, exiting..." << std::endl;
         return false;
     }

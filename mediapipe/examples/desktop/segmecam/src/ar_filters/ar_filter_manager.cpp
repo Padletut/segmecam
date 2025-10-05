@@ -503,6 +503,28 @@ float ARFilterManager::GetCrownOffset() const {
   return 0.4f;  // Default
 }
 
+void ARFilterManager::AdjustCrownDepth(float delta) {
+  if (opengl_renderer_) {
+    float current = opengl_renderer_->GetCrownDepthOffset();
+    // Increased range to -10.0 to +10.0 for much larger backward movement
+    float new_value = std::max(-10.0f, std::min(10.0f, current + delta));  // Clamp -10 to 10
+    opengl_renderer_->SetCrownDepthOffset(new_value);
+  }
+}
+
+void ARFilterManager::SetCrownDepth(float offset) {
+  if (opengl_renderer_) {
+    opengl_renderer_->SetCrownDepthOffset(offset);
+  }
+}
+
+float ARFilterManager::GetCrownDepth() const {
+  if (opengl_renderer_) {
+    return opengl_renderer_->GetCrownDepthOffset();
+  }
+  return 0.0f;  // Default
+}
+
 // Configuration
 void ARFilterManager::SetConfig(const ARFilterManagerConfig& config) {
   config_ = config;

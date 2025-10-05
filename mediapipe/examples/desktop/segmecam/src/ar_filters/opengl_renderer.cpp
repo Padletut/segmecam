@@ -564,8 +564,12 @@ cv::Point3f OpenGLRenderer::GetAnchorPosition(const std::string& anchor_name) co
     float face_height = std::abs(chin.y - forehead.y);
     
     // Crown position: same X/Z as forehead, offset Y upward
+    // IMPORTANT: In MediaPipe coordinates, Y increases DOWNWARD (Y=0 is TOP, Y=1 is BOTTOM)
+    // So to move UP (above forehead), we SUBTRACT from Y
+    // Note: Z-offset (depth adjustment) is applied later in world space, not here
     cv::Point3f crown = forehead;  // Start with forehead position
-    crown.y += face_height * crown_offset_multiplier_;  // Use adjustable multiplier
+    crown.y -= face_height * crown_offset_multiplier_;  // SUBTRACT to move UP
+    // crown.z is kept same as forehead (depth offset applied in CalculateInstanceTransform)
     
     return crown;
   }
@@ -847,6 +851,33 @@ glm::mat4 OpenGLRenderer::CalculateInstanceTransform(const ModelInstance& instan
       depth                                                                           // Z = estimated depth
   );
   
+  // Apply crown depth offset in world space (meters)
+  // This allows W/S keys to move crown forward/backward
+  if (instance.anchor_name == "head_crown") {
+    // Calculate face height for scaling the offset
+    if (!face_landmarks_.empty() && face_landmarks_.size() > 152) {
+      cv::Point3f forehead = face_landmarks_[10];
+      cv::Point3f chin = face_landmarks_[152];
+      float face_height = std::abs(chin.y - forehead.y);
+      
+      // Apply depth offset: positive = forward (closer), negative = backward (farther)
+      // Scale by face height and depth to make offset proportional to face size
+      // CRITICAL: SUBTRACT offset because OpenGL Z-axis points backward (positive Z = away)
+      float depth_offset_world = crown_depth_offset_ * face_height * depth;
+      world_position.z -= depth_offset_world;  // Subtract to match intuitive direction
+      
+      static int depth_offset_log = 0;
+      if (depth_offset_log < 10 || depth_offset_log % 30 == 0) {
+        ABSL_LOG(INFO) << "[CROWN DEPTH] offset_multiplier=" << crown_depth_offset_ 
+                       << " face_height=" << face_height
+                       << " depth=" << depth << "m"
+                       << " world_offset=" << depth_offset_world << "m"
+                       << " final_z=" << world_position.z << "m";
+      }
+      depth_offset_log++;
+    }
+  }
+  
   // Add face offset ONLY if PnP is valid
   world_position += face_offset;
   
@@ -865,7 +896,19 @@ glm::mat4 OpenGLRenderer::CalculateInstanceTransform(const ModelInstance& instan
   }
   
   // Apply instance offset (NOT rotated - just raw offset)
+  // DEBUG: Log before and after instance offset
+  static int offset_log_count = 0;
+  if (offset_log_count < 20 || offset_log_count % 30 == 0) {
+    ABSL_LOG(INFO) << "[INSTANCE OFFSET] " << instance.anchor_name 
+                   << " world_pos_before=[" << world_position.x << ", " << world_position.y << ", " << world_position.z << "]"
+                   << " instance.offset=[" << instance.offset.x << ", " << instance.offset.y << ", " << instance.offset.z << "]";
+  }
   world_position += instance.offset;
+  if (offset_log_count < 20 || offset_log_count % 30 == 0) {
+    ABSL_LOG(INFO) << "[INSTANCE OFFSET] " << instance.anchor_name 
+                   << " world_pos_after=[" << world_position.x << ", " << world_position.y << ", " << world_position.z << "]";
+  }
+  offset_log_count++;
   
   // Build model matrix
   glm::mat4 model = glm::mat4(1.0f);
@@ -873,9 +916,18 @@ glm::mat4 OpenGLRenderer::CalculateInstanceTransform(const ModelInstance& instan
   // 1. Translate to final world position
   model = glm::translate(model, world_position);
   
-  // 2. Skip head rotation - use screen-aligned (billboard) positioning
-  // Models always face the camera for better tracking
-  // (PnP rotation is unreliable, so we don't apply it)
+  // 2. Apply head rotation from PnP (try re-enabling for tilt tracking)
+  // Use the rotation to make models tilt with head orientation
+  static int rotation_log_count = 0;
+  if (rotation_log_count < 20 || rotation_log_count % 30 == 0) {
+    glm::vec3 euler = glm::eulerAngles(head_pose.rotation);
+    ABSL_LOG(INFO) << "[HEAD ROTATION] pitch=" << glm::degrees(euler.x) 
+                   << "° yaw=" << glm::degrees(euler.y) 
+                   << "° roll=" << glm::degrees(euler.z) << "°";
+  }
+  rotation_log_count++;
+  
+  model = model * glm::mat4_cast(head_pose.rotation);
   
   // 3. No hardcoded rotation - use filter.json rotation values instead
   
@@ -1071,6 +1123,11 @@ void OpenGLRenderer::SetDebugAnchorsEnabled(bool enabled) {
 void OpenGLRenderer::SetCrownOffsetMultiplier(float multiplier) {
   crown_offset_multiplier_ = multiplier;
   ABSL_LOG(INFO) << "Crown offset multiplier set to " << multiplier << " (" << (multiplier * 100.0f) << "% above forehead)";
+}
+
+void OpenGLRenderer::SetCrownDepthOffset(float offset) {
+  crown_depth_offset_ = offset;
+  ABSL_LOG(INFO) << "Crown depth offset set to " << offset << " (" << (offset * 100.0f) << "% " << (offset > 0 ? "backward" : "forward") << ")";
 }
 
 void OpenGLRenderer::RenderDebugAnchors(const HeadPose& head_pose) {
