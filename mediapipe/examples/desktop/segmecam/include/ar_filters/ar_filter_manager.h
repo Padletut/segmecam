@@ -101,6 +101,14 @@ public:
   bool AreBehaviorsEnabled() const;
   void SetSmoothingFactor(float factor);  // 0.0 = no smoothing, 1.0 = max smoothing
 
+  // **NEW: Debug visualization (Finding #8)**
+  void SetDebugAnchorsEnabled(bool enabled);
+  
+  // **NEW: Crown anchor adjustment (Finding #8)**
+  void AdjustCrownOffset(float delta);      // Adjust crown offset by delta
+  void SetCrownOffset(float multiplier);     // Set absolute offset multiplier
+  float GetCrownOffset() const;              // Get current offset multiplier
+
   // Performance monitoring
   FilterPerformanceStats GetPerformanceStats() const;
   float GetLastRenderTimeMs() const;

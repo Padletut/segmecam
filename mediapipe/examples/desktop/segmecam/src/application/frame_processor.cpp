@@ -515,6 +515,9 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
                 frame_bgr.rows
             );
             
+            // **NEW: Update debug anchor visualization from UI toggle (Finding #8)**
+            params.managers.ar_filter_manager->SetDebugAnchorsEnabled(params.app_state.show_anchors);
+            
             // Note: AR rendering will be done directly on GPU texture after upload
             // See below where we call RenderToTexture() after texture upload
         }

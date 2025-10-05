@@ -176,7 +176,7 @@ UIPanel* UIManager::FindPanel(const std::string& name) {
     return nullptr;
 }
 
-bool UIManager::ProcessEvents(bool& running) {
+bool UIManager::ProcessEvents(bool& running, ar_filters::ARFilterManager* ar_filter_mgr) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         ImGui_ImplSDL2_ProcessEvent(&event);
@@ -193,7 +193,7 @@ bool UIManager::ProcessEvents(bool& running) {
                 break;
                 
             case SDL_KEYDOWN:
-                if (HandleKeyEvent(event, running)) {
+                if (HandleKeyEvent(event, running, ar_filter_mgr)) {
                     return false;
                 }
                 break;
@@ -231,12 +231,51 @@ bool UIManager::HandleWindowEvent(const SDL_Event& event, bool& running) {
     return false;
 }
 
-bool UIManager::HandleKeyEvent(const SDL_Event& event, bool& running) {
+bool UIManager::HandleKeyEvent(const SDL_Event& event, bool& running, ar_filters::ARFilterManager* ar_filter_mgr) {
     if (event.key.keysym.sym == SDLK_ESCAPE) {
         std::cout << "🛑 ESC key pressed" << std::endl;
         running = false;
         return true;
     }
+    
+    // Crown anchor adjustment keys (Finding #8)
+    // These modify the OpenGL renderer's crown offset multiplier
+    if (event.key.keysym.sym == SDLK_u) {
+        // U = Move crown UP
+        std::cout << "⬆️ Crown UP (U key)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->AdjustCrownOffset(+0.05f);  // Increase by 5%
+            float current = ar_filter_mgr->GetCrownOffset();
+            std::cout << "   Crown offset now: " << current << " (" << (current * 100.0f) << "%)" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
+    if (event.key.keysym.sym == SDLK_d) {
+        // D = Move crown DOWN
+        std::cout << "⬇️ Crown DOWN (D key)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->AdjustCrownOffset(-0.05f);  // Decrease by 5%
+            float current = ar_filter_mgr->GetCrownOffset();
+            std::cout << "   Crown offset now: " << current << " (" << (current * 100.0f) << "%)" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
+    if (event.key.keysym.sym == SDLK_r && (event.key.keysym.mod & KMOD_CTRL)) {
+        // Ctrl+R = RESET to default
+        std::cout << "🔄 Crown RESET (Ctrl+R)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->SetCrownOffset(0.4f);  // Default 40%
+            std::cout << "   Crown offset reset to: 0.4 (40%)" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
+    
     return false;
 }
 

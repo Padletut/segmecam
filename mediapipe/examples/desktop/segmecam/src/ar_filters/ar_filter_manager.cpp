@@ -160,12 +160,16 @@ absl::StatusOr<FilterInfo> ARFilterManager::GetFilterInfo(const std::string& fil
 
 // Filter lifecycle management
 absl::Status ARFilterManager::LoadFilter(const std::string& filter_id) {
+  ABSL_LOG(INFO) << "[DEBUG] LoadFilter called: " << filter_id;
+  
   if (!state_.initialized) {
+    ABSL_LOG(ERROR) << "[DEBUG] LoadFilter failed: not initialized";
     return absl::FailedPreconditionError("ARFilterManager not initialized");
   }
 
   // Unload current filter if any
   if (HasActiveFilter()) {
+    ABSL_LOG(INFO) << "[DEBUG] Unloading current filter: " << state_.active_filter_id;
     auto status = UnloadCurrentFilter();
     if (!status.ok()) {
       return status;
@@ -173,8 +177,10 @@ absl::Status ARFilterManager::LoadFilter(const std::string& filter_id) {
   }
 
   // Load filter asset
+  ABSL_LOG(INFO) << "[DEBUG] Loading filter asset: " << filter_id;
   auto status = LoadFilterAsset(filter_id);
   if (!status.ok()) {
+    ABSL_LOG(ERROR) << "[DEBUG] LoadFilterAsset failed: " << status;
     return status;
   }
 
@@ -187,16 +193,27 @@ absl::Status ARFilterManager::LoadFilter(const std::string& filter_id) {
   // **NEW: Load filter into OpenGLRenderer**
   const FilterAsset& asset = *it->second;
   
+  ABSL_LOG(INFO) << "[DEBUG] Filter has " << asset.GetAttachments().size() << " attachments";
+  
   // Load models and create instances
+  int attachment_index = 0;
   for (const auto& attachment : asset.GetAttachments()) {
-    // Load model
-    std::string model_path = attachment.model_path;
+    ABSL_LOG(INFO) << "[DEBUG] Processing attachment #" << attachment_index++;
+    ABSL_LOG(INFO) << "[DEBUG]   model_path (relative): " << attachment.model_path;
+    ABSL_LOG(INFO) << "[DEBUG]   anchor_name: " << attachment.anchor_name;
+    
+    // **CRITICAL FIX**: Use FilterAsset::GetAssetPath() to get full path
+    std::string model_path = asset.GetAssetPath(attachment.model_path);
+    ABSL_LOG(INFO) << "[DEBUG]   model_path (absolute): " << model_path;
+    
     std::string model_id = opengl_renderer_->LoadModel(model_path);
     
     if (model_id.empty()) {
       LOG(ERROR) << "Failed to load model: " << model_path;
       continue;
     }
+    
+    ABSL_LOG(INFO) << "[DEBUG] Model loaded, creating instance...";
     
     // Create instance (FilterAttachment already has glm::vec3 fields)
     std::string instance_id = opengl_renderer_->CreateInstance(
@@ -211,6 +228,8 @@ absl::Status ARFilterManager::LoadFilter(const std::string& filter_id) {
       LOG(ERROR) << "Failed to create instance for: " << model_path;
       continue;
     }
+    
+    ABSL_LOG(INFO) << "[DEBUG] Instance created: " << instance_id;
     
     // Store instance ID for later reference
     filter_instance_ids_[filter_id] = instance_id;
@@ -271,7 +290,12 @@ std::string ARFilterManager::GetActiveFilterId() const {
 void ARFilterManager::Update(const std::vector<mediapipe::NormalizedLandmark>& face_landmarks,
                               const segmecam::HeadPose& head_pose,
                               int frame_width, int frame_height) {
+  ABSL_LOG(INFO) << "[DEBUG] ARFilterManager::Update() called, face_detected=" 
+                 << !face_landmarks.empty() << " landmarks=" << face_landmarks.size();
+  
   if (!state_.initialized || !HasActiveFilter()) {
+    ABSL_LOG(WARNING) << "[DEBUG] Update skipped: initialized=" << state_.initialized 
+                      << " has_filter=" << HasActiveFilter();
     return;
   }
 
@@ -281,6 +305,8 @@ void ARFilterManager::Update(const std::vector<mediapipe::NormalizedLandmark>& f
   for (const auto& landmark : face_landmarks) {
     landmarks_3d.emplace_back(landmark.x(), landmark.y(), landmark.z());
   }
+  
+  ABSL_LOG(INFO) << "[DEBUG] Converted " << landmarks_3d.size() << " landmarks to cv::Point3f";
   
   // Update face landmarks in renderer
   opengl_renderer_->UpdateFaceLandmarks(landmarks_3d);
@@ -388,23 +414,24 @@ absl::Status ARFilterManager::RenderToTexture(unsigned int video_texture_id, int
   
   auto start_time = std::chrono::high_resolution_clock::now();
   
-  // **NEW: Use OpenGLRenderer's RenderToFBO method**
-  // Note: This assumes we have an FBO ID. In practice, this might need adjustment
-  // based on how the calling code passes the FBO/texture.
-  // For now, we'll use RenderInstances() which renders to the current framebuffer.
+  ABSL_LOG(INFO) << "[DEBUG] ARFilterManager::RenderToTexture() called: " 
+                 << width << "x" << height << " video_tex=" << video_texture_id;
   
   // Update viewport to match render target
   opengl_renderer_->UpdateProjectionMatrix(width, height);
   
-  // Render all model instances with head pose tracking
-  int rendered_count = opengl_renderer_->RenderInstances();
+  // **CRITICAL: Render to the video texture using dedicated method**
+  // This will create/bind FBO internally and render AR models onto the texture
+  bool render_success = opengl_renderer_->RenderToExternalTexture(video_texture_id, width, height);
+  
+  ABSL_LOG(INFO) << "[DEBUG] RenderToExternalTexture result: " << (render_success ? "SUCCESS" : "FAILED");
   
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
   
   // Update performance stats
   state_.performance_stats.render_time_ms = duration_us.count() / 1000.0f;
-  state_.performance_stats.models_rendered_per_frame = rendered_count;
+  state_.performance_stats.models_rendered_per_frame = render_success ? 1 : 0;  // Boolean converted to count
   state_.frame_count++;
   
   // Calculate FPS every 30 frames
@@ -446,6 +473,34 @@ bool ARFilterManager::AreBehaviorsEnabled() const {
 
 void ARFilterManager::SetSmoothingFactor(float factor) {
   config_.smoothing_factor = std::clamp(factor, 0.0f, 1.0f);
+}
+
+// Debug visualization
+void ARFilterManager::SetDebugAnchorsEnabled(bool enabled) {
+  if (opengl_renderer_) {
+    opengl_renderer_->SetDebugAnchorsEnabled(enabled);
+  }
+}
+
+void ARFilterManager::AdjustCrownOffset(float delta) {
+  if (opengl_renderer_) {
+    float current = opengl_renderer_->GetCrownOffsetMultiplier();
+    float new_value = std::max(0.0f, std::min(1.0f, current + delta));  // Clamp 0-1
+    opengl_renderer_->SetCrownOffsetMultiplier(new_value);
+  }
+}
+
+void ARFilterManager::SetCrownOffset(float multiplier) {
+  if (opengl_renderer_) {
+    opengl_renderer_->SetCrownOffsetMultiplier(multiplier);
+  }
+}
+
+float ARFilterManager::GetCrownOffset() const {
+  if (opengl_renderer_) {
+    return opengl_renderer_->GetCrownOffsetMultiplier();
+  }
+  return 0.4f;  // Default
 }
 
 // Configuration

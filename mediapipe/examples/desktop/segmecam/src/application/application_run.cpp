@@ -81,8 +81,8 @@ int ApplicationRun::ExecuteMainLoop(
     // Main application loop
     while (params.running) {
         try {
-            // Process SDL events and UI
-            if (!managers.ui->ProcessEvents(params.running)) {
+            // Process SDL events and UI (pass ARFilterManager for keyboard controls)
+            if (!managers.ui->ProcessEvents(params.running, managers.ar_filter_manager.get())) {
                 std::cout << "🛑 UI requested exit" << std::endl;
                 break;
             }

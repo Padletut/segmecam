@@ -79,10 +79,12 @@ struct HeadPose {
 struct TransformCache {
   glm::mat4 previous_mvp;
   float smoothing_alpha;
+  bool first_frame;  // Skip smoothing on first frame
   
   TransformCache()
       : previous_mvp(1.0f),
-        smoothing_alpha(0.3f) {}
+        smoothing_alpha(0.3f),
+        first_frame(true) {}
 };
 
 // Render command for 3D model rendering
@@ -126,8 +128,14 @@ class OpenGLRenderer {
   int RenderModels(const std::vector<RenderCommand>& commands);
 
   // **NEW: FBO Rendering (Phase 2 Step 2.1)**
-  // Render to framebuffer object for compositing
+    // Render to an existing FBO with attached texture
   bool RenderToFBO(unsigned int fbo_id, unsigned int texture_id, int width, int height);
+  
+  // **NEW: Render to external texture (creates temporary FBO)**
+  // Convenience method for rendering AR filters onto an existing video texture
+  bool RenderToExternalTexture(unsigned int texture_id, int width, int height);
+
+  // Model loading and instance management
 
   // **NEW: Model Instance Management (Phase 2 Step 2.2)**
   // Load a 3D model from file and cache it
@@ -182,6 +190,19 @@ class OpenGLRenderer {
   // Get current viewport dimensions
   void GetViewportSize(int* width, int* height) const;
 
+  // **NEW: Debug Visualization (Finding #8)**
+  // Enable/disable debug anchor visualization
+  void SetDebugAnchorsEnabled(bool enabled);
+  bool IsDebugAnchorsEnabled() const { return debug_anchors_enabled_; }
+  
+  // **NEW: Crown Anchor Adjustment (Finding #8)**
+  // Adjust crown anchor offset multiplier (default 0.4 = 40% above forehead)
+  void SetCrownOffsetMultiplier(float multiplier);
+  float GetCrownOffsetMultiplier() const { return crown_offset_multiplier_; }
+  
+  // Render debug markers for anchor points
+  void RenderDebugAnchors(const HeadPose& head_pose);
+
   // Cleanup OpenGL resources
   void Cleanup();
 
@@ -219,6 +240,10 @@ class OpenGLRenderer {
   std::map<std::string, TransformCache> transform_caches_;       // Per-instance smoothing
   HeadPose current_head_pose_;                                   // Cached head pose
   bool head_pose_valid_;                                         // Head pose validity flag
+  
+  // **NEW: Debug visualization**
+  bool debug_anchors_enabled_;                                   // Show anchor debug markers
+  float crown_offset_multiplier_;                                 // Crown anchor Y-offset (default 0.4)
 
   // Internal helper: Render a single model
   void RenderSingleModel(const RenderCommand& command);

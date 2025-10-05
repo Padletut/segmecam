@@ -36,7 +36,9 @@ OpenGLRenderer::OpenGLRenderer()
       viewport_height_(480),
       next_instance_id_(1),
       face_scale_factor_(1.0f),
-      head_pose_valid_(false) {
+      head_pose_valid_(false),
+      debug_anchors_enabled_(true),     // Enable debug by default
+      crown_offset_multiplier_(0.4f) {  // Default 40% above forehead
   // Initialize lighting to reasonable defaults
   light_direction_[0] = 0.0f;
   light_direction_[1] = 0.0f;
@@ -345,6 +347,65 @@ bool OpenGLRenderer::RenderToFBO(unsigned int fbo_id, unsigned int texture_id,
   return rendered_count > 0;
 }
 
+bool OpenGLRenderer::RenderToExternalTexture(unsigned int texture_id, int width, int height) {
+  if (!initialized_) {
+    ABSL_LOG(ERROR) << "OpenGLRenderer not initialized";
+    return false;
+  }
+
+  // Create temporary FBO if needed (static to persist across calls)
+  static GLuint temp_fbo = 0;
+  if (temp_fbo == 0) {
+    glGenFramebuffers(1, &temp_fbo);
+    ABSL_LOG(INFO) << "[DEBUG] Created temporary FBO: " << temp_fbo;
+  }
+  
+  // Bind video texture to FBO
+  glBindFramebuffer(GL_FRAMEBUFFER, temp_fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture_id, 0);
+  
+  // Check FBO status
+  GLenum fbo_status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+  if (fbo_status != GL_FRAMEBUFFER_COMPLETE) {
+    ABSL_LOG(ERROR) << "[DEBUG] FBO incomplete! Status: 0x" << std::hex << fbo_status;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return false;
+  }
+  
+  ABSL_LOG(INFO) << "[DEBUG] FBO setup complete, rendering " << instances_.size() << " instances to texture " << texture_id;
+  
+  // Set viewport
+  glViewport(0, 0, width, height);
+  
+  // DON'T clear - we want to render AR filters ON TOP of existing video
+  // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);  // COMMENTED OUT!
+  
+  // Enable blending for transparency
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  
+  // Enable depth testing so filters occlude properly
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LESS);
+  
+  // Render all model instances
+  int rendered_count = RenderInstances();
+  
+  // Unbind FBO
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  
+  // Check for errors
+  GLenum error = glGetError();
+  if (error != GL_NO_ERROR) {
+    ABSL_LOG(ERROR) << "OpenGL error during external texture rendering: " << error;
+    return false;
+  }
+  
+  ABSL_LOG(INFO) << "[DEBUG] Rendered " << rendered_count << " instances to external texture";
+  
+  return rendered_count > 0;
+}
+
 // ----------------------------------------------------------------------------
 // Step 2.2: Model Instance Management
 // ----------------------------------------------------------------------------
@@ -358,6 +419,7 @@ std::string OpenGLRenderer::LoadModel(const std::string& path) {
   }
   
   // Load model using ModelLoader
+  ABSL_LOG(INFO) << "[DEBUG] LoadModel called: " << path;
   ModelLoader loader;
   auto model_result = loader.LoadModel(path);
   if (!model_result.ok()) {
@@ -367,6 +429,12 @@ std::string OpenGLRenderer::LoadModel(const std::string& path) {
   
   // Cache model
   auto model = std::make_unique<Model>(std::move(*model_result));
+  ABSL_LOG(INFO) << "[DEBUG] Model loaded with " << model->meshes.size() << " meshes";
+  for (size_t i = 0; i < model->meshes.size(); i++) {
+    ABSL_LOG(INFO) << "[DEBUG]   Mesh " << i << ": " 
+                   << model->meshes[i].index_count << " indices, VAO=" 
+                   << model->meshes[i].vao;
+  }
   loaded_models_[path] = std::move(model);
   ABSL_LOG(INFO) << "Model loaded successfully: " << path;
   
@@ -460,6 +528,7 @@ void OpenGLRenderer::ClearAllInstances() {
 
 void OpenGLRenderer::UpdateFaceLandmarks(const std::vector<cv::Point3f>& landmarks) {
   face_landmarks_ = landmarks;
+  ABSL_LOG(INFO) << "[DEBUG] UpdateFaceLandmarks called with " << landmarks.size() << " points";
   
   // Calculate face scale from eye distance
   if (landmarks.size() > 263) {
@@ -467,6 +536,7 @@ void OpenGLRenderer::UpdateFaceLandmarks(const std::vector<cv::Point3f>& landmar
     cv::Point3f right_eye = landmarks[263];
     float eye_distance = cv::norm(left_eye - right_eye);
     face_scale_factor_ = eye_distance * 10.0f;  // Scale to reasonable size
+    ABSL_LOG(INFO) << "[DEBUG] Face scale factor: " << face_scale_factor_;
   }
 }
 
@@ -483,6 +553,21 @@ cv::Point3f OpenGLRenderer::GetAnchorPosition(const std::string& anchor_name) co
   else if (anchor_name == "forehead") {
     // Landmark 10
     return face_landmarks_[10];
+  }
+  else if (anchor_name == "head_crown") {
+    // Top of head - calculate from forehead with upward offset
+    // Use ONLY forehead as base to ensure alignment with forehead anchor
+    cv::Point3f forehead = face_landmarks_[10];
+    cv::Point3f chin = face_landmarks_[152];
+    
+    // Calculate face height in normalized coordinates
+    float face_height = std::abs(chin.y - forehead.y);
+    
+    // Crown position: same X/Z as forehead, offset Y upward
+    cv::Point3f crown = forehead;  // Start with forehead position
+    crown.y += face_height * crown_offset_multiplier_;  // Use adjustable multiplier
+    
+    return crown;
   }
   else if (anchor_name == "left_ear") {
     // Average of 234, 127, 162
@@ -526,6 +611,13 @@ cv::Point3f OpenGLRenderer::GetAnchorPosition(const std::string& anchor_name) co
 // ----------------------------------------------------------------------------
 
 glm::mat4 OpenGLRenderer::GetSmoothedTransform(const glm::mat4& current, TransformCache& cache) {
+  // On first frame, just use current transform without smoothing
+  if (cache.first_frame) {
+    cache.previous_mvp = current;
+    cache.first_frame = false;
+    return current;
+  }
+  
   // Element-wise linear interpolation for matrix smoothing
   glm::mat4 result;
   for (int i = 0; i < 4; i++) {
@@ -604,8 +696,43 @@ HeadPose OpenGLRenderer::CalculateHeadPose(int image_width, int image_height) {
   if (!success) {
     pose.confidence = 0.0f;
     head_pose_valid_ = false;
+    ABSL_LOG(WARNING) << "[DEBUG] PnP solve FAILED - using fallback";
     return pose;
   }
+  
+  // **CRITICAL: Validate PnP output before using it**
+  // PnP can succeed but return garbage when landmarks are unreliable
+  double tx = translation_vec.at<double>(0);  // X: horizontal position
+  double ty = translation_vec.at<double>(1);  // Y: vertical position
+  double tz = translation_vec.at<double>(2);  // Z: depth
+  
+  // Validate all axes - face should be within reasonable bounds
+  bool depth_valid = (tz > 300.0 && tz < 3000.0);        // Depth: 30cm - 3m
+  bool horizontal_valid = (std::abs(tx) < 2000.0);       // Horizontal: ±2m from center
+  bool vertical_valid = (std::abs(ty) < 2000.0);         // Vertical: ±2m from center
+  
+  bool pnp_valid = depth_valid && horizontal_valid && vertical_valid;
+  
+  if (!pnp_valid) {
+    static int invalid_count = 0;
+    if (invalid_count < 5 || invalid_count % 30 == 0) {
+      ABSL_LOG(WARNING) << "[PnP VALIDATION FAILED] tvec=[" << tx << ", " << ty << ", " << tz << "] "
+                        << "(depth_ok=" << depth_valid << ", horiz_ok=" << horizontal_valid 
+                        << ", vert_ok=" << vertical_valid << ") - using fallback";
+    }
+    invalid_count++;
+    pose.confidence = 0.0f;
+    head_pose_valid_ = false;
+    return pose;
+  }
+  
+  static int pnp_count = 0;
+  if (pnp_count < 3 || pnp_count % 30 == 0) {
+    ABSL_LOG(INFO) << "[DEBUG] PnP SUCCESS - tvec: [" << translation_vec.at<double>(0) 
+                   << ", " << translation_vec.at<double>(1)
+                   << ", " << translation_vec.at<double>(2) << "]";
+  }
+  pnp_count++;
   
   // Convert rotation vector to matrix
   cv::Mat rotation_mat;
@@ -619,8 +746,14 @@ HeadPose OpenGLRenderer::CalculateHeadPose(int image_width, int image_height) {
   pose.euler_angles.y = std::atan2(-rotation_mat.at<double>(2,0), sy);  // Yaw
   pose.euler_angles.z = std::atan2(rotation_mat.at<double>(1,0), rotation_mat.at<double>(0,0));  // Roll
   
-  // Convert to quaternion
-  pose.rotation = glm::quat(glm::vec3(pose.euler_angles.x, pose.euler_angles.y, pose.euler_angles.z));
+  // Convert rotation matrix to quaternion (CORRECT METHOD)
+  // Use glm::mat3 constructor from OpenCV rotation matrix
+  glm::mat3 glm_rotation_mat(
+      rotation_mat.at<double>(0,0), rotation_mat.at<double>(0,1), rotation_mat.at<double>(0,2),
+      rotation_mat.at<double>(1,0), rotation_mat.at<double>(1,1), rotation_mat.at<double>(1,2),
+      rotation_mat.at<double>(2,0), rotation_mat.at<double>(2,1), rotation_mat.at<double>(2,2)
+  );
+  pose.rotation = glm::quat_cast(glm_rotation_mat);
   
   // Translation
   pose.translation = glm::vec3(
@@ -642,53 +775,141 @@ HeadPose OpenGLRenderer::CalculateHeadPose(int image_width, int image_height) {
 
 glm::mat4 OpenGLRenderer::CalculateInstanceTransform(const ModelInstance& instance, 
                                                       const HeadPose& head_pose) {
-  // Get anchor position
+  // Get anchor position in normalized coordinates [0-1]
   cv::Point3f anchor = GetAnchorPosition(instance.anchor_name);
   
-  // Convert anchor to world space (normalized coordinates to pixels)
-  glm::vec3 anchor_world = glm::vec3(
-      anchor.x * viewport_width_,
-      anchor.y * viewport_height_,
-      anchor.z * face_scale_factor_
+  // **DYNAMIC DEPTH ESTIMATION from face size**
+  // PnP depth is unreliable (constant), so estimate from face height in screen space
+  // Larger face = closer, smaller face = farther (inverse relationship)
+  
+  float depth;
+  glm::vec3 face_offset;
+  
+  // Calculate face height from landmarks (forehead to chin)
+  if (!face_landmarks_.empty() && face_landmarks_.size() > 152) {
+    cv::Point3f forehead = face_landmarks_[10];   // Forehead landmark
+    cv::Point3f chin = face_landmarks_[152];      // Chin landmark
+    float face_height_screen = std::abs(chin.y - forehead.y);  // Normalized 0-1
+    
+    // Estimate depth from face size (inverse relationship)
+    // Reference: at 1.0m distance, face height ≈ 0.20 (20% of screen)
+    // At 0.5m (closer), face height ≈ 0.40 (40% of screen)
+    // At 2.0m (farther), face height ≈ 0.10 (10% of screen)
+    const float reference_face_height = 0.20f;  // Face height at 1.0m distance
+    const float reference_depth = 1.0f;          // Reference distance (1 meter)
+    
+    if (face_height_screen > 0.01f) {  // Avoid division by zero
+      depth = (reference_face_height / face_height_screen) * reference_depth;
+      depth = std::clamp(depth, 0.3f, 3.0f);  // Clamp to reasonable range (30cm - 3m)
+    } else {
+      depth = 1.0f;  // Fallback if face too small/not detected
+    }
+    
+    face_offset = glm::vec3(0.0f, 0.0f, 0.0f);  // No offset in fallback mode
+    
+    static int fallback_count = 0;
+    if (fallback_count < 5 || fallback_count % 30 == 0) {
+      ABSL_LOG(INFO) << "[DYNAMIC DEPTH] face_height=" << face_height_screen 
+                     << " estimated_depth=" << depth << "m";
+    }
+    fallback_count++;
+  } else {
+    // No landmarks available - use fixed depth
+    depth = 1.0f;
+    face_offset = glm::vec3(0.0f, 0.0f, 0.0f);
+  }
+  
+  // Calculate world position from normalized screen coordinates
+  // Must account for perspective projection with 45° FOV
+  const float fov_degrees = 45.0f;
+  const float tan_half_fov = std::tan(glm::radians(fov_degrees / 2.0f));
+  const float aspect = static_cast<float>(viewport_width_) / static_cast<float>(viewport_height_);
+  
+  // DEBUG: Log anchor calculation with higher frequency for up/down testing
+  static int debug_log_count = 0;
+  if (debug_log_count < 20 || debug_log_count % 10 == 0) {  // Much more frequent logging
+    float world_y_before_offset = (0.5f - anchor.y) * 2.0f * depth * tan_half_fov;
+    ABSL_LOG(INFO) << "[ANCHOR " << instance.anchor_name << "] "
+                   << "landmark_y=" << anchor.y 
+                   << " world_y=" << world_y_before_offset
+                   << " face_offset_y=" << face_offset.y
+                   << " depth=" << depth
+                   << " use_pnp=false (dynamic depth)";
+  }
+  debug_log_count++;
+  
+  // Apply 2x scale multiplier for more responsive tracking
+  const float scale_multiplier = 2.0f;
+  
+  glm::vec3 world_position = glm::vec3(
+      (anchor.x - 0.5f) * 2.0f * depth * tan_half_fov * aspect * scale_multiplier,  // X with FOV correction + scale
+      (anchor.y - 0.5f) * 2.0f * depth * tan_half_fov * scale_multiplier,            // Y same direction as screen + scale
+      depth                                                                           // Z = estimated depth
   );
   
-  // Apply head rotation to offset
-  glm::vec3 rotated_offset = head_pose.rotation * instance.offset;
+  // Add face offset ONLY if PnP is valid
+  world_position += face_offset;
+  
+  // DEBUG: Log final world position frequently
+  static int position_log_count = 0;
+  if (position_log_count < 30 || position_log_count % 10 == 0) {
+    ABSL_LOG(INFO) << "[WORLD POS] " << instance.anchor_name 
+                   << " final=[" << world_position.x << ", " << world_position.y << ", " << world_position.z << "]";
+  }
+  position_log_count++;
+  
+  // DEBUG: Log final position
+  if (debug_log_count < 5 || debug_log_count % 60 == 0) {
+    ABSL_LOG(INFO) << "[ANCHOR DEBUG] Final world_position=[" 
+                   << world_position.x << "," << world_position.y << "," << world_position.z << "]";
+  }
+  
+  // Apply instance offset (NOT rotated - just raw offset)
+  world_position += instance.offset;
   
   // Build model matrix
   glm::mat4 model = glm::mat4(1.0f);
   
-  // 1. Translate to anchor position
-  model = glm::translate(model, anchor_world + rotated_offset);
+  // 1. Translate to final world position
+  model = glm::translate(model, world_position);
   
-  // 2. Apply head rotation
-  model = model * glm::mat4_cast(head_pose.rotation);
+  // 2. Skip head rotation - use screen-aligned (billboard) positioning
+  // Models always face the camera for better tracking
+  // (PnP rotation is unreliable, so we don't apply it)
   
-  // 3. Apply instance rotation (Euler angles)
+  // 3. No hardcoded rotation - use filter.json rotation values instead
+  
+  // 4. Apply instance rotation (Euler angles from filter.json)
   model = glm::rotate(model, glm::radians(instance.rotation_euler.x), glm::vec3(1,0,0));  // Pitch
   model = glm::rotate(model, glm::radians(instance.rotation_euler.y), glm::vec3(0,1,0));  // Yaw
   model = glm::rotate(model, glm::radians(instance.rotation_euler.z), glm::vec3(0,0,1));  // Roll
   
-  // 4. Apply scale
+  // 5. Apply scale
   model = glm::scale(model, instance.scale);
   
   return model;
 }
 
 void OpenGLRenderer::RenderModelInstance(const ModelInstance& instance, const HeadPose& head_pose) {
+  ABSL_LOG(INFO) << "[DEBUG] RenderModelInstance called: id=" << instance.id 
+                 << " anchor=" << instance.anchor_name 
+                 << " visible=" << instance.visible;
+  
   if (!instance.visible || !instance.model_ptr) {
+    ABSL_LOG(WARNING) << "[DEBUG] Instance not visible or has no model";
     return;
   }
   
   const Model* model = instance.model_ptr;
   if (model->meshes.empty()) {
+    ABSL_LOG(WARNING) << "[DEBUG] Model has no meshes";
     return;
   }
   
   // Calculate model matrix
   glm::mat4 model_matrix = CalculateInstanceTransform(instance, head_pose);
   
-  // Apply transform smoothing
+  // Apply transform smoothing (with first-frame detection)
   auto& cache = transform_caches_[instance.id];
   model_matrix = GetSmoothedTransform(model_matrix, cache);
   
@@ -746,9 +967,19 @@ int OpenGLRenderer::RenderInstances() {
     return 0;
   }
   
+  ABSL_LOG(INFO) << "[DEBUG] RenderInstances called: " << instances_.size() << " total instances";
+  
   if (instances_.empty()) {
+    ABSL_LOG(WARNING) << "[DEBUG] No instances to render";
     return 0;
   }
+  
+  // Count visible instances
+  int visible_count = 0;
+  for (const auto& pair : instances_) {
+    if (pair.second.visible) visible_count++;
+  }
+  ABSL_LOG(INFO) << "[DEBUG] Visible instances: " << visible_count;
   
   // Calculate head pose if landmarks available
   HeadPose head_pose;
@@ -768,7 +999,8 @@ int OpenGLRenderer::RenderInstances() {
       head_pose.euler_angles.x = 0.0f;  // No pitch
       head_pose.euler_angles.y = 0.0f;  // No yaw
       head_pose.euler_angles.z = std::atan2(eye_vector.y, eye_vector.x);  // Roll only
-      head_pose.rotation = glm::quat(glm::vec3(0.0f, 0.0f, head_pose.euler_angles.z));
+      // Use glm::angleAxis for single-axis rotation (CORRECT METHOD)
+      head_pose.rotation = glm::angleAxis(static_cast<float>(head_pose.euler_angles.z), glm::vec3(0.0f, 0.0f, 1.0f));
       head_pose.confidence = 0.5f;
     }
   }
@@ -793,12 +1025,28 @@ int OpenGLRenderer::RenderInstances() {
   
   // Render each instance
   int rendered_count = 0;
+  static int render_cycle = 0;
   for (const auto& pair : instances_) {
     const ModelInstance& instance = pair.second;
     if (instance.visible) {
+      // Log anchor position for first few frames
+      if (render_cycle < 3) {
+        cv::Point3f anchor_pos = GetAnchorPosition(instance.anchor_name);
+        ABSL_LOG(INFO) << "[DEBUG] Instance '" << instance.id << "' anchor=" << instance.anchor_name
+                       << " pos=[" << anchor_pos.x << ", " << anchor_pos.y << ", " << anchor_pos.z << "]";
+      }
       RenderModelInstance(instance, head_pose);
       rendered_count++;
     }
+  }
+  render_cycle++;
+  
+  // **NEW: Render debug anchors (Finding #8)**
+  if (debug_anchors_enabled_) {
+    // CRITICAL: Unbind shader program before debug rendering
+    // Shaders override glColor* calls with their own lighting calculations
+    glUseProgram(0);  // Switch to fixed-function pipeline
+    RenderDebugAnchors(head_pose);
   }
   
   // Check for errors
@@ -811,6 +1059,242 @@ int OpenGLRenderer::RenderInstances() {
   RestoreGLState();
   
   return rendered_count;
+}
+
+// **NEW: Debug Visualization Implementation (Finding #8)**
+
+void OpenGLRenderer::SetDebugAnchorsEnabled(bool enabled) {
+  debug_anchors_enabled_ = enabled;
+  ABSL_LOG(INFO) << "Debug anchor visualization " << (enabled ? "enabled" : "disabled");
+}
+
+void OpenGLRenderer::SetCrownOffsetMultiplier(float multiplier) {
+  crown_offset_multiplier_ = multiplier;
+  ABSL_LOG(INFO) << "Crown offset multiplier set to " << multiplier << " (" << (multiplier * 100.0f) << "% above forehead)";
+}
+
+void OpenGLRenderer::RenderDebugAnchors(const HeadPose& head_pose) {
+  if (!debug_anchors_enabled_ || face_landmarks_.empty()) {
+    return;
+  }
+  
+  // Use immediate mode OpenGL for simple debug rendering (GL_LINES, GL_POINTS)
+  // Save current OpenGL state
+  glPushAttrib(GL_ALL_ATTRIB_BITS);
+  
+  // Disable everything that could interfere with colors
+  glDisable(GL_DEPTH_TEST);  // Always visible on top
+  glDisable(GL_LIGHTING);    // No lighting calculations
+  glDisable(GL_TEXTURE_2D);  // No textures
+  glDisable(GL_BLEND);       // No blending
+  glDisable(GL_FOG);         // No fog
+  
+  // Use vertex colors directly
+  glShadeModel(GL_FLAT);
+  glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+  glEnable(GL_COLOR_MATERIAL);
+  
+  glMatrixMode(GL_PROJECTION);
+  glLoadIdentity();
+  glm::mat4 projection;
+  std::memcpy(glm::value_ptr(projection), projection_matrix_, 16 * sizeof(float));
+  glLoadMatrixf(glm::value_ptr(projection));
+  
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
+  glm::mat4 view;
+  std::memcpy(glm::value_ptr(view), view_matrix_, 16 * sizeof(float));
+  glLoadMatrixf(glm::value_ptr(view));
+  
+  // **DYNAMIC DEPTH ESTIMATION - Same as main rendering**
+  // Calculate depth from face size for consistent debug visualization
+  float depth;
+  glm::vec3 face_offset;
+  
+  // Calculate face height from landmarks (forehead to chin)
+  if (!face_landmarks_.empty() && face_landmarks_.size() > 152) {
+    cv::Point3f forehead = face_landmarks_[10];   // Forehead landmark
+    cv::Point3f chin = face_landmarks_[152];      // Chin landmark
+    float face_height_screen = std::abs(chin.y - forehead.y);  // Normalized 0-1
+    
+    // Estimate depth from face size (inverse relationship)
+    const float reference_face_height = 0.20f;  // Face height at 1.0m distance
+    const float reference_depth = 1.0f;          // Reference distance (1 meter)
+    
+    if (face_height_screen > 0.01f) {  // Avoid division by zero
+      depth = (reference_face_height / face_height_screen) * reference_depth;
+      depth = std::clamp(depth, 0.3f, 3.0f);  // Clamp to reasonable range (30cm - 3m)
+    } else {
+      depth = 1.0f;  // Fallback if face too small/not detected
+    }
+    
+    face_offset = glm::vec3(0.0f, 0.0f, 0.0f);  // No offset
+  } else {
+    // No landmarks available - use fixed depth
+    depth = 1.0f;
+    face_offset = glm::vec3(0.0f, 0.0f, 0.0f);
+  }
+  
+  // Helper lambda to convert normalized landmark to world space
+  // Uses same fallback positioning as main anchor calculation
+  // Must account for perspective projection with 45° FOV
+  const float fov_degrees = 45.0f;
+  const float tan_half_fov = std::tan(glm::radians(fov_degrees / 2.0f));
+  const float aspect = static_cast<float>(viewport_width_) / static_cast<float>(viewport_height_);
+  
+  // Apply 2x scale multiplier to match main rendering
+  const float scale_multiplier = 2.0f;
+  
+  auto LandmarkToWorld = [&](const cv::Point3f& landmark) -> glm::vec3 {
+    glm::vec3 pos = glm::vec3(
+        (landmark.x - 0.5f) * 2.0f * depth * tan_half_fov * aspect * scale_multiplier,
+        (landmark.y - 0.5f) * 2.0f * depth * tan_half_fov * scale_multiplier,  // Y same direction as screen
+        depth
+    );
+    return pos + face_offset;  // Add face offset only if PnP valid
+  };
+  
+  // Draw key landmarks
+  glPointSize(8.0f);
+  glBegin(GL_POINTS);
+  
+  // Forehead (landmark 10) - RED
+  if (face_landmarks_.size() > 10) {
+    glColor3f(1.0f, 0.0f, 0.0f);
+    glm::vec3 forehead = LandmarkToWorld(face_landmarks_[10]);
+    glVertex3f(forehead.x, forehead.y, forehead.z);
+  }
+  
+  // Chin (landmark 152) - BLUE
+  if (face_landmarks_.size() > 152) {
+    glColor3f(0.0f, 0.0f, 1.0f);
+    glm::vec3 chin = LandmarkToWorld(face_landmarks_[152]);
+    glVertex3f(chin.x, chin.y, chin.z);
+  }
+  
+  // Left eye (landmark 33) - CYAN
+  if (face_landmarks_.size() > 33) {
+    glColor3f(0.0f, 1.0f, 1.0f);
+    glm::vec3 left_eye = LandmarkToWorld(face_landmarks_[33]);
+    glVertex3f(left_eye.x, left_eye.y, left_eye.z);
+  }
+  
+  // Right eye (landmark 263) - MAGENTA
+  if (face_landmarks_.size() > 263) {
+    glColor3f(1.0f, 0.0f, 1.0f);
+    glm::vec3 right_eye = LandmarkToWorld(face_landmarks_[263]);
+    glVertex3f(right_eye.x, right_eye.y, right_eye.z);
+  }
+  
+  glEnd();
+  
+  // Draw head_crown anchor - BIG GREEN MARKER
+  cv::Point3f crown_anchor = GetAnchorPosition("head_crown");
+  
+  // Debug: Log crown anchor position
+  static int crown_debug_count = 0;
+  if (crown_debug_count < 5) {
+    ABSL_LOG(INFO) << "[DEBUG] Crown anchor: [" << crown_anchor.x << "," << crown_anchor.y << "," << crown_anchor.z << "]";
+    crown_debug_count++;
+  }
+  
+  glm::vec3 crown_world = LandmarkToWorld(crown_anchor);
+  
+  // Debug: Log world position
+  if (crown_debug_count < 5) {
+    ABSL_LOG(INFO) << "[DEBUG] Crown world: [" << crown_world.x << "," << crown_world.y << "," << crown_world.z << "]";
+  }
+  
+  // Make sure point rendering is enabled and size is set
+  glEnable(GL_POINT_SMOOTH);  // Smooth points
+  
+  // Draw MULTIPLE markers in different colors at crown position
+  // If lighting interferes, at least ONE color should be visible
+  
+  // 1. HUGE GREEN marker
+  glPointSize(35.0f);
+  glBegin(GL_POINTS);
+  glColor3f(0.0f, 1.0f, 0.0f);  // Pure green
+  glVertex3f(crown_world.x, crown_world.y, crown_world.z);
+  glEnd();
+  
+  // 2. CYAN marker (slightly offset)
+  glPointSize(30.0f);
+  glBegin(GL_POINTS);
+  glColor3f(0.0f, 1.0f, 1.0f);  // Cyan
+  glVertex3f(crown_world.x + 0.01f, crown_world.y, crown_world.z);
+  glEnd();
+  
+  // 3. YELLOW marker (slightly offset)
+  glPointSize(30.0f);
+  glBegin(GL_POINTS);
+  glColor3f(1.0f, 1.0f, 0.0f);  // Yellow
+  glVertex3f(crown_world.x - 0.01f, crown_world.y, crown_world.z);
+  glEnd();
+  
+  // 4. WHITE marker (center - always visible)
+  glPointSize(25.0f);
+  glBegin(GL_POINTS);
+  glColor3f(1.0f, 1.0f, 1.0f);  // Pure white
+  glVertex3f(crown_world.x, crown_world.y + 0.01f, crown_world.z);
+  glEnd();
+  
+  // Draw CROSS pattern at crown for maximum visibility
+  glLineWidth(5.0f);
+  glBegin(GL_LINES);
+  
+  // Horizontal line - MAGENTA
+  glColor3f(1.0f, 0.0f, 1.0f);
+  glVertex3f(crown_world.x - 0.05f, crown_world.y, crown_world.z);
+  glVertex3f(crown_world.x + 0.05f, crown_world.y, crown_world.z);
+  
+  // Vertical line - CYAN
+  glColor3f(0.0f, 1.0f, 1.0f);
+  glVertex3f(crown_world.x, crown_world.y - 0.05f, crown_world.z);
+  glVertex3f(crown_world.x, crown_world.y + 0.05f, crown_world.z);
+  
+  glEnd();
+  
+  // Draw line from forehead to crown
+  if (face_landmarks_.size() > 10) {
+    glLineWidth(3.0f);
+    glBegin(GL_LINES);
+    glColor3f(1.0f, 1.0f, 0.0f);  // YELLOW
+    glm::vec3 forehead = LandmarkToWorld(face_landmarks_[10]);
+    glVertex3f(forehead.x, forehead.y, forehead.z);
+    glVertex3f(crown_world.x, crown_world.y, crown_world.z);
+    glEnd();
+  }
+  
+  // Draw coordinate axes at head center
+  glm::vec3 head_center(
+      head_pose.translation.x / 1000.0f,
+      head_pose.translation.y / 1000.0f,
+      depth
+  );
+  
+  glLineWidth(2.0f);
+  glBegin(GL_LINES);
+  
+  // X-axis - RED
+  glColor3f(1.0f, 0.0f, 0.0f);
+  glVertex3f(head_center.x, head_center.y, head_center.z);
+  glVertex3f(head_center.x + 0.1f, head_center.y, head_center.z);
+  
+  // Y-axis - GREEN
+  glColor3f(0.0f, 1.0f, 0.0f);
+  glVertex3f(head_center.x, head_center.y, head_center.z);
+  glVertex3f(head_center.x, head_center.y + 0.1f, head_center.z);
+  
+  // Z-axis - BLUE
+  glColor3f(0.0f, 0.0f, 1.0f);
+  glVertex3f(head_center.x, head_center.y, head_center.z);
+  glVertex3f(head_center.x, head_center.y, head_center.z + 0.1f);
+  
+  glEnd();
+  
+  // Restore previous OpenGL state
+  glPopAttrib();
 }
 
 } // namespace ar_filters

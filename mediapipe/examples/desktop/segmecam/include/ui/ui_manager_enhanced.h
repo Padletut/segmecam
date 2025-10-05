@@ -39,7 +39,7 @@ public:
                         ar_filters::ARFilterManager* ar_filter_mgr = nullptr);
   
   // Event handling
-  bool ProcessEvents(bool& running);
+  bool ProcessEvents(bool& running, ar_filters::ARFilterManager* ar_filter_mgr = nullptr);
   
   // Get and clear any dropped file paths
   std::vector<std::string> GetDroppedFiles();
@@ -95,7 +95,7 @@ private:
   // Event handling helpers
   void HandleQuitEvent(bool& running);
   bool HandleWindowEvent(const SDL_Event& event, bool& running);
-  bool HandleKeyEvent(const SDL_Event& event, bool& running);
+  bool HandleKeyEvent(const SDL_Event& event, bool& running, ar_filters::ARFilterManager* ar_filter_mgr);
   
   // Video background rendering
   void RenderVideoBackgroundInternal(GLuint video_texture, int video_width, int video_height, int window_width, int window_height);
