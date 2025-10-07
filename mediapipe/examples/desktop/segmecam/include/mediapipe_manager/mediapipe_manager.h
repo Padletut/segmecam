@@ -8,7 +8,7 @@
 #include "mediapipe/framework/formats/image_frame.h"
 #include "mediapipe/framework/port/status.h"
 #include "mediapipe/framework/port/opencv_core_inc.h"
-#include "gpu_detector.h"
+#include "include/mediapipe_manager/gpu_detector.h"
 
 namespace segmecam {
 

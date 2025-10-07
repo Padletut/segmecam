@@ -3,28 +3,27 @@
 #include "imgui.h"
 #include <string>
 #include <vector>
-#include "app_state.h"
+#include "include/application/app_state.h"
 #include "include/camera/camera_manager.h"
-#include "cam_enum.h"
+#include "include/camera/cam_enum.h"
+#include "src/config/config_manager.h"
+#include "include/profile/profile_manager.h"
+#include "include/ui/ui_panel_base.h"
 
 namespace segmecam {
 
-// Base class for all UI panels
-class UIPanel {
-public:
-    UIPanel(const std::string& name) : panel_name_(name) {}
-    virtual ~UIPanel() = default;
-    
-    virtual void Render() = 0;
-    
-    void SetVisible(bool visible) { visible_ = visible; }
-    bool IsVisible() const { return visible_; }
-    const std::string& GetName() const { return panel_name_; }
+// Forward declarations
+class EffectsManager;
+class ProfileManager;
+class ARFilterPanel;  // Phase 9
 
-protected:
-    std::string panel_name_;
-    bool visible_ = true;
-};
+} // namespace segmecam
+
+#include "include/ui/virtual_camera_panel.h"
+#include "include/ui/pipewire_output_panel.h"
+#include "include/ui/camera_controls_panel.h"
+
+namespace segmecam {
 
 // Camera selection and controls panel
 class CameraPanel : public UIPanel {
@@ -35,62 +34,111 @@ public:
     void Render() override;
     
     // Set config manager for profile functionality
-    void SetConfigManager(class ConfigManager* config_mgr) { config_mgr_ = config_mgr; }
+    void SetConfigManager(class ConfigManager* config_mgr) { 
+        config_mgr_ = config_mgr;
+        profile_mgr_.SetConfigManager(config_mgr);
+    }
     
     // Update UI to show the currently loaded default profile
     void UpdateDefaultProfileDisplay();
+    
+    // Process deferred PipeWire initialization
+    void ProcessDeferredPipeWireInitialization();
 
 private:
+    void SyncWithCameraState();
     void RenderCameraSelection();
     void RenderResolutionSettings();
-    void RenderVirtualCameraControls();
+    void RenderResolutionControls();
+    void RenderFPSControls();
     void RenderProfileSection();
-    void RenderCameraControls();
     
-    // Helper methods for V4L2 controls
-    void SliderCtrl(const char* label, CtrlRange& range, uint32_t control_id);
-    void CheckboxCtrl(const char* label, CtrlRange& range, uint32_t control_id);
-    void CheckboxExposureAuto(const char* label);
-    
-    // Sync UI state with camera settings
-    void SyncWithCameraState();
-    
-    // Virtual camera device management
-    void RefreshVirtualCameraDevices();
+    // Check if running in Flatpak environment
+    bool IsRunningInFlatpak();
     
     AppState& state_;
     CameraManager& camera_mgr_;
     class EffectsManager& effects_mgr_;
     class ConfigManager* config_mgr_ = nullptr;
+    ProfileManager profile_mgr_;
+    
+    // Sub-panels for modular UI
+    VirtualCameraPanel virtual_camera_panel_;
+    PipeWireOutputPanel pipewire_panel_;
+    CameraControlsPanel camera_controls_panel_;
     
     // UI state
     int ui_cam_idx_ = 0;
     int ui_res_idx_ = 0;
     int ui_fps_idx_ = 0;
-    int ui_vcam_idx_ = 0;
-    std::vector<int> ui_fps_opts_;
+    int ui_fps_actual_idx_ = 0;
+    bool show_resolution_warning_ = false;
+    bool show_fps_warning_ = false;
     
-    // Profile management UI state  
-    int ui_profile_idx_ = -1;
-    char profile_name_buf_[128] = {0};
-    
-    // Profile helper methods
-    void LoadProfileIntoState(const std::string& profile_name);
-    bool SaveStateToProfile(const std::string& profile_name);
-    
-    // String storage for combo boxes (to prevent memory corruption)
+    // Resolution and FPS display strings
     std::vector<std::string> res_strings_;
     std::vector<const char*> res_items_;
     std::vector<std::string> fps_strings_;
     std::vector<const char*> fps_items_;
     
-    // Virtual camera device enumeration
-    std::vector<LoopbackDesc> vcam_devices_;
-    std::vector<std::string> vcam_labels_;
-    std::vector<const char*> vcam_items_;
+    // Profile UI state
+    bool show_set_default_ = false;
+    int ui_profile_idx_ = 0;
+    bool profile_loaded_ = false;
+    
+    // PipeWire deferred initialization
+    bool pipewire_initialized_ = false;
 };
 
-// Background and compositing effects panel  
+// Beauty effects panel
+class BeautyPanel : public UIPanel {
+public:
+    BeautyPanel(AppState& state, class EffectsManager& effects_mgr);
+    ~BeautyPanel() override = default;
+
+    void Render() override;
+
+private:
+    void RenderPresets();
+    void RenderPerformanceControls();
+    void RenderSkinSmoothing();
+    void RenderLipEffects();
+    void RenderTeethWhitening();
+    void RenderSkinSmoothingControls();
+    bool RenderWrinkleControls();
+    void RenderLipControls();
+    void RenderTeethControls();
+    void RenderBeautyPresets();
+    void RenderAdvancedControls();
+    bool RenderAdvancedSkinControls();
+    void RenderLipSliders();
+    void RenderLipColorPresets();
+    void ApplyLipColorPreset(const char* name, float r, float g, float b);
+    void RenderTeethSliders();
+    void RenderTeethPresets();
+    void ApplyTeethPreset(const char* name, float strength, float margin);
+    void RenderTeethTips();
+    void ApplyBeautyPreset(int preset_index, const char* preset_name);
+    BeautyState CreateBeautyStateFromAppState();
+    void CopyBeautyFieldsToBeautyState(BeautyState& bs);
+    void CopyWrinkleFieldsToBeautyState(BeautyState& bs);
+    void CopyLipFieldsToBeautyState(BeautyState& bs);
+    void CopyTeethFieldsToBeautyState(BeautyState& bs);
+    void CopyBeautyStateToAppState(const BeautyState& bs);
+    void CopyBeautyStateFieldsToAppState(const BeautyState& bs);
+    void CopyWrinkleStateToAppState(const BeautyState& bs);
+    void CopyLipStateToAppState(const BeautyState& bs);
+    void CopyTeethStateToAppState(const BeautyState& bs);
+    
+    AppState& state_;
+    class EffectsManager& effects_mgr_;
+
+    // UI state
+    int ui_preset_idx_ = 0;
+    bool show_advanced_ = false;
+};
+
+// Background effects panel
 class BackgroundPanel : public UIPanel {
 public:
     BackgroundPanel(AppState& state);
@@ -99,85 +147,92 @@ public:
     void Render() override;
 
 private:
+    void RenderMaskControls();
     void RenderBackgroundMode();
+    void RenderBackgroundModeSelection();
     void RenderBlurControls();
     void RenderImageControls();
+    void RenderImageHeader();
+    void RenderImagePathControls();
+    void RenderImageDisplay();
+    void RenderImageTips();
     void RenderSolidColorControls();
-    void RenderMaskControls();
+    void LoadImageFromPath(const char* path);
+    void LoadImageFromClipboard();
+    void LoadImageFromPortal();
+    void ClearBackgroundImage();
+    void RenderImageInfo();
+    void RenderImageScaling();
+    void RenderImageOpacity();
+    void RenderImagePosition();
+    void RenderResetPositionButton();
     
     AppState& state_;
-};
-
-// Beauty and face effects panel
-class BeautyPanel : public UIPanel {
-public:
-    BeautyPanel(AppState& state);
-    ~BeautyPanel() override = default;
     
-    void Render() override;
-
-private:
-    void RenderPresets();
-    void RenderSkinSmoothing();
-    void RenderAdvancedSkinControls();
-    void RenderWrinkleControls();
-    void RenderLipEffects();
-    void RenderTeethWhitening();
-    void RenderPerformanceControls();
-    
-    AppState& state_;
+    // UI state
+    int ui_bg_mode_idx_ = 0;
+    int scale_mode_ = 0;
 };
 
 // Profile management panel
 class ProfilePanel : public UIPanel {
 public:
-    ProfilePanel(AppState& state, CameraManager& camera_mgr);
+    ProfilePanel(class ConfigManager* config_mgr);
     ~ProfilePanel() override = default;
     
     void Render() override;
     
-    // Set config manager for profile persistence
-    void SetConfigManager(ConfigManager* config_mgr) { config_mgr_ = config_mgr; }
+    // Update UI to show the currently loaded default profile
+    void UpdateDefaultProfileDisplay();
 
 private:
+    void RenderProfileManagement();
     void RenderProfileList();
-    void RenderProfileCreation();
     void RenderProfileActions();
-    void LoadProfileIntoState(const std::string& profile_name);
-    bool SaveStateToProfile(const std::string& profile_name);
     
-    AppState& state_;
-    CameraManager& camera_mgr_;
-    ConfigManager* config_mgr_ = nullptr;
+    class ConfigManager* config_mgr_;
     
     // UI state
-    char profile_name_buf_[128] = {0};
-    int ui_profile_idx_ = -1;
-    std::vector<std::string> profile_names_;
-    
-    // Status tracking
-    std::string last_loaded_profile_;
-    bool profile_list_dirty_ = true;
+    bool show_set_default_ = false;
+    int ui_profile_idx_ = 0;
+    bool profile_loaded_ = false;
 };
 
-// Debug and overlay panel
+// Debug panel for overlay controls and performance stats
+// Forward declarations for AR filters
+namespace ar_filters {
+    class ARFilterManager;
+}
+
 class DebugPanel : public UIPanel {
 public:
     DebugPanel(AppState& state);
     ~DebugPanel() override = default;
     
     void Render() override;
+    
+    // Phase 8 Day 2: Set AR filter manager for UI controls
+    void SetARFilterManager(ar_filters::ARFilterManager* ar_mgr) { ar_filter_mgr_ = ar_mgr; }
 
 private:
     void RenderOverlayControls();
-    void RenderDebugVisualization();
     void RenderPerformanceStats();
     void RenderAdvancedSettings();
+    void RenderBasicStats();
+    void RenderPerformanceOptimization();
+    void RenderManualProcessingScale();
+    void RenderAutoProcessingScale();
+    void RenderAutoProcessingScaleDetails();
+    void RenderPerformanceStatus();
+    
+    // Phase 8 Day 2: AR filter controls
+    void RenderARFilterControls();
     
     AppState& state_;
+    ar_filters::ARFilterManager* ar_filter_mgr_ = nullptr; // Phase 8 Day 2
 };
 
-// Status and information panel
+// Status panel for system information and status display
 class StatusPanel : public UIPanel {
 public:
     StatusPanel(AppState& state);
@@ -192,5 +247,7 @@ private:
     
     AppState& state_;
 };
+
+// Status panel - temporarily disabled for compilation
 
 } // namespace segmecam

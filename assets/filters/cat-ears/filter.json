@@ -1,0 +1,96 @@
+{
+  "filter": {
+    "name": "Cat Ears",
+    "id": "cat-ears-v1",
+    "category": "fun",
+    "version": "1.0.0",
+    "author": "SegmeCam Team",
+    "description": "Cute cat ears that respond to smiles and eye movements",
+    "thumbnail": "thumbnail.png",
+    "icon": "icon.png"
+  },
+  "attachments": [
+    {
+      "id": "left_ear",
+      "anchor": "left_ear",
+      "model": "models/cat_ear.obj",
+      "texture": "textures/cat_fur_pink.png",
+      "scale": [0.8, 0.8, 0.8],
+      "offset": [-0.02, 0.08, -0.01],
+      "rotation": [0.0, 0.0, -15.0],
+      "visible": true,
+      "opacity": 1.0
+    },
+    {
+      "id": "right_ear",
+      "anchor": "right_ear",
+      "model": "models/cat_ear.obj",
+      "texture": "textures/cat_fur_pink.png",
+      "scale": [0.8, 0.8, 0.8],
+      "offset": [0.02, 0.08, -0.01],
+      "rotation": [0.0, 0.0, 15.0],
+      "visible": true,
+      "opacity": 1.0
+    },
+    {
+      "id": "whiskers",
+      "anchor": "nose_bridge",
+      "model": "models/cat_whiskers.obj",
+      "texture": "textures/cat_whiskers_white.png",
+      "scale": [1.0, 1.0, 1.0],
+      "offset": [0.0, -0.02, 0.03],
+      "rotation": [0.0, 0.0, 0.0],
+      "visible": true,
+      "opacity": 0.9
+    }
+  ],
+  "materials": {
+    "left_ear": {
+      "ambient": [0.4, 0.2, 0.3],
+      "diffuse": [0.9, 0.5, 0.7],
+      "specular": [0.3, 0.3, 0.3],
+      "shininess": 16.0,
+      "opacity": 1.0
+    },
+    "right_ear": {
+      "ambient": [0.4, 0.2, 0.3],
+      "diffuse": [0.9, 0.5, 0.7],
+      "specular": [0.3, 0.3, 0.3],
+      "shininess": 16.0,
+      "opacity": 1.0
+    },
+    "whiskers": {
+      "ambient": [0.8, 0.8, 0.8],
+      "diffuse": [1.0, 1.0, 1.0],
+      "specular": [0.9, 0.9, 0.9],
+      "shininess": 64.0,
+      "opacity": 0.9
+    }
+  },
+  "behaviors": {
+    "ear_wiggle_smile": {
+      "type": "scale",
+      "target": "left_ear",
+      "blendshape": "mouthSmile",
+      "threshold": 0.5,
+      "intensity": 0.3,
+      "target_scale": [1.1, 1.1, 1.1]
+    },
+    "ear_wiggle_smile_right": {
+      "type": "scale",
+      "target": "right_ear",
+      "blendshape": "mouthSmile",
+      "threshold": 0.5,
+      "intensity": 0.3,
+      "target_scale": [1.1, 1.1, 1.1]
+    },
+    "whiskers_eye_blink": {
+      "type": "rotate",
+      "target": "whiskers",
+      "blendshape": "eyeBlink",
+      "threshold": 0.7,
+      "intensity": 0.5,
+      "target_rotation": [0.0, 0.0, 5.0]
+    }
+  }
+}

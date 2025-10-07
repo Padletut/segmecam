@@ -1,0 +1,13 @@
+third_party/**          linguist-vendored
+docs/**                 linguist-documentation
+tools/**                linguist-generated
+mediapipe/graphs/**     linguist-generated
+mediapipe/model_maker/** linguist-generated
+mediapipe/modules/**    linguist-generated
+mediapipe/tasks/**      linguist-generated
+mediapipe_runfiles/** linguist-generated
+*.pbtxt                linguist-generated
+*.tflite               linguist-generated
+*.onnx                 linguist-generated
+*.so                   linguist-generated
+bazel-segmecam/**    linguist-generated

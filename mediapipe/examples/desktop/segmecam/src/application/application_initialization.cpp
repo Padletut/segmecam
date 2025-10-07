@@ -9,27 +9,35 @@
 #include "third_party/imgui/backends/imgui_impl_opengl3.h"
 
 // Include SDL for OpenGL context
-#include <SDL_opengl.h>
+// Removed SDL_opengl.h - using epoxy/gl.h instead
 
 #include <iostream>
 
 namespace segmecam {
 
-int ApplicationInitialization::InitializeMediaPipe(
+int ApplicationInitialization::InitializeMediaPipeGraph(
     const ApplicationConfig& config,
     const GPUSetupState& gpu_setup_state,
     std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph,
-    std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
-    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
-    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller
+    AppState& app_state
 ) {
     // CRITICAL: Setup MediaPipe BEFORE SDL (matches original code order)
     std::string graph_path = MediaPipeSetup::SelectGraphPath(config, gpu_setup_state.gpu_caps);
-    if (MediaPipeSetup::InitializeGraph(mediapipe_graph, graph_path, gpu_setup_state.gpu_caps, config) != 0) {
+    if (MediaPipeSetup::InitializeGraph(mediapipe_graph, graph_path, gpu_setup_state.gpu_caps, config, app_state) != 0) {
         std::cerr << "❌ MediaPipe setup failed" << std::endl;
-        return -2;
+        return -1;
     }
-    
+    return 0;
+}
+
+int ApplicationInitialization::SetupMediaPipePollers(
+    const ApplicationConfig& config,
+    std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& blendshapes_poller
+) {
     // Setup basic output stream poller (required before StartRun to prevent deadlock)
     std::cout << "📡 Setting up MediaPipe output stream pollers..." << std::endl;
     auto mask_poller_or = mediapipe_graph->AddOutputStreamPoller("segmentation_mask_cpu");
@@ -39,7 +47,7 @@ int ApplicationInitialization::InitializeMediaPipe(
         mask_poller_or = mediapipe_graph->AddOutputStreamPoller("segmentation_mask");
         if (!mask_poller_or.ok()) {
             std::cerr << "❌ Failed to setup mask output poller: " << mask_poller_or.status().message() << std::endl;
-            return -3;
+            return -1;
         }
     }
     mask_poller = std::make_unique<mediapipe::OutputStreamPoller>(std::move(mask_poller_or.value()));
@@ -54,7 +62,7 @@ int ApplicationInitialization::InitializeMediaPipe(
         auto multi_face_landmarks_poller_or = mediapipe_graph->AddOutputStreamPoller("multi_face_landmarks");
         if (!multi_face_landmarks_poller_or.ok()) {
             std::cerr << "❌ Failed to setup multi_face_landmarks poller: " << multi_face_landmarks_poller_or.status().message() << std::endl;
-            return -5;
+            return -2;
         }
         multi_face_landmarks_poller = std::make_unique<mediapipe::OutputStreamPoller>(std::move(multi_face_landmarks_poller_or.value()));
         
@@ -68,21 +76,37 @@ int ApplicationInitialization::InitializeMediaPipe(
             std::cout << "✅ Face rects poller attached successfully" << std::endl;
         }
         
+        // Setup blendshapes poller (optional - only available with blendshapes model)
+        auto blendshapes_poller_or = mediapipe_graph->AddOutputStreamPoller("face_blendshapes");
+        if (!blendshapes_poller_or.ok()) {
+            std::cout << "ℹ️  face_blendshapes stream not available (this is normal if not using blendshapes model)" << std::endl;
+            blendshapes_poller = nullptr;
+        } else {
+            blendshapes_poller = std::make_unique<mediapipe::OutputStreamPoller>(std::move(blendshapes_poller_or.value()));
+            std::cout << "✅ Face blendshapes poller attached successfully (52 expression coefficients enabled)" << std::endl;
+        }
+        
         std::cout << "✅ Face landmarks pollers ready" << std::endl;
     } else {
         // Set to null if not using face landmarks
         multi_face_landmarks_poller = nullptr;
         face_rects_poller = nullptr;
+        blendshapes_poller = nullptr;
     }
     
+    return 0;
+}
+
+int ApplicationInitialization::StartMediaPipeGraph(
+    std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph
+) {
     // Now safe to start the MediaPipe graph
     std::cout << "🚀 Starting MediaPipe graph..." << std::endl;
     if (MediaPipeSetup::StartGraph(mediapipe_graph) != 0) {
         std::cerr << "❌ MediaPipe graph start failed" << std::endl;
-        return -4;
+        return -1;
     }
     std::cout << "✅ MediaPipe graph running" << std::endl;
-    
     return 0;
 }
 
@@ -127,19 +151,6 @@ int ApplicationInitialization::InitializeSDLAndOpenGL(
     return 0;
 }
 
-int ApplicationInitialization::InitializeImGui(SDL_Window* window, SDL_GLContext gl_context) {
-    // Initialize enhanced ImGui for Phase 8 (UI Manager integration will be refined)
-    std::cout << "🎨 Initializing enhanced ImGui..." << std::endl;
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGui::StyleColorsDark();
-    ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
-    ImGui_ImplOpenGL3_Init("#version 330");
-    std::cout << "✅ Enhanced ImGui initialized" << std::endl;
-    
-    return 0;
-}
-
 int ApplicationInitialization::InitializeManagers(
     ManagerCoordination::Managers& managers,
     AppState& app_state
@@ -160,12 +171,8 @@ int ApplicationInitialization::InitializeApplication(
     const ApplicationConfig& config,
     ManagerCoordination::Managers& managers,
     AppState& app_state,
-    std::unique_ptr<mediapipe::CalculatorGraph>& mediapipe_graph,
-    std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
-    std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
-    std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
-    SDL_Window*& window,
-    SDL_GLContext& gl_context,
+    MediaPipeInitParams& mediapipe_params,
+    SDLInitParams& sdl_params,
     GPUSetupState& gpu_setup_state
 ) {
     std::cout << "🚀 Initializing SegmeCam Application..." << std::endl;
@@ -174,28 +181,50 @@ int ApplicationInitialization::InitializeApplication(
     gpu_setup_state = GPUSetup::DetectAndSetupGPU();
     
     // Initialize MediaPipe system
-    int mediapipe_result = InitializeMediaPipe(config, gpu_setup_state, mediapipe_graph, mask_poller, multi_face_landmarks_poller, face_rects_poller);
+    int mediapipe_result = InitializeMediaPipeGraph(config, gpu_setup_state, mediapipe_params.graph, app_state);
+    if (mediapipe_result != 0) {
+        return mediapipe_result;
+    }
+    
+    mediapipe_result = SetupMediaPipePollers(config, mediapipe_params.graph, mediapipe_params.mask_poller,
+                                            mediapipe_params.multi_face_landmarks_poller,
+                                            mediapipe_params.face_rects_poller,
+                                            mediapipe_params.blendshapes_poller);
+    if (mediapipe_result != 0) {
+        return mediapipe_result;
+    }
+    
+    mediapipe_result = StartMediaPipeGraph(mediapipe_params.graph);
     if (mediapipe_result != 0) {
         return mediapipe_result;
     }
     
     // Initialize SDL and OpenGL
-    int sdl_result = InitializeSDLAndOpenGL(window, gl_context);
+    int sdl_result = InitializeSDLAndOpenGL(sdl_params.window, sdl_params.gl_context);
     if (sdl_result != 0) {
         return sdl_result;
     }
     
-    // Initialize ImGui
-    int imgui_result = InitializeImGui(window, gl_context);
-    if (imgui_result != 0) {
-        return imgui_result;
-    }
+    // Note: ImGui initialization moved to UIManager.Initialize()
     
     // Initialize managers
     int managers_result = InitializeManagers(managers, app_state);
     if (managers_result != 0) {
         return managers_result;
     }
+    
+    // Initialize UIManager with existing window and GL context
+    if (managers.ui && !managers.ui->Initialize(sdl_params.window)) {
+        std::cerr << "❌ UIManager initialization with existing window failed" << std::endl;
+        return -9;
+    }
+    
+    // Initialize UI panels with dependencies (Phase 8 Day 2: Pass ar_filter_mgr)
+    managers.ui->InitializePanels(app_state, 
+                                   *managers.camera, 
+                                   *managers.effects, 
+                                   managers.config.get(),
+                                   managers.ar_filter_manager.get());
     
     std::cout << "✅ SegmeCam Application initialized successfully!" << std::endl;
     return 0;

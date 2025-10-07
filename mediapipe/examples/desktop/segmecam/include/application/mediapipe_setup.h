@@ -4,7 +4,8 @@
 #include <string>
 #include <memory>
 #include "application/application_config.h"
-#include "gpu_detector.h"
+#include "include/mediapipe_manager/gpu_detector.h"
+#include "include/application/app_state.h"
 #include "mediapipe/framework/calculator_graph.h"
 
 namespace segmecam {
@@ -18,7 +19,8 @@ public:
     static int InitializeGraph(std::unique_ptr<mediapipe::CalculatorGraph>& graph, 
                               const std::string& graph_path, 
                               const GPUCapabilities& gpu_caps,
-                              const ApplicationConfig& config);
+                              const ApplicationConfig& config,
+                              AppState& app_state);
     
     // Setup MediaPipe resource directory for model files
     static void SetupResourceDirectory(const std::string& user_resource_root_dir = "");

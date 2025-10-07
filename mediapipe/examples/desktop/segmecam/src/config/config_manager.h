@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include "mediapipe/framework/port/opencv_core_inc.h"
+#include "include/effects/presets.h"
 
 namespace segmecam {
 
@@ -59,12 +60,33 @@ private:
     cv::FileStorage OpenProfileForWrite(const std::string& path) const;
     bool WriteConfigToStorage(cv::FileStorage& fs, const ConfigData& config) const;
     bool ReadConfigFromStorage(cv::FileStorage& fs, ConfigData& config) const;
-    
+    void writeCameraSettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void writeCameraControlsSettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void writeDisplaySettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void writeBackgroundSettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void writeLandmarkSettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void writeBeautyEffectsSettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void writePerformanceSettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void writeARFilterSettings(cv::FileStorage& fs, const ConfigData& config) const;  // Phase 9
+    void readCameraSettings(const cv::FileNode& root, ConfigData& config) const;
+    void readCameraControlsSettings(const cv::FileNode& root, ConfigData& config) const;
+    void readDisplaySettings(const cv::FileNode& root, ConfigData& config) const;
+    void readBackgroundSettings(const cv::FileNode& root, ConfigData& config) const;
+    void readLandmarkSettings(const cv::FileNode& root, ConfigData& config) const;
+    void readBeautyEffectsSettings(const cv::FileNode& root, ConfigData& config) const;
+    void readPerformanceSettings(const cv::FileNode& root, ConfigData& config) const;
+    void readARFilterSettings(const cv::FileNode& root, ConfigData& config) const;  // Phase 9
+        
     // Helper functions for type-safe reading
     int ReadInt(const cv::FileNode& node, int defaultValue) const;
     float ReadFloat(const cv::FileNode& node, float defaultValue) const;
     std::string ReadString(const cv::FileNode& node, const std::string& defaultValue) const;
     void ReadColorArray(const cv::FileNode& node, float* color, const float* defaultColor) const;
+
+    // Validation helper methods
+    bool ValidateCameraSettings(const ConfigData& config) const;
+    bool ValidateBackgroundSettings(const ConfigData& config) const;
+    bool ValidateColorArrays(const ConfigData& config) const;
 
     std::string profile_dir_;
     std::string default_profile_path_;
@@ -81,6 +103,7 @@ private:
  * Organized by logical groups for maintainability.
  */
 struct ConfigData {
+
     // Camera settings
     struct CameraConfig {
         std::string cam_path;
@@ -92,6 +115,24 @@ struct ConfigData {
         int ui_fps_idx = -1;
     } camera;
     
+    // Camera V4L2 controls
+    struct CameraControlsConfig {
+        int brightness = -1;  // -1 means not set/use camera default
+        int contrast = -1;
+        int saturation = -1;
+        int gain = -1;
+        int sharpness = -1;
+        int zoom = -1;
+        int focus = -1;
+        bool auto_gain = false;
+        bool auto_focus = true;  // Default to auto focus enabled
+        bool auto_exposure = true;  // Default to auto exposure enabled
+        int exposure = -1;
+        bool auto_white_balance = true;  // Default to auto WB enabled
+        int white_balance_temperature = -1;
+        int backlight_compensation = -1;
+    } camera_controls;
+    
     // Display settings
     struct DisplayConfig {
         bool vsync_on = true;
@@ -99,6 +140,9 @@ struct ConfigData {
         bool show_landmarks = false;
         bool show_mesh = false;
         bool show_mesh_dense = false;
+        bool show_facemask = false;
+        bool show_wrinkle_segmentation = false;
+        bool show_wrinkle_inpaint = false;
     } display;
     
     // Background settings
@@ -121,6 +165,7 @@ struct ConfigData {
     
     // Beauty effects settings
     struct BeautyConfig {
+
         // Core skin smoothing
         bool fx_skin = false;
         bool fx_skin_adv = true;
@@ -136,7 +181,7 @@ struct ConfigData {
         
         // Auto processing scale
         bool auto_processing_scale = false;
-        float target_fps = 14.5f;
+        float target_fps = 29.0f;
         
         // Wrinkle-aware settings
         bool fx_skin_wrinkle = true;
@@ -144,6 +189,7 @@ struct ConfigData {
         float fx_skin_squint_boost = 0.5f;
         float fx_skin_forehead_boost = 0.8f;
         float fx_skin_wrinkle_gain = 1.5f;
+        float fx_skin_smile_wrinkle_gain = 1.0f; // New parameter for smile wrinkle gain
         
         // Wrinkle processing controls
         bool fx_wrinkle_suppress_lower = true;
@@ -172,12 +218,25 @@ struct ConfigData {
         bool fx_teeth = false;
         float fx_teeth_strength = 0.5f;
         float fx_teeth_margin = 3.0f;
+
     } beauty;
+
+    // Helper methods for copying beauty settings
+    void CopyBeautySettingsToState(BeautyState& state) const;
+    void CopyBeautySettingsFromState(const BeautyState& state);
+
     
     // Performance settings
     struct PerformanceConfig {
         bool use_opencl = true; // Enable by default if available
     } performance;
+    
+    // AR Filter settings (Phase 9)
+    struct ARFilterConfig {
+        std::string active_filter_id = "";  // Currently selected filter (e.g., "cat-ears-v1")
+        bool filters_enabled = true;         // Global AR filters toggle
+        int thumbnail_size = 128;            // Configurable thumbnail size
+    } ar_filters;
     
     // Debug settings
     struct DebugConfig {

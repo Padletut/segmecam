@@ -1,0 +1,179 @@
+app-id: org.segmecam.SegmeCam
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+metadata:
+  version: '1.1.0'
+add-extensions:
+  org.freedesktop.Platform.ffmpeg-full:
+    directory: lib/ffmpeg
+    add-ld-path: lib
+    no-autodownload: true
+    autodelete: false
+  org.freedesktop.Platform.GStreamer.gstreamer:
+    directory: lib/gstreamer-1.0
+    add-ld-path: lib
+    no-autodownload: false
+    autodelete: false
+  org.freedesktop.Platform.GStreamer.gst-plugins-good:
+    directory: lib/gstreamer-1.0
+    add-ld-path: lib
+    no-autodownload: false
+    autodelete: false
+  org.freedesktop.Platform.GStreamer.gst-plugins-bad:
+    directory: lib/gstreamer-1.0
+    add-ld-path: lib
+    no-autodownload: false
+    autodelete: false
+
+command: segmecam-launcher.sh
+
+finish-args:
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --share=ipc
+  - --device=dri
+  - --filesystem=xdg-run/pipewire-0
+  - --persist=.config/segmecam
+
+build-options:
+  cflags: -O2
+
+modules:
+  - name: libportal
+    buildsystem: meson
+    config-opts:
+      - -Dvapi=false
+      - -Ddocs=false
+      - -Dlibdir=lib
+    sources:
+      - type: git
+        url: https://github.com/flatpak/libportal.git
+        tag: 0.7.1
+
+  - name: glu
+    buildsystem: meson
+    config-opts:
+      - -Dlibdir=lib              
+      - -Ddefault_library=shared
+    sources:
+      - type: archive
+        url: https://archive.mesa3d.org/glu/glu-9.0.3.tar.xz
+        sha256: bd43fe12f374b1192eb15fe20e45ff456b9bc26ab57f0eee919f96ca0f8a330f
+
+  - name: opencv
+    buildsystem: cmake
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_PREFIX=/app
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DBUILD_SHARED_LIBS=ON
+      - -DBUILD_opencv_apps=OFF
+      - -DBUILD_opencv_java=OFF
+      - -DBUILD_opencv_python=OFF
+      - -DBUILD_opencv_js=OFF
+      - -DBUILD_opencv_ts=OFF
+      - -DBUILD_opencv_java_bindings_generator=OFF
+      - -DBUILD_opencv_python_bindings_generator=OFF
+      - -DBUILD_opencv_dnn=ON
+      - -DBUILD_opencv_highgui=ON
+      - -DBUILD_opencv_imgcodecs=ON
+      - -DBUILD_opencv_imgproc=ON
+      - -DBUILD_opencv_core=ON
+      - -DBUILD_opencv_video=ON
+      - -DBUILD_opencv_videoio=ON
+      - -DBUILD_opencv_calib3d=ON
+      - -DBUILD_opencv_features2d=ON
+      - -DBUILD_opencv_flann=ON
+      - -DWITH_GTK=OFF
+      - -DWITH_QT=OFF
+      - -DWITH_OPENGL=ON
+      - -DWITH_GSTREAMER=ON
+      - -DWITH_FFMPEG=OFF
+      - -DWITH_V4L=ON
+    sources:
+      - type: archive
+        url: https://github.com/opencv/opencv/archive/4.6.0.tar.gz
+        sha256: 1ec1cba65f9f20fe5a41fda1586e01c70ea0c9a6d7b67c9e13edf0cfe2239277
+
+  - name: segmecam
+    buildsystem: simple
+    sources:
+      - type: dir
+        path: .
+        dest: source
+    build-commands:
+      # Copy the pre-built SegmeCam binary from project root to the app directory (updated 2024-09-19 05:15)
+      - mkdir -p /app/bin /app/lib
+      - ls -la source/segmecam
+      - cp -v source/segmecam /app/bin/segmecam
+
+      # Copy essential system libraries that the binary depends on
+      # Note: For Flathub compliance, libraries are built from source when not available in runtime
+      # GTK, Cairo, Pango, GdkPixbuf, GL libraries are available in org.freedesktop.Platform
+      # OpenCV and GLU are built from source in dedicated modules
+
+      # Install the wrapper script
+      - cp source/segmecam-wrapper-nvidia.sh /app/bin/segmecam-wrapper-nvidia.sh
+      - chmod +x /app/bin/segmecam-wrapper-nvidia.sh
+
+      # Create simple launcher script
+      - |
+        cat > /app/bin/segmecam-launcher.sh << 'EOF'
+        #!/bin/bash
+        # Default arguments
+        GRAPH_PATH="/app/share/segmecam/mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt"
+        RESOURCE_DIR="/app/mediapipe_runfiles"
+        CAMERA_ID=0
+        
+        # Parse --face flag
+        for arg in "$@"; do
+          case $arg in
+            --face)
+              GRAPH_PATH="/app/share/segmecam/mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt"
+              shift
+              ;;
+          esac
+        done
+        
+        exec /app/bin/segmecam --graph_path="$GRAPH_PATH" --resource_root_dir="$RESOURCE_DIR" --camera_id="$CAMERA_ID" "$@"
+        EOF
+      - chmod +x /app/bin/segmecam-launcher.sh
+
+      # Install graph files
+      - mkdir -p /app/share/segmecam/mediapipe_graphs
+      - cp source/mediapipe_graphs/selfie_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
+      - cp source/mediapipe_graphs/face_and_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
+      - cp source/mediapipe_graphs/face_tasks_and_seg_gpu_mask_cpu.pbtxt /app/share/segmecam/mediapipe_graphs/
+
+      # Create symlink for graphs in working directory
+      - ln -sf /app/share/segmecam/mediapipe_graphs /app/mediapipe_graphs
+
+      # Create MediaPipe runfiles structure
+      - mkdir -p /app/mediapipe_runfiles
+
+      # Fix permissions for all copied files
+      - chmod -R u+w /app/mediapipe_runfiles/
+
+      # Create MediaPipe external model directory and install face landmarker model
+      - mkdir -p /app/mediapipe/external/com_google_mediapipe_face_landmarker_task/file
+      - cp source/models/tasks/face_landmarker.task /app/mediapipe/external/com_google_mediapipe_face_landmarker_task/file/downloaded
+
+      # Ensure mediapipe tflite models is installed to the expected path
+      - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/selfie_segmentation
+      - cp source/models/selfie_segmenter.tflite /app/mediapipe_runfiles/mediapipe/modules/selfie_segmentation/selfie_segmentation.tflite
+      - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/face_landmark
+      - cp source/models/face_landmark_with_attention.tflite /app/mediapipe_runfiles/mediapipe/modules/face_landmark/face_landmark_with_attention.tflite
+      - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/face_detection
+      - cp source/models/face_detection_short_range.tflite /app/mediapipe_runfiles/mediapipe/modules/face_detection/face_detection_short_range.tflite
+      - mkdir -p /app/mediapipe_runfiles/mediapipe/modules/face_blendshapes
+      - cp source/models/face_blendshapes.tflite /app/mediapipe_runfiles/mediapipe/modules/face_blendshapes/face_blendshapes.tflite
+      # Also copy to the expected models/ directory for blendshapes
+      - mkdir -p /app/mediapipe_runfiles/models
+      - cp source/models/face_blendshapes.tflite /app/mediapipe_runfiles/models/face_blendshapes.tflite
+
+      # Install desktop integration
+      - install -Dm644 source/org.segmecam.SegmeCam.desktop /app/share/applications/org.segmecam.SegmeCam.desktop
+      - install -Dm644 source/org.segmecam.SegmeCam.appdata.xml /app/share/metainfo/org.segmecam.SegmeCam.appdata.xml
+      - install -Dm644 source/assets/org.segmecam.SegmeCam.svg /app/share/icons/hicolor/scalable/apps/org.segmecam.SegmeCam.svg

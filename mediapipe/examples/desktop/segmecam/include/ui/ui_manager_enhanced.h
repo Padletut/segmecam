@@ -1,13 +1,19 @@
 #pragma once
 
 #include <SDL.h>
-#include <SDL_opengl.h>
+// Note: Don't include SDL_opengl.h when using epoxy - use epoxy/gl.h instead
+#include <epoxy/gl.h>  // Modern OpenGL function loader
 #include "mediapipe/framework/port/opencv_core_inc.h"
 #include "mediapipe/framework/port/opencv_imgproc_inc.h"
 #include <memory>
 #include <vector>
 #include <string>
 #include "ui_panels.h"
+
+// Forward declarations
+namespace ar_filters {
+    class ARFilterManager;
+}
 
 namespace segmecam {
 
@@ -25,11 +31,15 @@ public:
   bool Initialize();
   bool Initialize(SDL_Window* existing_window);
   
-  // Initialize UI panels with dependencies
-  void InitializePanels(AppState& state, CameraManager& camera_mgr, class EffectsManager& effects_mgr, ConfigManager* config_mgr = nullptr);
+  // Initialize UI panels with dependencies (Phase 8 Day 2: Added ar_filter_mgr)
+  void InitializePanels(AppState& state, 
+                        CameraManager& camera_mgr, 
+                        class EffectsManager& effects_mgr, 
+                        ConfigManager* config_mgr = nullptr,
+                        ar_filters::ARFilterManager* ar_filter_mgr = nullptr);
   
   // Event handling
-  bool ProcessEvents(bool& running);
+  bool ProcessEvents(bool& running, ar_filters::ARFilterManager* ar_filter_mgr = nullptr);
   
   // Get and clear any dropped file paths
   std::vector<std::string> GetDroppedFiles();
@@ -48,6 +58,7 @@ public:
   void ShowPanel(const std::string& panel_name, bool show = true);
   void TogglePanel(const std::string& panel_name);
   bool IsPanelVisible(const std::string& panel_name) const;
+  UIPanel* FindPanel(const std::string& name);
   
   // Texture management
   void UploadTexture(const cv::Mat& rgb);
@@ -77,7 +88,17 @@ private:
   
   // Panel management
   void RegisterPanel(std::unique_ptr<UIPanel> panel);
-  UIPanel* FindPanel(const std::string& name);
+  
+  // Dropped file handling
+  void HandleDroppedFile(char* dropped_path);
+  
+  // Event handling helpers
+  void HandleQuitEvent(bool& running);
+  bool HandleWindowEvent(const SDL_Event& event, bool& running);
+  bool HandleKeyEvent(const SDL_Event& event, bool& running, ar_filters::ARFilterManager* ar_filter_mgr);
+  
+  // Video background rendering
+  void RenderVideoBackgroundInternal(GLuint video_texture, int video_width, int video_height, int window_width, int window_height);
   
   // Window state
   SDL_Window* window_ = nullptr;
@@ -94,7 +115,7 @@ private:
   
   // UI visibility state
   bool show_main_window_ = true;
-  bool show_video_preview_ = true;
+  bool show_video_preview_ = true;  // Enabled - shows video in borderless fullscreen window
   bool show_status_overlay_ = true;
   
   // UI layout state

@@ -4,7 +4,7 @@ set -euo pipefail
 REAL_BAZEL="${REAL_BAZEL:-/usr/bin/bazel-7.4.1}"
 
 if [[ "${ALLOW_BAZEL:-}" != "1" ]]; then
-  echo "🚫 Never call 'bazel' directly here. Use: ./scripts/run_segmecam_gui_gpu.sh --face"
+  echo "🚫 Never call 'bazel' directly here. Use: ./build-app.sh"
   exit 1
 fi
 

@@ -1,167 +1,13 @@
 #include "include/ui/ui_panels.h"
-#include "include/camera/camera_manager.h"
-#include "src/config/config_manager.h"
+#include "include/ar_filters/filter_object.h"
+#include "include/ar_filters/model_loader.h"
+#include "include/ar_filters/ar_filter_manager.h"  // Phase 8 Day 2
 #include <iostream>
-#include <cstring>
-#include <algorithm>
 
 namespace segmecam {
 
-// Profile Panel Implementation
-ProfilePanel::ProfilePanel(AppState& state, CameraManager& camera_mgr)
-    : UIPanel("Profiles"), state_(state), camera_mgr_(camera_mgr) {
-}
-
-void ProfilePanel::Render() {
-    if (!visible_) return;
-    
-    ImGui::Text("Profile");
-    
-    // List existing profiles (if ConfigManager is available)
-    if (config_mgr_) {
-        auto profile_names = config_mgr_->ListProfiles();
-        if (profile_names.empty()) {
-            ImGui::TextDisabled("No profiles yet");
-        } else {
-            std::vector<const char*> items;
-            for (const auto& name : profile_names) {
-                items.push_back(name.c_str());
-            }
-            
-            // Ensure ui_profile_idx_ is valid
-            if (ui_profile_idx_ < 0 || ui_profile_idx_ >= (int)profile_names.size()) {
-                ui_profile_idx_ = 0;
-            }
-            
-            ImGui::Combo("Select", &ui_profile_idx_, items.data(), (int)items.size());
-            ImGui::SameLine();
-            
-            if (ImGui::Button("Load##prof") && ui_profile_idx_ >= 0) {
-                LoadProfileIntoState(profile_names[ui_profile_idx_]);
-                // Update name buffer to match loaded profile
-                strncpy(profile_name_buf_, profile_names[ui_profile_idx_].c_str(), sizeof(profile_name_buf_) - 1);
-                profile_name_buf_[sizeof(profile_name_buf_) - 1] = '\0';
-            }
-        }
-        
-        ImGui::InputText("Name", profile_name_buf_, sizeof(profile_name_buf_));
-        
-        if (ImGui::Button("Save##prof")) {
-            if (strlen(profile_name_buf_) > 0) {
-                if (SaveStateToProfile(profile_name_buf_)) {
-                    std::cout << "Profile saved: " << profile_name_buf_ << std::endl;
-                    // Update profile index after successful save
-                    auto profile_names = config_mgr_->ListProfiles();
-                    auto it = std::find(profile_names.begin(), profile_names.end(), profile_name_buf_);
-                    ui_profile_idx_ = (it == profile_names.end()) ? -1 : (int)std::distance(profile_names.begin(), it);
-                }
-            }
-        }
-        ImGui::SameLine();
-        
-        if (ImGui::Button("Set Default##prof") && strlen(profile_name_buf_) > 0) {
-            config_mgr_->SetDefaultProfile(profile_name_buf_);
-            std::cout << "Set default profile: " << profile_name_buf_ << std::endl;
-        }
-    } else {
-        ImGui::TextDisabled("Profile system not available");
-        ImGui::InputText("Name", profile_name_buf_, sizeof(profile_name_buf_));
-        if (ImGui::Button("Save##prof")) {
-            ImGui::TextDisabled("Config manager not initialized");
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Set Default##prof")) {
-            ImGui::TextDisabled("Config manager not initialized");
-        }
-    }
-    
-    ImGui::Separator();
-}
-
-void ProfilePanel::RenderProfileList() {
-    ImGui::Text("Available Profiles");
-    ImGui::Separator();
-    
-    // Simple static profile list for now
-    static std::vector<std::string> profiles = {"Default", "Beauty", "Natural", "Stream"};
-    
-    for (int i = 0; i < (int)profiles.size(); i++) {
-        if (ImGui::Selectable(profiles[i].c_str())) {
-            LoadProfileIntoState(profiles[i]);
-        }
-    }
-}
-
-void ProfilePanel::RenderProfileCreation() {
-    ImGui::Text("Create New Profile");
-    ImGui::Separator();
-    
-    ImGui::InputText("Profile Name", profile_name_buf_, sizeof(profile_name_buf_));
-    
-    if (ImGui::Button("Save Current Settings")) {
-        if (strlen(profile_name_buf_) > 0) {
-            if (SaveStateToProfile(profile_name_buf_)) {
-                std::cout << "Profile saved: " << profile_name_buf_ << std::endl;
-                profile_name_buf_[0] = '\0';
-            }
-        }
-    }
-}
-
-void ProfilePanel::RenderProfileActions() {
-    ImGui::Text("Profile Actions");
-    ImGui::Separator();
-    
-    if (ImGui::Button("Load Default")) {
-        LoadProfileIntoState("Default");
-    }
-    
-    ImGui::SameLine();
-    if (ImGui::Button("Reset All")) {
-        // Reset to defaults
-        state_.fx_skin = false;
-        state_.fx_skin_strength = 0.4f;
-        state_.fx_lipstick = false;
-        state_.fx_teeth = false;
-    }
-    
-    ImGui::TextDisabled("Profile system is currently simplified");
-    ImGui::TextDisabled("Full YAML persistence will be integrated later");
-}
-
-void ProfilePanel::LoadProfileIntoState(const std::string& profile_name) {
-    std::cout << "Loading profile: " << profile_name << std::endl;
-    
-    // Simple preset loading for now
-    if (profile_name == "Natural") {
-        state_.fx_skin = true;
-        state_.fx_skin_strength = 0.3f;
-        state_.fx_skin_wrinkle = true;
-    } else if (profile_name == "Beauty") {
-        state_.fx_skin = true;
-        state_.fx_skin_strength = 0.6f;
-        state_.fx_skin_wrinkle = true;
-        state_.fx_lipstick = true;
-        state_.fx_lip_alpha = 0.3f;
-    } else if (profile_name == "Stream") {
-        state_.bg_mode = 1; // Blur
-        state_.fx_skin = true;
-        state_.fx_skin_strength = 0.4f;
-    }
-    
-    last_loaded_profile_ = profile_name;
-}
-
-bool ProfilePanel::SaveStateToProfile(const std::string& profile_name) {
-    std::cout << "Saving profile: " << profile_name << std::endl;
-    
-    // TODO: Implement real YAML persistence with ConfigManager
-    if (config_mgr_) {
-        // Future: Use config_mgr_->SaveProfile(profile_name, state_to_config(state_));
-    }
-    
-    return true;
-}
+namespace {
+} // anonymous namespace
 
 // Debug Panel Implementation
 DebugPanel::DebugPanel(AppState& state)
@@ -173,10 +19,11 @@ void DebugPanel::Render() {
     
     if (ImGui::CollapsingHeader("Debug Controls")) {
         RenderOverlayControls();
-        RenderDebugVisualization();
+        RenderARFilterControls();  // Phase 8 Day 2: AR filter UI controls
         RenderPerformanceStats();
         RenderAdvancedSettings();
     }
+
 }
 
 void DebugPanel::RenderOverlayControls() {
@@ -185,33 +32,203 @@ void DebugPanel::RenderOverlayControls() {
     
     ImGui::Checkbox("Show Face Landmarks", &state_.show_landmarks);
     ImGui::Checkbox("Show Segmentation Mask", &state_.show_mask);
-    ImGui::Checkbox("Show Face Mesh", &state_.show_mesh);
-}
+    ImGui::Checkbox("Show Facemask", &state_.show_facemask);
+    ImGui::Checkbox("Show Wrinkle Segmentation", &state_.show_wrinkle_segmentation);
 
-void DebugPanel::RenderDebugVisualization() {
-    ImGui::Text("Debug Visualization");
+    // Mesh visualization
+    ImGui::Checkbox("Show Face Mesh", &state_.show_mesh);
+    if (state_.show_mesh) {
+        ImGui::SameLine();
+        ImGui::Checkbox("Dense", &state_.show_mesh_dense);
+        ImGui::SameLine();
+        ImGui::Button("?##mesh_dense");
+    }
+    
+    // Anchor point visualization (Phase 2 Step 3)
+    ImGui::Checkbox("Show Anchor Points", &state_.show_anchors);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Display 7 key attachment points for AR filters");
+    }
+    
+    ImGui::Spacing();
     ImGui::Separator();
     
-    ImGui::Checkbox("Composite RGB debug", &state_.dbg_composite_rgb);
+    // AR Filter Test Demo (Phase 2 Step 5.5)
+    ImGui::Text("AR Filter Test Demo");
+    ImGui::Separator();
+    
+    bool test_changed = ImGui::Checkbox("Enable Filter Test", &state_.show_filter_test);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Creates 7 colored geometric primitives attached to face anchors");
+    }
+    
+    if (test_changed) {
+        if (state_.show_filter_test && !state_.filter_test_demo.IsInitialized()) {
+            // Initialize test on first enable
+            state_.filter_test_demo.Initialize(state_.attachment_controller, state_.ar_filters_enabled);
+            std::cout << "[DebugPanel] AR Filter test demo initialized" << std::endl;
+        }
+        state_.filter_test_demo.SetActive(state_.show_filter_test, state_.ar_filters_enabled);
+    }
+    
+    // Show test statistics if active
+    if (state_.show_filter_test && state_.filter_test_demo.IsInitialized()) {
+        ImGui::Indent();
+        auto stats = state_.attachment_controller.GetStatistics();
+        ImGui::Text("Filters: %zu/%zu visible", 
+                   stats.visible_filters, 
+                   stats.total_filters);
+        ImGui::Text("Update: %.2f ms", stats.average_update_time_ms);
+        
+        if (ImGui::Button("Print Stats")) {
+            state_.filter_test_demo.PrintStatistics(state_.attachment_controller);
+        }
+        ImGui::Unindent();
+    }
+    
+    ImGui::Spacing();
+    ImGui::Separator();
+    
+    // AR Filter Presets (Phase 2 Step 6)
+    ImGui::Text("AR Filter Presets");
+    ImGui::Separator();
+    
+    // Preset selection dropdown
+    static int selected_preset = 0;
+    const char* preset_items[] = {
+        "None",
+        "Classic Glasses",
+        "Party Hat",
+        "Face Mask"
+    };
+    
+    if (ImGui::Combo("Filter Preset", &selected_preset, preset_items, IM_ARRAYSIZE(preset_items))) {
+        FilterPreset preset = static_cast<FilterPreset>(selected_preset);
+        state_.filter_preset_manager.ApplyPreset(preset, state_.attachment_controller, state_.ar_filters_enabled);
+        std::cout << "[DebugPanel] Applied preset: " 
+                  << state_.filter_preset_manager.GetPresetName(preset) << std::endl;
+    }
+    
+    ImGui::SameLine();
+    if (ImGui::Button("?##preset_help")) {}
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("For Test Demo (7 Filters), use 'Enable Filter Test' checkbox above");
+    }
+    
+    // Show preset info if one is active
+    if (state_.filter_preset_manager.IsPresetActive()) {
+        ImGui::Indent();
+        FilterPreset current = state_.filter_preset_manager.GetCurrentPreset();
+        ImGui::Text("Active: %s", state_.filter_preset_manager.GetPresetName(current).c_str());
+        ImGui::Text("Filters: %d", state_.filter_preset_manager.GetPresetFilterCount(current));
+        
+        auto stats = state_.attachment_controller.GetStatistics();
+        ImGui::Text("Visible: %zu/%zu", stats.visible_filters, stats.total_filters);
+        ImGui::Text("Update: %.5f ms", stats.average_update_time_ms);
+        
+        if (ImGui::Button("Clear Preset")) {
+            state_.filter_preset_manager.ClearCurrentPreset(state_.attachment_controller, state_.ar_filters_enabled);
+            selected_preset = 0;  // Reset dropdown to "None"
+            std::cout << "[DebugPanel] Cleared filter preset" << std::endl;
+        }
+        ImGui::Unindent();
+    }
+    
+    ImGui::Spacing();
+    ImGui::Separator();
+    
+    // 3D Model Loading (Phase 3 Step 7)
+    ImGui::Text("3D Model Loading (Phase 3)");
+    ImGui::Separator();
+    
+    // Model file path input
+    static char model_path[512] = "assets/ar_filters/models/simple_cube.obj";
+    ImGui::InputText("Model Path", model_path, sizeof(model_path));
+    ImGui::TextDisabled("Path relative to workspace or absolute path");
+    
+    // Anchor point selection
+    static int model_anchor = 0;
+    const char* anchor_items[] = {
+        "nose_bridge",
+        "forehead", 
+        "chin",
+        "left_cheek",
+        "right_cheek",
+        "left_eye",
+        "right_eye"
+    };
+    ImGui::Combo("Anchor Point", &model_anchor, anchor_items, IM_ARRAYSIZE(anchor_items));
+    
+    // Model scale control
+    static float model_scale = 1.0f;
+    ImGui::SliderFloat("Model Scale", &model_scale, 0.1f, 5.0f);
+    
+    // Load button
+    if (ImGui::Button("Load 3D Model")) {
+        std::string anchor_name = anchor_items[model_anchor];
+        std::cout << "[DebugPanel] Loading 3D model: " << model_path 
+                  << " at anchor: " << anchor_name << std::endl;
+        
+        // Create FilterObject from model
+        FilterObject model_filter = CreateFromModel(
+            anchor_name,
+            std::string("Model: ") + model_path,
+            std::string(model_path)
+        );
+        
+        if (model_filter.model != nullptr && !model_filter.model->meshes.empty()) {
+            model_filter.local_scale = model_scale;
+            model_filter.offset = {0.0f, 0.0f, 0.0f};
+            model_filter.enabled = true;
+            model_filter.visible = true;
+            
+            // Enable AR filters and attach
+            state_.ar_filters_enabled = true;
+            auto filter_id = state_.attachment_controller.AttachFilter(model_filter);
+            
+            std::cout << "[DebugPanel] Model loaded successfully! Filter ID: " 
+                      << filter_id << std::endl;
+            std::cout << "[DebugPanel] Meshes: " << model_filter.model->meshes.size()
+                      << ", Materials: " << model_filter.model->materials.size() << std::endl;
+        } else {
+            std::cout << "[DebugPanel] ERROR: Failed to load model from: " 
+                      << model_path << std::endl;
+        }
+    }
+    
+    ImGui::SameLine();
+    if (ImGui::Button("Clear All Models")) {
+        state_.attachment_controller.DetachAll();
+        state_.ar_filters_enabled = false;
+        std::cout << "[DebugPanel] Cleared all models" << std::endl;
+    }
+
 }
 
+
 void DebugPanel::RenderPerformanceStats() {
+    RenderBasicStats();
+    RenderPerformanceOptimization();
+}
+
+void DebugPanel::RenderBasicStats() {
     ImGui::Text("Performance Statistics");
     ImGui::Separator();
     
     ImGui::Text("FPS: %.1f", state_.fps);
     ImGui::Text("Frame ID: %lld", (long long)state_.frame_id);
-    
-    if (state_.perf_log && state_.perf_sum_frames > 0) {
-        ImGui::Text("Avg Frame Time: %.2f ms", state_.perf_sum_frame_ms / state_.perf_sum_frames);
-        ImGui::Text("Avg Smooth Time: %.2f ms", state_.perf_sum_smooth_ms / state_.perf_sum_frames);
-        ImGui::Text("Avg Background Time: %.2f ms", state_.perf_sum_bg_ms / state_.perf_sum_frames);
-    }
-    
+}
+
+void DebugPanel::RenderPerformanceOptimization() {
     ImGui::Spacing();
     ImGui::Text("Performance Optimization");
     ImGui::Separator();
     
+    RenderManualProcessingScale();
+    RenderAutoProcessingScale();
+}
+
+void DebugPanel::RenderManualProcessingScale() {
     // Manual processing scale
     ImGui::SliderFloat("Processing scale", &state_.fx_adv_scale, 0.4f, 1.0f);
     ImGui::TextDisabled("Reduces image size for faster processing");
@@ -221,7 +238,9 @@ void DebugPanel::RenderPerformanceStats() {
         ImGui::SliderFloat("Detail preserve", &state_.fx_adv_detail_preserve, 0.0f, 0.5f);
         ImGui::TextDisabled("Preserves fine details when processing at reduced scale");
     }
-    
+}
+
+void DebugPanel::RenderAutoProcessingScale() {
     // Auto processing scale
     ImGui::Checkbox("Auto processing scale", &state_.auto_processing_scale);
     if (state_.auto_processing_scale) {
@@ -231,30 +250,38 @@ void DebugPanel::RenderPerformanceStats() {
     ImGui::TextDisabled("Automatically adjusts scale to maintain target FPS");
     
     if (state_.auto_processing_scale) {
-        ImGui::Indent();
-        
-        // Target FPS (read-only, auto-calculated)
-        ImGui::Text("Target: %.1f fps", state_.target_fps);
+        RenderAutoProcessingScaleDetails();
+    }
+}
+
+void DebugPanel::RenderAutoProcessingScaleDetails() {
+    ImGui::Indent();
+    
+    // Target FPS (read-only, auto-calculated)
+    ImGui::Text("Target: %.1f fps", state_.target_fps);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(auto-detected from camera)");
+    
+    // Show current status with better formatting
+    ImGui::Text("Current: %.1f fps, Scale: %.2f", state_.current_fps, state_.fx_adv_scale);
+    if (state_.current_fps > 0.0f) {
+        RenderPerformanceStatus();
+    }
+    ImGui::Unindent();
+}
+
+void DebugPanel::RenderPerformanceStatus() {
+    float fps_diff = state_.target_fps - state_.current_fps;
+    if (std::abs(fps_diff) > 0.5f) {
         ImGui::SameLine();
-        ImGui::TextDisabled("(auto-detected from camera)");
-        
-        // Show current status with better formatting
-        ImGui::Text("Current: %.1f fps, Scale: %.2f", state_.current_fps, state_.fx_adv_scale);
-        if (state_.current_fps > 0.0f) {
-            float fps_diff = state_.target_fps - state_.current_fps;
-            if (std::abs(fps_diff) > 0.5f) {
-                ImGui::SameLine();
-                if (fps_diff > 0) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "(slow)");
-                } else {
-                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "(fast)");
-                }
-            } else {
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "(optimal)");
-            }
+        if (fps_diff > 0) {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "(slow)");
+        } else {
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "(fast)");
         }
-        ImGui::Unindent();
+    } else {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "(optimal)");
     }
 }
 
@@ -269,7 +296,6 @@ void DebugPanel::RenderAdvancedSettings() {
         ImGui::TextColored(ImVec4(1, 0.6f, 0, 1), "⚠️  OpenCL: Not Available");
     }
     
-    ImGui::Checkbox("Performance Logging", &state_.perf_log);
     ImGui::Checkbox("VSync", &state_.vsync_on);
 }
 
@@ -294,6 +320,9 @@ void StatusPanel::RenderFPSInfo() {
     } else {
         ImGui::Text("Cam: Not initialized");
     }
+    if (!state_.camera_status_message.empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.2f, 1.0f), "%s", state_.camera_status_message.c_str());
+    }
 }
 
 void StatusPanel::RenderSystemInfo() {
@@ -308,11 +337,231 @@ void StatusPanel::RenderSystemInfo() {
     } else {
         ImGui::Text("VCam: Inactive");
     }
+    
+    if (state_.pipewire_output_active) {
+        ImGui::TextColored(ImVec4(0, 1, 0, 1), "PipeWire: Active");
+    } else {
+        ImGui::Text("PipeWire: Inactive");
+    }
 }
 
 void StatusPanel::RenderGraphInfo() {
     // Removed App: Running status as it's not very useful
     // The fact that the UI is updating indicates the app is running
+}
+
+// Phase 8 Day 2: AR Filter Controls Implementation
+void DebugPanel::RenderARFilterControls() {
+    if (!ar_filter_mgr_) {
+        return;  // AR Filter Manager not available
+    }
+    
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Text("🎭 AR Filters (Phase 8)");
+    ImGui::Separator();
+    
+    // Enable/Disable toggle
+    bool ar_enabled = state_.ar_filters_enabled;
+    if (ImGui::Checkbox("Enable AR Filters", &ar_enabled)) {
+        state_.ar_filters_enabled = ar_enabled;
+        std::cout << "[DebugPanel] AR Filters " 
+                  << (ar_enabled ? "enabled" : "disabled") << std::endl;
+    }
+    
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Enable/disable AR filter system with full GPU rendering");
+    }
+    
+    // Get available filters
+    auto filters_result = ar_filter_mgr_->GetAvailableFilters();
+    if (!filters_result.ok()) {
+        ImGui::TextColored(ImVec4(1, 0, 0, 1), "⚠️  Failed to load filters");
+        ImGui::TextWrapped("Error: %s", filters_result.status().message().data());
+        return;
+    }
+    
+    const auto& filters = *filters_result;
+    
+    if (filters.empty()) {
+        ImGui::TextColored(ImVec4(1, 1, 0, 1), "⚠️  No filters available");
+        ImGui::TextWrapped("Place filter definitions in assets/filters/");
+        return;
+    }
+    
+    // Display filter count
+    ImGui::Text("Available Filters: %zu", filters.size());
+    
+    // Filter selection dropdown
+    static int selected_filter_idx = 0;  // Start at 0 = "(None)"
+    static std::vector<std::string> filter_names;
+    static std::vector<const char*> filter_items;
+    static std::string last_active_filter_id;
+    
+    // Rebuild filter list if needed
+    if (filter_names.size() != filters.size() + 1) {  // +1 for "(None)"
+        filter_names.clear();
+        filter_items.clear();
+        
+        // First, build all the strings (reserve to avoid reallocation)
+        filter_names.reserve(filters.size() + 1);
+        filter_names.push_back("(None)");
+        
+        for (const auto& filter : filters) {
+            filter_names.push_back(filter.name + " (" + filter.category + ")");
+        }
+        
+        // Now that all strings are in place and won't move, get the c_str() pointers
+        filter_items.reserve(filter_names.size());
+        for (const auto& name : filter_names) {
+            filter_items.push_back(name.c_str());
+        }
+        
+        selected_filter_idx = 0;  // Reset to "None" when list changes
+    }
+    
+    // Sync dropdown with active filter state
+    std::string current_active_id = ar_filter_mgr_->GetActiveFilterId();
+    if (current_active_id != last_active_filter_id) {
+        // Active filter changed - update dropdown to match
+        last_active_filter_id = current_active_id;
+        
+        if (current_active_id.empty()) {
+            selected_filter_idx = 0;  // No active filter -> "(None)"
+        } else {
+            // Find the filter in the list and update dropdown
+            bool found = false;
+            for (size_t i = 0; i < filters.size(); ++i) {
+                if (filters[i].id == current_active_id) {
+                    selected_filter_idx = static_cast<int>(i + 1);  // +1 for "(None)" offset
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                selected_filter_idx = 0;  // Fallback if filter not found
+            }
+        }
+    }
+    
+    ImGui::Combo("Select Filter", &selected_filter_idx, 
+                 filter_items.data(), 
+                 static_cast<int>(filter_items.size()));
+    
+    // Load/Clear buttons
+    ImGui::BeginDisabled(selected_filter_idx <= 0);
+    if (ImGui::Button("Load Filter")) {
+        if (selected_filter_idx > 0 && selected_filter_idx <= static_cast<int>(filters.size())) {
+            const auto& selected_filter = filters[selected_filter_idx - 1];
+            auto status = ar_filter_mgr_->LoadFilter(selected_filter.id);
+            if (status.ok()) {
+                // Auto-enable AR filters when successfully loading a filter
+                state_.ar_filters_enabled = true;
+                std::cout << "[DebugPanel] ✅ Loaded filter: " 
+                          << selected_filter.name << " (AR filters auto-enabled)" << std::endl;
+                // Don't reset dropdown - it will sync automatically via GetActiveFilterId()
+            } else {
+                std::cerr << "[DebugPanel] ❌ Failed to load filter: " 
+                          << status.message() << std::endl;
+                selected_filter_idx = 0;  // Reset to "(None)" on failure
+            }
+        }
+    }
+    ImGui::EndDisabled();
+    
+    ImGui::SameLine();
+    
+    bool has_active = ar_filter_mgr_->HasActiveFilter();
+    ImGui::BeginDisabled(!has_active);
+    if (ImGui::Button("Clear Filter")) {
+        auto status = ar_filter_mgr_->UnloadCurrentFilter();
+        if (status.ok()) {
+            std::cout << "[DebugPanel] Cleared active filter" << std::endl;
+            // Don't manually reset - it will sync automatically via GetActiveFilterId()
+        } else {
+            std::cerr << "[DebugPanel] Failed to clear filter: " 
+                      << status.message() << std::endl;
+        }
+    }
+    ImGui::EndDisabled();
+    
+    // Display current filter status
+    if (has_active) {
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0, 1, 0, 1), "✅ Active Filter");
+        
+        // Find and display active filter info
+        for (size_t i = 0; i < filters.size(); ++i) {
+            // Check if this filter is active by ID comparison
+            // (We don't have direct access to active filter ID, so we use HasActiveFilter as indicator)
+            if (selected_filter_idx == static_cast<int>(i + 1)) {
+                const auto& filter = filters[i];
+                ImGui::Text("  Name: %s", filter.name.c_str());
+                ImGui::Text("  Category: %s", filter.category.c_str());
+                if (!filter.description.empty()) {
+                    ImGui::TextWrapped("  %s", filter.description.c_str());
+                }
+                break;
+            }
+        }
+        
+        // Display performance metrics (Phase 8 - New System)
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Text("🔬 Performance Metrics (Phase 8)");
+        auto perf = ar_filter_mgr_->GetPerformanceStats();
+        ImGui::Text("  Update Time: %.5f ms", perf.render_time_ms);
+        ImGui::Text("  Models: %d, Triangles: %d", 
+                    perf.models_rendered_per_frame,
+                    perf.triangles_per_frame);
+        // Always show FPS line to avoid layout jitter; show placeholder until available
+        if (perf.average_fps > 0.0f) {
+            ImGui::Text("  Avg FPS: %.1f", perf.average_fps);
+        } else {
+            ImGui::TextDisabled("  Avg FPS: calculating...");
+        }
+        ImGui::Text("  Frames Rendered: %d", perf.frames_rendered);
+        
+        // Performance comparison hint
+        ImGui::Spacing();
+        ImGui::TextDisabled("Compare with Phase 3 'AR Filter Presets' above");
+        ImGui::TextDisabled("(Old system shows ~0.0003 ms update time)");
+    } else {
+        ImGui::Text("Status: No active filter");
+    }
+    
+    // Help text
+    ImGui::Spacing();
+    ImGui::TextDisabled("Tips:");
+    ImGui::TextDisabled("- Select a filter from the dropdown");
+    ImGui::TextDisabled("- Click 'Load Filter' to activate it");
+    ImGui::TextDisabled("- Enable AR Filters to see rendering");
+    ImGui::TextDisabled("- Filters require face detection");
+
+    // Tuning section for AR rendering parameters
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Text("⚙️ AR Tuning");
+    float z_scale = ar_filter_mgr_->GetAnchorZScale();
+    if (ImGui::SliderFloat("Landmark Z Scale", &z_scale, 0.0f, 1.0f, "%.2f")) {
+        ar_filter_mgr_->SetAnchorZScale(z_scale);
+    }
+    float z_bias = ar_filter_mgr_->GetAnchorZBias();
+    if (ImGui::SliderFloat("Z Bias (m)", &z_bias, -0.10f, 0.10f, "%.3fm")) {
+        ar_filter_mgr_->SetAnchorZBias(z_bias);
+    }
+    float z_face_lerp = ar_filter_mgr_->GetAnchorZFaceLerp();
+    if (ImGui::SliderFloat("Face Depth Lerp", &z_face_lerp, 0.0f, 1.0f, "%.2f")) {
+        ar_filter_mgr_->SetAnchorZFaceLerp(z_face_lerp);
+    }
+    bool scale_with_face = ar_filter_mgr_->GetScaleWithFaceWidth();
+    if (ImGui::Checkbox("Scale with Face Width", &scale_with_face)) {
+        ar_filter_mgr_->SetScaleWithFaceWidth(scale_with_face);
+    }
+    float face_normal_offset = ar_filter_mgr_->GetFaceNormalOffset();
+    if (ImGui::SliderFloat("Face-Normal Offset (m)", &face_normal_offset, -0.05f, 0.05f, "%.3fm")) {
+        ar_filter_mgr_->SetFaceNormalOffset(face_normal_offset);
+    }
 }
 
 } // namespace segmecam

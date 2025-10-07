@@ -3,7 +3,8 @@
 # Tensorflow needs remote repo
 common --experimental_repo_remote_exec
 
-# WORKSPACE support
+# WORKSPACE support (Bzlmod disabled due to protobuf version conflicts with MediaPipe)
+# Attempted Bzlmod 2024-10-02 but reverted - MediaPipe requires protobuf 5.28.3 from WORKSPACE
 common --noenable_bzlmod
 
 # Turn off toolchain resolution for cc rules and android rules.

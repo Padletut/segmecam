@@ -1,0 +1,66 @@
+# CPU-only MediaPipe graph for selfie segmentation in Flatpak
+# This graph avoids GPU components entirely and should work in sandboxed environments
+
+input_stream: "input_video"
+output_stream: "segmentation_mask"
+
+# Input/Output handling for camera
+node {
+  calculator: "FlowLimiterCalculator"
+  input_stream: "input_video"
+  input_stream: "FINISHED:segmentation_mask" 
+  input_stream_info: { tag_index: "FINISHED" back_edge: true }
+  output_stream: "throttled_input_video"
+}
+
+# Convert to ImageFrame for CPU processing
+node {
+  calculator: "GpuBufferToImageFrameCalculator"
+  input_stream: "throttled_input_video"
+  output_stream: "cpu_input_video"
+}
+
+# Resize for model input (if needed)
+node {
+  calculator: "ImageFrameToTensorCalculator"
+  input_stream: "IMAGE:cpu_input_video"
+  output_stream: "TENSORS:input_tensor"
+  options: {
+    [mediapipe.ImageFrameToTensorCalculatorOptions.ext] {
+      keep_aspect_ratio: false
+      border_mode: BORDER_REPLICATE
+    }
+  }
+}
+
+# Selfie segmentation inference on CPU
+node {
+  calculator: "TfLiteInferenceCalculator"
+  input_stream: "TENSORS:input_tensor"
+  output_stream: "TENSORS:output_tensor"
+  options: {
+    [mediapipe.TfLiteInferenceCalculatorOptions.ext] {
+      model_path: "mediapipe/modules/selfie_segmentation/selfie_segmentation.tflite"
+      cpu_num_thread: 4
+    }
+  }
+}
+
+# Convert tensor output to mask
+node {
+  calculator: "TensorToImageFrameCalculator"
+  input_stream: "TENSORS:output_tensor"
+  output_stream: "IMAGE:raw_mask"
+  options: {
+    [mediapipe.TensorToImageFrameCalculatorOptions.ext] {
+      keep_aspect_ratio: false
+    }
+  }
+}
+
+# Output the segmentation mask
+node {
+  calculator: "ImageFrameToGpuBufferCalculator"
+  input_stream: "raw_mask"
+  output_stream: "segmentation_mask"
+}

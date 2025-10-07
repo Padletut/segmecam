@@ -1,0 +1,37 @@
+{
+  "filter": {
+    "name": "Cozy Beanie",
+    "id": "cozy-beanie",
+    "category": "headwear",
+    "version": "1.0.0",
+    "author": "Padletut",
+    "description": "Simple knit beanie demo model for SegmeCam.",
+    "thumbnail": "thumb.png",
+    "icon": "icon.png"
+  },
+  "attachments": [
+    {
+      "id": "beanie",
+      "anchor": "head_crown",
+      "model": "beanie.obj",
+      "mtl": "beanie.mtl",
+      "texture": "beanie_tex.png",
+      "scale": [
+        7.5,
+        7.5,
+        7.5
+      ],
+      "offset": [
+        0.0,
+        0.1,
+        0.0
+      ],
+      "rotation": [
+        -10.0,
+        0.0,
+        -1.0
+      ],
+      "visible": true
+    }
+  ]
+}

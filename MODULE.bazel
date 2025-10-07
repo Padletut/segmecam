@@ -1,7 +1,8 @@
 module(name = "segmecam")
 
-# No external deps yet. Using native cc_* rules.
-
-register_toolchains(
-    "//toolchain:cc_toolchain_for_linux_x86_x64"
-)
+# Bzlmod disabled - using WORKSPACE for all dependencies
+# MediaPipe requires specific protobuf 5.28.3 version from WORKSPACE
+# which conflicts with Bzlmod's automatic dependency resolution.
+#
+# Note: Assimp IS available in Bazel Central Registry (5.4.3.bcr.6)
+# but we use WORKSPACE approach to avoid version conflicts.

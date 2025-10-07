@@ -1,0 +1,20 @@
+# Minimal MediaPipe graph to test FaceBlendshapesGraph registration
+# This graph does not require real data, just checks registration/loading
+
+node {
+  calculator: "mediapipe.tasks.vision.face_landmarker.FaceBlendshapesGraph"
+  input_stream: "LANDMARKS:landmarks"
+  input_stream: "IMAGE_SIZE:image_size"
+  output_stream: "BLENDSHAPES:blendshapes"
+  options {
+    [mediapipe.tasks.vision.face_landmarker.proto.FaceBlendshapesGraphOptions.ext] {
+      base_options {
+        model_asset {
+          file_name: "models/selfie_segmenter.tflite"
+        }
+      }
+    }
+  }
+}
+input_stream: "LANDMARKS:landmarks"
+input_stream: "IMAGE_SIZE:image_size"

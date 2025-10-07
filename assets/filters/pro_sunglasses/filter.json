@@ -1,0 +1,37 @@
+{
+  "filter": {
+    "name": "Pixel Shades",
+    "id": "pixel-shades",
+    "category": "accessories",
+    "version": "1.0.0",
+    "author": "Padletut",
+    "description": "Low-poly pixel sunglasses for SegmeCam (demo assets).",
+    "thumbnail": "thumb.png",
+    "icon": "icon.png"
+  },
+  "attachments": [
+    {
+      "id": "sunglasses",
+      "anchor": "nose_bridge",
+      "model": "sunglasses.obj",
+      "mtl": "sunglasses.mtl",
+      "texture": "sunglasses_tex.png",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "offset": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "visible": true
+    }
+  ]
+}

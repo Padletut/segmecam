@@ -113,6 +113,36 @@ http_archive(
     urls = ["https://github.com/google/googletest/archive/4ec4cd23f486bf70efcc5d2caa40f24368f752e3.zip"],
 )
 
+# Assimp (Open Asset Import Library) - 3D model loading
+# Supports 50+ formats: OBJ, GLTF, FBX, STL, etc.
+# Using WORKSPACE approach due to MediaPipe protobuf compatibility requirements.
+http_archive(
+    name = "assimp",
+    build_file = "@//third_party:assimp.BUILD",
+    sha256 = "66dfbaee288f2bc43172440a55d0235dfc7bf885dda6435c038e8000e79582cb",
+    strip_prefix = "assimp-5.4.3",
+    urls = ["https://github.com/assimp/assimp/archive/refs/tags/v5.4.3.tar.gz"],
+)
+
+# pugixml - Fast XML parser used by Assimp
+http_archive(
+    name = "pugixml",
+    build_file = "@//third_party:pugixml.BUILD",
+    sha256 = "610f98375424b5614754a6f34a491adbddaaec074e9044577d965160ec103d2e",
+    strip_prefix = "pugixml-1.14",
+    urls = ["https://github.com/zeux/pugixml/archive/refs/tags/v1.14.tar.gz"],
+)
+
+# GLM (OpenGL Mathematics) - Header-only C++ mathematics library for graphics
+# Used for matrix/vector operations in 3D rendering
+http_archive(
+    name = "glm",
+    build_file = "@//third_party:glm.BUILD",
+    sha256 = "7d508ab72cb5d43227a3711420f06ff99b0a0cb63ee2f93631b162bfe1fe9592",
+    strip_prefix = "glm-0.9.9.8",
+    urls = ["https://github.com/g-truc/glm/archive/refs/tags/0.9.9.8.tar.gz"],
+)
+
 # Load Zlib before initializing TensorFlow and the iOS build rules to guarantee
 # that the target @zlib//:mini_zlib is available
 http_archive(
@@ -909,4 +939,53 @@ http_archive(
     sha256 = "2fe28173428f8eebf2aa8a665bad32136086cc065f50c7154678a96250d1cde1",
     strip_prefix = "skia-226ae9d866748a2e68b6dbf114b37129c380a298/include/config",
     urls = ["https://github.com/google/skia/archive/226ae9d866748a2e68b6dbf114b37129c380a298.zip"],
+)
+
+new_local_repository(
+    name = "glib",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "glib",
+    hdrs = glob([
+        "include/glib-2.0/**/*.h",
+        "include/glib-2.0/**/*.hpp",
+        "lib/x86_64-linux-gnu/glib-2.0/include/**/*.h",
+        "lib/x86_64-linux-gnu/glib-2.0/include/**/*.hpp",
+    ]),
+    includes = [
+        "include/glib-2.0",
+        "lib/x86_64-linux-gnu/glib-2.0/include",
+    ],
+    linkopts = [
+        "-lgio-2.0",
+        "-lgobject-2.0",
+        "-lglib-2.0",
+        "-lgmodule-2.0",
+        "-ldl",
+        "-pthread",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+new_local_repository(
+    name = "libportal",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "libportal",
+    hdrs = glob([
+        "include/libportal/**/*.h",
+        "include/libportal/**/*.hpp",
+    ]),
+    includes = [
+        "include/libportal",
+    ],
+    linkopts = ["-lportal"],
+    deps = ["@glib//:glib"],
+    visibility = ["//visibility:public"],
+)
+""",
 )

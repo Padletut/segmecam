@@ -5,6 +5,9 @@
 #include <iostream>
 #include "src/config/config_manager.h"  // Include for complete type
 
+// Include UI manager for complete type definition
+#include "ui/ui_manager_enhanced.h"
+
 // Forward declare segmecam::AppState to avoid circular dependencies  
 namespace segmecam {
     struct AppState;
@@ -16,8 +19,14 @@ namespace segmecam {
     class MediaPipeManager;
     class RenderManager;
     class EffectsManager;
-    class UIManagerEnhanced;
     class ConfigManager;
+}
+
+namespace segmecam {
+namespace ar_filters {
+    class OpenGLRenderer;
+    class ARFilterManager;  // Phase 8: AR Filter system coordinator
+}
 }
 
 class ManagerCoordination {
@@ -27,18 +36,23 @@ public:
         std::unique_ptr<segmecam::ConfigManager> config;
         std::unique_ptr<segmecam::CameraManager> camera;
         std::unique_ptr<segmecam::EffectsManager> effects;
+        std::unique_ptr<segmecam::UIManager> ui;
+        std::unique_ptr<segmecam::ar_filters::OpenGLRenderer> opengl_renderer;
+        std::unique_ptr<segmecam::ar_filters::ARFilterManager> ar_filter_manager;  // Phase 8: AR filters
         
         // TODO: Add other managers when their dependencies are resolved
         // std::unique_ptr<segmecam::MediaPipeManager> mediapipe;
         // std::unique_ptr<segmecam::RenderManager> render;
-        // std::unique_ptr<segmecam::UIManagerEnhanced> ui;
         
         // Default constructor
-        Managers() = default;
+        Managers();
+        
+        // Destructor (defined in .cpp where OpenGLRenderer is complete)
+        ~Managers();
         
         // Move constructor and assignment
-        Managers(Managers&&) = default;
-        Managers& operator=(Managers&&) = default;
+        Managers(Managers&&);
+        Managers& operator=(Managers&&);
         
         // Delete copy constructor and assignment
         Managers(const Managers&) = delete;
@@ -53,9 +67,33 @@ public:
     static void LoadDefaultProfileBackgroundImage(Managers& managers, segmecam::AppState& app_state);
     
 private:
-    static bool InitializeConfigManager(Managers& managers, segmecam::AppState& app_state);
-    static bool InitializeCameraManager(Managers& managers, segmecam::AppState& app_state);
+    static bool InitializeConfigManager(Managers& managers, segmecam::AppState& app_state, segmecam::ConfigData& out_config_data);
+    static bool InitializeCameraManager(Managers& managers, segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
     static bool InitializeEffectsManager(Managers& managers, segmecam::AppState& app_state);
+    static bool InitializeUIManager(Managers& managers, segmecam::AppState& app_state);
+    static bool InitializeOpenGLRenderer(Managers& managers, segmecam::AppState& app_state);
+    static bool InitializeARFilterManager(Managers& managers, segmecam::AppState& app_state);  // Phase 8
+    
+    // Helper methods for ConfigManager initialization to reduce complexity
+    static bool CreateConfigManager(Managers& managers);
+    static segmecam::ConfigData LoadDefaultProfile(Managers& managers, segmecam::AppState& app_state);
+    static void ApplyProfileSettingsToAppState(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
+    
+    // Helper methods for profile loading to reduce complexity
+    static void ApplyDisplaySettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
+    static void ApplyBackgroundSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
+    static void ApplyBeautySettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
+    static void ApplyPerformanceSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
+    static void ApplyCameraSettingsFromProfile(segmecam::AppState& app_state, const segmecam::ConfigData& config_data);
+    static void ApplyCameraControlsFromProfile(Managers& managers, const segmecam::ConfigData& config_data);
+    
+    // Helper method to reduce cyclomatic complexity
+    template<typename SetterFunc>
+    static void ApplyCameraControlIfValid(int value, SetterFunc setter) {
+        if (value >= 0) {
+            setter(value);
+        }
+    }
 };
 
 #endif // MANAGER_COORDINATION_H

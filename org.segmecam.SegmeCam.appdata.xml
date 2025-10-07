@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.segmecam.SegmeCam</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  
+  <name>SegmeCam</name>
+  <summary>AI-powered Linux webcam with beauty filters and background effects</summary>
+  
+  <description>
+    <p>
+      SegmeCam is the first all-in-one AI beauty and background webcam app for Linux.
+      It combines real-time selfie segmentation and face landmark detection for 
+      professional-grade effects.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>AI-powered background blur and replacement</li>
+      <li>468-point face landmark detection</li>
+      <li>Beauty filters: skin smoothing, teeth whitening, lip enhancement</li>
+      <li>Real-time controls with professional interface</li>
+      <li>Virtual webcam output for Discord, OBS, Zoom, Teams</li>
+      <li>GPU-accelerated performance</li>
+    </ul>
+    <p>
+      Built with TensorFlow Lite, MediaPipe, OpenGL, and Dear ImGui for optimal 
+      performance on Linux systems.
+    </p>
+  </description>
+  
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/Padletut/segmecam/main/assets/SCScreenshot.png</image>
+      <caption>SegmeCam interface showing real-time face landmarks and background segmentation</caption>
+    </screenshot>
+  </screenshots>
+  
+  <url type="homepage">https://github.com/Padletut/segmecam</url>
+  <url type="bugtracker">https://github.com/Padletut/segmecam/issues</url>
+  
+  <developer_name>Padletut</developer_name>
+  
+  <launchable type="desktop-id">org.segmecam.SegmeCam.desktop</launchable>
+  
+  <provides>
+    <binary>segmecam_gui_gpu</binary>
+  </provides>
+  
+  <releases>
+    <release version="1.0.0" date="2025-09-15">
+      <description>
+        <p>Initial release of SegmeCam featuring:</p>
+        <ul>
+          <li>Real-time AI selfie segmentation</li>
+          <li>Face landmark detection with 468 points</li>
+          <li>Beauty filters and background effects</li>
+          <li>Virtual webcam integration</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+  
+  <content_rating type="oars-1.1" />
+</component>

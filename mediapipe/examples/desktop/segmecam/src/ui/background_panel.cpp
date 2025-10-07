@@ -1,6 +1,8 @@
 #include "include/ui/ui_panels.h"
+#include "include/application/portal_utils.h"
 #include <iostream>
 #include <cstring>
+#include <cstdio>
 #include <SDL2/SDL.h>
 
 namespace segmecam {
@@ -34,7 +36,7 @@ void BackgroundPanel::Render() {
 }
 
 void BackgroundPanel::RenderMaskControls() {
-    ImGui::Checkbox("Show Segmentation (mask)", &state_.show_mask);
+    //ImGui::Checkbox("Show Segmentation (mask)", &state_.show_mask);
     ImGui::TextDisabled("GPU graph; CPU composite");
 }
 
@@ -88,108 +90,132 @@ void BackgroundPanel::RenderBlurControls() {
 }
 
 void BackgroundPanel::RenderImageControls() {
+    RenderImageHeader();
+    RenderImagePathControls();
+    RenderImageDisplay();
+    RenderImageTips();
+}
+
+void BackgroundPanel::RenderImageHeader() {
     ImGui::Separator();
     ImGui::Text("Image Background");
-    
+}
+
+void BackgroundPanel::RenderImagePathControls() {
     ImGui::InputText("Image Path", state_.bg_path_buf, sizeof(state_.bg_path_buf));
     
-    ImGui::SameLine();
+    // Buttons in a row below the input field
     if (ImGui::Button("Load")) {
-        cv::Mat img = cv::imread(state_.bg_path_buf, cv::IMREAD_COLOR);
-        if (!img.empty()) {
-            state_.bg_image = img;
-            std::cout << "Loaded background image: " << state_.bg_path_buf 
-                      << " (" << img.cols << "x" << img.rows << ")" << std::endl;
-        } else {
-            std::cerr << "Failed to load background image: " << state_.bg_path_buf << std::endl;
-        }
+        LoadImageFromPath(state_.bg_path_buf);
     }
     
-    // Paste from clipboard
     ImGui::SameLine();
     if (ImGui::Button("Paste")) {
-        char* clip = SDL_GetClipboardText();
-        if (clip && *clip) {
-            std::snprintf(state_.bg_path_buf, sizeof(state_.bg_path_buf), "%s", clip);
-            cv::Mat img = cv::imread(state_.bg_path_buf, cv::IMREAD_COLOR);
-            if (!img.empty()) {
-                state_.bg_image = img;
-                std::cout << "Loaded background image from clipboard: " << state_.bg_path_buf 
-                          << " (" << img.cols << "x" << img.rows << ")" << std::endl;
-            }
-        }
-        if (clip) SDL_free(clip);
+        LoadImageFromClipboard();
     }
     
-    // File browser button (Linux specific)
-#ifdef __linux__
     ImGui::SameLine();
     if (ImGui::Button("Browse")) {
-        // Use zenity for file selection on Linux
-        FILE* fp = popen("zenity --file-selection --file-filter='Images (*.jpg,*.jpeg,*.png,*.bmp) | *.jpg *.jpeg *.png *.bmp' --title='Select background image' 2>/dev/null", "r");
-        if (fp) {
-            char out[1024] = {0};
-            if (fgets(out, sizeof(out), fp)) {
-                // Strip trailing newline
-                size_t n = strlen(out);
-                while (n > 0 && (out[n-1] == '\n' || out[n-1] == '\r')) {
-                    out[--n] = '\0';
-                }
-                if (n > 0) {
-                    std::snprintf(state_.bg_path_buf, sizeof(state_.bg_path_buf), "%s", out);
-                    cv::Mat img = cv::imread(state_.bg_path_buf, cv::IMREAD_COLOR);
-                    if (!img.empty()) {
-                        state_.bg_image = img;
-                        std::cout << "Loaded background image: " << state_.bg_path_buf 
-                                  << " (" << img.cols << "x" << img.rows << ")" << std::endl;
-                    }
-                }
-            }
-            pclose(fp);
-        }
+        LoadImageFromPortal();
     }
-#endif
     
     ImGui::SameLine();
     if (ImGui::Button("Clear")) {
-        state_.bg_image.release();
-        state_.bg_path_buf[0] = '\0';
-        std::cout << "Cleared background image" << std::endl;
+        ClearBackgroundImage();
     }
-    
-    // Display current image info and scaling options
+}
+
+void BackgroundPanel::LoadImageFromPath(const char* path) {
+    cv::Mat img = cv::imread(path, cv::IMREAD_COLOR);
+    if (!img.empty()) {
+        state_.bg_image = img;
+        std::cout << "Loaded background image: " << path 
+                  << " (" << img.cols << "x" << img.rows << ")" << std::endl;
+    } else {
+        std::cerr << "Failed to load background image: " << path << std::endl;
+    }
+}
+
+void BackgroundPanel::LoadImageFromClipboard() {
+    char* clip = SDL_GetClipboardText();
+    if (clip && *clip) {
+        std::snprintf(state_.bg_path_buf, sizeof(state_.bg_path_buf), "%s", clip);
+        cv::Mat img = cv::imread(state_.bg_path_buf, cv::IMREAD_COLOR);
+        if (!img.empty()) {
+            state_.bg_image = img;
+            std::cout << "Loaded background image from clipboard: " << state_.bg_path_buf 
+                      << " (" << img.cols << "x" << img.rows << ")" << std::endl;
+        }
+    }
+    if (clip) SDL_free(clip);
+}
+
+void BackgroundPanel::LoadImageFromPortal() {
+    cv::Mat img;
+    std::string resolved_path;
+    if (OpenBackgroundImagePortalDialog(img, resolved_path)) {
+        state_.bg_image = img;
+        std::snprintf(state_.bg_path_buf, sizeof(state_.bg_path_buf), "%s", resolved_path.c_str());
+        std::cout << "Loaded background image via portal: " << state_.bg_path_buf
+                  << " (" << img.cols << "x" << img.rows << ")" << std::endl;
+    } else {
+        std::cerr << "Background image selection cancelled or failed" << std::endl;
+    }
+}
+
+void BackgroundPanel::ClearBackgroundImage() {
+    state_.bg_image.release();
+    state_.bg_path_buf[0] = '\0';
+    std::cout << "Cleared background image" << std::endl;
+}
+
+void BackgroundPanel::RenderImageDisplay() {
     if (!state_.bg_image.empty()) {
-        ImGui::Separator();
-        ImGui::Text("Current Image: %dx%d", state_.bg_image.cols, state_.bg_image.rows);
-        
-        // Image scaling mode
-        const char* scale_modes[] = {"Stretch", "Fit", "Fill", "Center", "Tile"};
-        static int scale_mode = 1; // Default to "Fit"
-        if (ImGui::Combo("Scaling", &scale_mode, scale_modes, IM_ARRAYSIZE(scale_modes))) {
-            std::cout << "Background scaling changed to: " << scale_modes[scale_mode] << std::endl;
-        }
-        
-        // Image opacity
-        static float bg_opacity = 1.0f;
-        if (ImGui::SliderFloat("Opacity", &bg_opacity, 0.0f, 1.0f)) {
-            // TODO: Apply opacity to background image compositing
-        }
-        
-        // Image position adjustment (for center mode)
-        if (scale_mode == 3) { // Center mode
-            static float offset_x = 0.0f;
-            static float offset_y = 0.0f;
-            ImGui::SliderFloat("Offset X", &offset_x, -1.0f, 1.0f);
-            ImGui::SliderFloat("Offset Y", &offset_y, -1.0f, 1.0f);
-        }
-        
-        if (ImGui::Button("Reset Position")) {
-            // Reset any position offsets
-        }
+        RenderImageInfo();
+        RenderImageScaling();
+        RenderImageOpacity();
+        RenderImagePosition();
+        RenderResetPositionButton();
     } else {
         ImGui::TextDisabled("No image loaded");
     }
-    
+}
+
+void BackgroundPanel::RenderImageInfo() {
+    ImGui::Separator();
+    ImGui::Text("Current Image: %dx%d", state_.bg_image.cols, state_.bg_image.rows);
+}
+
+void BackgroundPanel::RenderImageScaling() {
+    const char* scale_modes[] = {"Stretch", "Fit", "Fill", "Center", "Tile"};
+    if (ImGui::Combo("Scaling", &scale_mode_, scale_modes, IM_ARRAYSIZE(scale_modes))) {
+        std::cout << "Background scaling changed to: " << scale_modes[scale_mode_] << std::endl;
+    }
+}
+
+void BackgroundPanel::RenderImageOpacity() {
+    static float bg_opacity = 1.0f;
+    if (ImGui::SliderFloat("Opacity", &bg_opacity, 0.0f, 1.0f)) {
+        // TODO: Apply opacity to background image compositing
+    }
+}
+
+void BackgroundPanel::RenderImagePosition() {
+    if (scale_mode_ == 3) { // Center mode
+        static float offset_x = 0.0f;
+        static float offset_y = 0.0f;
+        ImGui::SliderFloat("Offset X", &offset_x, -1.0f, 1.0f);
+        ImGui::SliderFloat("Offset Y", &offset_y, -1.0f, 1.0f);
+    }
+}
+
+void BackgroundPanel::RenderResetPositionButton() {
+    if (ImGui::Button("Reset Position")) {
+        // Reset any position offsets
+    }
+}
+
+void BackgroundPanel::RenderImageTips() {
     ImGui::Separator();
     ImGui::TextDisabled("Tips:");
     ImGui::TextDisabled("• Drag & drop an image file onto the window");

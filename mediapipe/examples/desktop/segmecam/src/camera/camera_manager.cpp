@@ -1,266 +1,142 @@
 #include "include/camera/camera_manager.h"
+#include "include/camera/gstreamer_utils.h"
+#include "include/camera/gstreamer_buffer_utils.h"
+#include "include/camera/camera_controls.h"
+#include "include/camera/camera_enumeration.h"
+#include "include/camera/camera_setup.h"
 
-#include <iostream>
-#include <algorithm>
-#include <fcntl.h>
-#include <sys/ioctl.h>
+#include <cstdlib>
+#include <cstring>
 #include <unistd.h>
-
-// Conditional compilation for Flatpak builds
-#ifdef FLATPAK_BUILD
-// GStreamer includes for PipeWire support
-extern "C" {
-#include <gst/gst.h>
-#include <gst/app/gstappsink.h>
-#include <gst/video/video.h>
-}
-
-// libportal for camera permissions (runtime loaded to avoid Bazel issues)
-#include <dlfcn.h>
-#endif
+#include <algorithm>
+#include <cctype>
+#include <chrono>
+#include <iostream>
+#include <string>
+#include <utility>
 
 namespace segmecam {
 
-CameraManager::CameraManager() {
-#ifdef FLATPAK_BUILD
-    // Initialize GStreamer for PipeWire support
-    if (!InitializeGStreamer()) {
-        std::cout << "⚠️  GStreamer initialization failed, PipeWire camera support disabled" << std::endl;
-    }
-#endif
+namespace {
+constexpr unsigned int kXdpCameraFlagNone = 0;
+#include "camera/camera_manager.h"
+
+// Enumerate PipeWire camera nodes using pw-cli
+// Implementation moved to camera_pipewire.cpp
+
+// Get PipeWire node ID for a given camera index
+// Implementation moved to camera_pipewire.cpp
+
+} // namespace
+
+CameraManager::CameraManager() 
+    : camera_controls_(std::make_unique<CameraControls>()),
+      camera_enumeration_(std::make_unique<CameraEnumeration>()),
+      camera_setup_(std::make_unique<CameraSetup>()) {
+    // Constructor - GStreamer will be initialized at runtime if needed
 }
 
 CameraManager::~CameraManager() {
     Cleanup();
-#ifdef FLATPAK_BUILD
     CleanupGStreamer();
-#endif
+    if (portal_fd_ >= 0) {
+        close(portal_fd_);
+        portal_fd_ = -1;
+    }
+    if (portal_instance_) {
+        if (g_object_unref_ptr) {
+            g_object_unref_ptr(portal_instance_);
+        }
+        portal_instance_ = nullptr;
+    }
+    if (portal_library_handle_) {
+        dlclose(portal_library_handle_);
+        portal_library_handle_ = nullptr;
+    }
 }
 
-int CameraManager::Initialize(const CameraConfig& config) {
-    config_ = config;
-    state_ = CameraState{}; // Reset state
+std::vector<CameraDesc> CameraManager::EnumerateCamerasPortal() {
+    return camera_enumeration_->EnumerateCamerasPortal(config_);
+}
 
-    std::cout << "📷 Initializing Camera Manager..." << std::endl;
-
-#ifdef FLATPAK_BUILD
-    // For Flatpak, we'll use PipeWire + Camera Portal
-    std::cout << "📷 Using PipeWire + Camera Portal for sandboxed access" << std::endl;
-    // Camera enumeration will be handled differently in Flatpak
-    // We'll request camera access when needed
-    state_.is_initialized = true;
-    std::cout << "✅ Camera Manager initialized for Flatpak" << std::endl;
-    return 0;
-#else
-    // Enumerate available cameras
-    RefreshCameraList();
-    RefreshVCamList();
-
-    if (cam_list_.empty()) {
-        std::cout << "⚠️  No cameras found during enumeration" << std::endl;
-        return 1;
-    }
-
-    // Find the requested camera index in the enumerated list
-    for (size_t i = 0; i < cam_list_.size(); ++i) {
-        if (cam_list_[i].index == config_.default_camera_index) {
-            state_.ui_cam_idx = (int)i;
-            break;
-        }
-    }
-
-    // Set initial resolution from available cameras
-    if (!cam_list_.empty() && !cam_list_[state_.ui_cam_idx].resolutions.empty()) {
-        auto resolutions = cam_list_[state_.ui_cam_idx].resolutions;
-
-        // Try to find matching resolution or use the largest available
-        int best_res_idx = (int)resolutions.size() - 1; // Default to largest
-
-        if (config_.default_width > 0 && config_.default_height > 0) {
-            for (size_t i = 0; i < resolutions.size(); ++i) {
-                if (resolutions[i].first == config_.default_width &&
-                    resolutions[i].second == config_.default_height) {
-                    best_res_idx = (int)i;
-                    break;
-                }
-            }
-        }
-
-        state_.ui_res_idx = best_res_idx;
-        auto wh = resolutions[best_res_idx];
-        state_.current_width = wh.first;
-        state_.current_height = wh.second;
-    }
-
-    // Setup camera path and FPS options
-    if (!cam_list_.empty()) {
-        state_.current_camera_path = cam_list_[state_.ui_cam_idx].path;
-        UpdateFPSOptions(state_.current_camera_path, state_.current_width, state_.current_height);
-
-        // Find best FPS option
-        if (!ui_fps_opts_.empty()) {
-            state_.ui_fps_idx = (int)ui_fps_opts_.size() - 1; // Default to highest
-
-            if (config_.default_fps > 0) {
-                for (size_t i = 0; i < ui_fps_opts_.size(); ++i) {
-                    if (ui_fps_opts_[i] == config_.default_fps) {
-                        state_.ui_fps_idx = (int)i;
-                        break;
-                    }
-                }
-            }
-
-            state_.current_fps = ui_fps_opts_[state_.ui_fps_idx];
-        }
-    }
-
-    // Initialize camera controls
-    RefreshControls();
-    ApplyDefaultControls();
-
-    // Open the camera
-    if (!OpenCamera(config_.default_camera_index, state_.current_width, state_.current_height, state_.current_fps)) {
-        std::cerr << "❌ Failed to open camera " << config_.default_camera_index << std::endl;
-        return 2;
-    }
-
-    state_.is_initialized = true;
+void CameraManager::LogV4L2InitializationSuccess() {
     std::cout << "✅ Camera Manager initialized successfully!" << std::endl;
     std::cout << "📷 Using camera: " << state_.current_camera_path << std::endl;
     std::cout << "📐 Resolution: " << state_.current_width << "x" << state_.current_height << std::endl;
     std::cout << "🎬 FPS: " << state_.current_fps << std::endl;
     std::cout << "🔧 Backend: " << GetBackendName() << std::endl;
+}
 
+int CameraManager::InitializeV4L2(const CameraConfig& config) {
+    // Store config
+    config_ = config;
+    
+    // Initialize camera enumeration
+    camera_enumeration_->Initialize();
+    
+    // Enumerate available cameras
+    RefreshCameraList();
+    RefreshVCamList();
+    
+    if (cam_list_.empty()) {
+        std::cout << "⚠️  No cameras found during enumeration" << std::endl;
+        return 1;
+    }
+    
+    // Use CameraSetup for initial camera selection and configuration
+    camera_setup_->Initialize(config, cam_list_, state_);
+    camera_setup_->SelectInitialCamera(cam_list_, config, state_);
+    camera_setup_->SelectInitialResolution(cam_list_, config, state_);
+    camera_setup_->SetupCameraPathAndFPS(cam_list_, config, state_, ui_fps_opts_);
+    
+    // Initialize camera controls
+    camera_controls_->Initialize(state_.current_camera_path);
+    RefreshControls();
+    ApplyDefaultControls();
+    
+    // Open the camera
+    if (!OpenCamera(config.default_camera_index, state_.current_width, state_.current_height, state_.current_fps)) {
+        std::cerr << "❌ Failed to open camera " << config.default_camera_index << std::endl;
+        return 2;
+    }
+    
+    state_.is_initialized = true;
+    LogV4L2InitializationSuccess();
+    
     return 0;
-#endif
 }
 
 bool CameraManager::OpenCamera(int camera_index) {
     return OpenCamera(camera_index, state_.current_width, state_.current_height, state_.current_fps);
 }
 
-bool CameraManager::OpenCamera(int camera_index, int width, int height, int fps) {
-    CloseCamera();
-
-    std::cout << "📷 Opening camera " << camera_index << " with resolution: " << width << "x" << height;
-    if (fps > 0) std::cout << " @ " << fps << " FPS";
-    std::cout << std::endl;
-
-#ifdef FLATPAK_BUILD
-    // For Flatpak, use PipeWire instead of direct V4L2 access
-    if (!StartPipeWireCapture()) {
-        std::cerr << "❌ Failed to start PipeWire camera capture" << std::endl;
-        return false;
-    }
-
-    // Set state for PipeWire capture
-    state_.current_width = width;
-    state_.current_height = height;
-    state_.current_fps = fps > 0 ? fps : 30; // Default to 30 FPS
-    state_.actual_fps = state_.current_fps;
-    state_.backend_name = "PipeWire";
-    state_.is_opened = true;
-
-    std::cout << "✅ PipeWire camera opened successfully: " << state_.current_width << "x" << state_.current_height
-              << " @ " << state_.actual_fps << " FPS" << std::endl;
-    std::cout << "🔧 Backend: " << state_.backend_name << std::endl;
-
-    return true;
-#else
-    // Try V4L2 first if preferred
-    if (config_.prefer_v4l2) {
-        cap_ = OpenCapture(camera_index, width, height);
-    } else {
-        cap_.open(camera_index);
-    }
-
-    // Fallback to default backend if V4L2 failed
-    if (!cap_.isOpened()) {
-        std::cout << "📷 V4L2 open failed for index " << camera_index << ", retrying with CAP_ANY" << std::endl;
-        cap_.open(camera_index);
-    }
-
-    if (!cap_.isOpened()) {
-        std::cerr << "❌ Unable to open camera " << camera_index << std::endl;
-        return false;
-    }
-
-    // Force MJPG format for better FPS support (before setting resolution/FPS)
-    cap_.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
-
-    // Set resolution
-    cap_.set(cv::CAP_PROP_FRAME_WIDTH, width);
-    cap_.set(cv::CAP_PROP_FRAME_HEIGHT, height);
-
-    // Set FPS if specified
-    if (fps > 0) {
-        cap_.set(cv::CAP_PROP_FPS, fps);
-    }
-
-    // Verify actual settings
-    double actual_w = cap_.get(cv::CAP_PROP_FRAME_WIDTH);
-    double actual_h = cap_.get(cv::CAP_PROP_FRAME_HEIGHT);
-    double actual_fps = cap_.get(cv::CAP_PROP_FPS);
-
-    state_.current_width = (int)actual_w;
-    state_.current_height = (int)actual_h;
-    state_.actual_fps = actual_fps;
-    state_.backend_name = cap_.getBackendName();
-    state_.is_opened = true;
-
-    std::cout << "✅ Camera opened successfully: " << state_.current_width << "x" << state_.current_height
-              << " @ " << state_.actual_fps << " FPS" << std::endl;
-    std::cout << "🔧 Backend: " << state_.backend_name << std::endl;
-
-    return true;
-#endif
-}
-
 void CameraManager::CloseCamera() {
-#ifdef FLATPAK_BUILD
-    StopPipeWireCapture();
-#else
-    if (cap_.isOpened()) {
-        cap_.release();
-        state_.is_opened = false;
-        std::cout << "📷 Camera closed" << std::endl;
+    if (IsRunningInFlatpak()) {
+        StopPipeWireCapture();
+    } else {
+        if (cap_.isOpened()) {
+            cap_.release();
+            state_.is_opened = false;
+            std::cout << "📷 Camera closed" << std::endl;
+        }
     }
-#endif
 }
 
 bool CameraManager::IsOpened() const {
-    return state_.is_opened && cap_.isOpened();
-}
-
-bool CameraManager::CaptureFrame(cv::Mat& frame) {
-    if (!IsOpened()) {
-        return false;
+    if (IsRunningInFlatpak()) {
+        return state_.is_opened;
+    } else {
+        return state_.is_opened && cap_.isOpened();
     }
-
-#ifdef FLATPAK_BUILD
-    // For PipeWire, get frame from the current_frame_ buffer
-    {
-        std::lock_guard<std::mutex> lock(frame_mutex_);
-        if (current_frame_.empty()) {
-            return false;
-        }
-        current_frame_.copyTo(frame);
-    }
-    state_.frames_captured++;
-    return true;
-#else
-    bool success = cap_.read(frame);
-    if (success) {
-        state_.frames_captured++;
-    }
-
-    return success;
-#endif
 }
 
 void CameraManager::RefreshCameraList() {
     std::cout << "🔍 Enumerating cameras..." << std::endl;
-    cam_list_ = EnumerateCameras();
+    if (IsRunningInFlatpak()) {
+        cam_list_ = camera_enumeration_->EnumerateCamerasPortal(config_);
+    } else {
+        cam_list_ = camera_enumeration_->EnumerateCameras();
+    }
     
     std::cout << "📷 Found " << cam_list_.size() << " camera(s):" << std::endl;
     for (const auto& cam : cam_list_) {
@@ -271,7 +147,7 @@ void CameraManager::RefreshCameraList() {
 
 void CameraManager::RefreshVCamList() {
     std::cout << "🔍 Enumerating virtual cameras..." << std::endl;
-    vcam_list_ = EnumerateLoopbackDevices();
+    vcam_list_ = camera_enumeration_->EnumerateLoopbackDevices();
     
     std::cout << "📹 Found " << vcam_list_.size() << " virtual camera(s):" << std::endl;
     for (const auto& vcam : vcam_list_) {
@@ -310,10 +186,17 @@ bool CameraManager::SetCurrentCamera(int ui_cam_idx, int ui_res_idx, int ui_fps_
         state_.current_fps = ui_fps_opts_[state_.ui_fps_idx];
     }
     
-    // Refresh controls for new camera
+    // Reopen camera with new settings
+    bool was_opened = IsOpened();
+    if (was_opened) {
+        CloseCamera();
+    }
+    bool success = OpenCamera(cam.index, state_.current_width, state_.current_height, state_.current_fps);
+    
+    // Refresh controls for new camera (whether opened successfully or not)
     RefreshControls();
     
-    return true;
+    return success;
 }
 
 const std::vector<std::pair<int,int>>& CameraManager::GetCurrentResolutions() const {
@@ -345,124 +228,89 @@ bool CameraManager::SetFPS(int fps) {
         return false;
     }
     
-    // Store current settings
-    int current_camera_index = cam_list_[state_.ui_cam_idx].index;
-    int current_width = state_.current_width;
-    int current_height = state_.current_height;
+    cap_.set(cv::CAP_PROP_FPS, fps);
     
-    // Close and reopen with new FPS
-    CloseCamera();
-    bool success = OpenCamera(current_camera_index, current_width, current_height, fps);
+    // Verify what was actually set
+    double actual_fps = cap_.get(cv::CAP_PROP_FPS);
+    state_.current_fps = (int)actual_fps;
     
-    if (success) {
-        state_.current_fps = fps;
-        std::cout << "✅ FPS changed to " << state_.actual_fps << " (requested: " << fps << ")" << std::endl;
-    } else {
-        std::cerr << "❌ Failed to change FPS to " << fps << std::endl;
-        // Try to reopen with original settings
-        OpenCamera(current_camera_index, current_width, current_height, state_.current_fps);
-    }
-    
-    return success;
+    return (state_.current_fps == fps);
 }
 
 void CameraManager::RefreshControls() {
-    if (state_.current_camera_path.empty()) return;
-    
-    std::cout << "🔧 Refreshing camera controls for " << state_.current_camera_path << std::endl;
-    
-    QueryCtrl(state_.current_camera_path, V4L2_CID_BRIGHTNESS, &r_brightness_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_CONTRAST, &r_contrast_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_SATURATION, &r_saturation_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_GAIN, &r_gain_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_SHARPNESS, &r_sharpness_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_ZOOM_ABSOLUTE, &r_zoom_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_FOCUS_ABSOLUTE, &r_focus_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_AUTOGAIN, &r_autogain_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_FOCUS_AUTO, &r_autofocus_);
-    
-    // Exposure controls
-    QueryCtrl(state_.current_camera_path, V4L2_CID_EXPOSURE_AUTO, &r_autoexposure_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_EXPOSURE_ABSOLUTE, &r_exposure_abs_);
-    
-    // White balance controls
-    QueryCtrl(state_.current_camera_path, V4L2_CID_AUTO_WHITE_BALANCE, &r_awb_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_WHITE_BALANCE_TEMPERATURE, &r_wb_temp_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_BACKLIGHT_COMPENSATION, &r_backlight_);
-    QueryCtrl(state_.current_camera_path, V4L2_CID_EXPOSURE_AUTO_PRIORITY, &r_expo_dynfps_);
+    camera_controls_->RefreshControls(state_.current_camera_path);
 }
 
 void CameraManager::ApplyDefaultControls() {
     if (!config_.enable_auto_focus || state_.current_camera_path.empty()) return;
     
-    // Set auto focus enabled by default if supported
-    if (r_autofocus_.available && r_autofocus_.val == 0) {
-        if (SetCtrl(state_.current_camera_path, V4L2_CID_FOCUS_AUTO, 1)) {
-            r_autofocus_.val = 1;
-            std::cout << "🔧 Enabled auto focus by default" << std::endl;
-        }
-    }
+    camera_controls_->ApplyDefaultControls(state_.current_camera_path, config_.enable_auto_focus);
 }
 
 // Control setter methods
 bool CameraManager::SetBrightness(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_BRIGHTNESS, value);
+    return camera_controls_->SetBrightness(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetContrast(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_CONTRAST, value);
+    return camera_controls_->SetContrast(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetSaturation(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_SATURATION, value);
+    return camera_controls_->SetSaturation(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetGain(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_GAIN, value);
+    return camera_controls_->SetGain(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetSharpness(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_SHARPNESS, value);
+    return camera_controls_->SetSharpness(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetZoom(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_ZOOM_ABSOLUTE, value);
+    return camera_controls_->SetZoom(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetFocus(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_FOCUS_ABSOLUTE, value);
+    return camera_controls_->SetFocus(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetAutoGain(bool enabled) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_AUTOGAIN, enabled ? 1 : 0);
+    return camera_controls_->SetAutoGain(state_.current_camera_path, enabled);
 }
 
 bool CameraManager::SetAutoFocus(bool enabled) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_FOCUS_AUTO, enabled ? 1 : 0);
+    return camera_controls_->SetAutoFocus(state_.current_camera_path, enabled);
 }
 
 bool CameraManager::SetAutoExposure(bool enabled) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_EXPOSURE_AUTO, enabled ? V4L2_EXPOSURE_AUTO : V4L2_EXPOSURE_MANUAL);
+    return camera_controls_->SetAutoExposure(state_.current_camera_path, enabled);
 }
 
 bool CameraManager::SetExposure(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_EXPOSURE_ABSOLUTE, value);
+    return camera_controls_->SetExposure(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetWhiteBalance(bool auto_enabled) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_AUTO_WHITE_BALANCE, auto_enabled ? 1 : 0);
+    return camera_controls_->SetWhiteBalance(state_.current_camera_path, auto_enabled);
 }
 
 bool CameraManager::SetWhiteBalanceTemperature(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_WHITE_BALANCE_TEMPERATURE, value);
+    return camera_controls_->SetWhiteBalanceTemperature(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetBacklightCompensation(int value) {
-    return SetCtrl(state_.current_camera_path, V4L2_CID_BACKLIGHT_COMPENSATION, value);
+    return camera_controls_->SetBacklightCompensation(state_.current_camera_path, value);
 }
 
 bool CameraManager::SetControl(uint32_t control_id, int value) {
-    return SetCtrl(state_.current_camera_path, control_id, value);
+    return camera_controls_->SetControl(state_.current_camera_path, control_id, value);
+}
+
+bool CameraManager::GetControl(uint32_t control_id, int32_t* value) {
+    if (!value) return false;
+    return camera_controls_->GetControl(state_.current_camera_path, control_id, value);
 }
 
 std::string CameraManager::GetBackendName() const {
@@ -509,29 +357,8 @@ cv::VideoCapture CameraManager::OpenCapture(int idx, int w, int h) {
     return c;
 }
 
-void CameraManager::QueryCtrl(const std::string& cam_path, uint32_t id, CtrlRange* out) {
-    if (!::QueryCtrl(cam_path, id, out)) {
-        *out = CtrlRange{}; // Reset to defaults if query fails
-    }
-}
-
-bool CameraManager::SetCtrl(const std::string& cam_path, uint32_t id, int32_t value) {
-    bool success = ::SetCtrl(cam_path, id, value);
-    if (success) {
-        // Update the cached value in the appropriate range
-        // This is a simplified approach - in a full implementation you'd want
-        // to identify which control was set and update its cached val
-        RefreshControls();
-    }
-    return success;
-}
-
-bool CameraManager::GetCtrl(const std::string& cam_path, uint32_t id, int32_t* value) {
-    return ::GetCtrl(cam_path, id, value);
-}
-
 void CameraManager::UpdateFPSOptions(const std::string& cam_path, int width, int height) {
-    ui_fps_opts_ = EnumerateFPS(cam_path, width, height);
+    ui_fps_opts_ = camera_enumeration_->UpdateFPSOptions(cam_path, width, height);
     
     if (!ui_fps_opts_.empty()) {
         std::cout << "🎬 Available FPS options: ";
@@ -543,198 +370,50 @@ void CameraManager::UpdateFPSOptions(const std::string& cam_path, int width, int
     }
 }
 
-#ifdef FLATPAK_BUILD
+// ConvertSampleToBgr implementation moved to camera_gstreamer_conversion.cpp
 
-bool CameraManager::InitializeGStreamer() {
-    if (gst_initialized_) {
+// PipeWire Output Methods (Flatpak Video Streaming)
+bool CameraManager::InitializePipeWireOutput(const std::string& stream_name, int width, int height, int fps) {
+    if (pipewire_output_) {
+        std::cout << "⚠️  PipeWire output already initialized" << std::endl;
         return true;
     }
 
-    std::cout << "🎬 Initializing GStreamer for PipeWire support..." << std::endl;
+    pipewire_output_ = std::make_unique<PipeWireOutput>();
+    if (!pipewire_output_->Initialize(stream_name, width, height, fps)) {
+        std::cout << "❌ Failed to initialize PipeWire output stream" << std::endl;
+        pipewire_output_.reset();
+        return false;
+    }
 
-    // Initialize GStreamer
-    gst_init(nullptr, nullptr);
-    gst_initialized_ = true;
-
-    std::cout << "✅ GStreamer initialized successfully" << std::endl;
+    std::cout << "✅ PipeWire output stream initialized: " << stream_name 
+              << " (" << width << "x" << height << " @ " << fps << " FPS)" << std::endl;
     return true;
 }
 
-void CameraManager::CleanupGStreamer() {
-    if (pipeline_) {
-        gst_element_set_state(pipeline_, GST_STATE_NULL);
-        gst_object_unref(pipeline_);
-        pipeline_ = nullptr;
+void CameraManager::ShutdownPipeWireOutput() {
+    if (pipewire_output_) {
+        pipewire_output_->Shutdown();
+        pipewire_output_.reset();
+        std::cout << "🛑 PipeWire output stream shut down" << std::endl;
     }
-
-    if (appsink_) {
-        gst_object_unref(appsink_);
-        appsink_ = nullptr;
-    }
-
-    if (main_loop_) {
-        g_main_loop_quit(main_loop_);
-        g_main_loop_unref(main_loop_);
-        main_loop_ = nullptr;
-    }
-
-    gst_initialized_ = false;
-    camera_permission_granted_ = false;
 }
 
-bool CameraManager::RequestCameraPermission() {
-    std::cout << "📷 Requesting camera permission via Portal..." << std::endl;
-
-    // Load libportal at runtime to avoid Bazel header issues
-    void* portal_lib = dlopen("libportal.so", RTLD_LAZY);
-    if (!portal_lib) {
-        std::cerr << "❌ Failed to load libportal: " << dlerror() << std::endl;
-        std::cout << "📷 Assuming camera permission granted (libportal not available)" << std::endl;
-        camera_permission_granted_ = true;
-        return true;
-    }
-
-    // Try to get the xdp_portal_new function
-    typedef void* (*xdp_portal_new_func)();
-    xdp_portal_new_func xdp_portal_new = (xdp_portal_new_func)dlsym(portal_lib, "xdp_portal_new");
-
-    if (!xdp_portal_new) {
-        std::cerr << "❌ Failed to find xdp_portal_new: " << dlerror() << std::endl;
-        dlclose(portal_lib);
-        std::cout << "📷 Assuming camera permission granted (portal functions not available)" << std::endl;
-        camera_permission_granted_ = true;
-        return true;
-    }
-
-    // For now, assume permission is granted since we can't easily call the portal API
-    // TODO: Implement full portal API integration
-    std::cout << "✅ Camera permission request completed (simplified implementation)" << std::endl;
-    camera_permission_granted_ = true;
-    dlclose(portal_lib);
-    return true;
-}
-
-bool CameraManager::CreatePipeWirePipeline() {
-    std::cout << "🎬 Creating PipeWire GStreamer pipeline..." << std::endl;
-
-    // Create pipeline: pipewiresrc ! videoconvert ! video/x-raw,format=BGR ! appsink
-    pipeline_ = gst_pipeline_new("camera-pipeline");
-
-    if (!pipeline_) {
-        std::cerr << "❌ Failed to create pipeline" << std::endl;
+bool CameraManager::SendFrameToPipeWire(const cv::Mat& frame) {
+    if (!pipewire_output_ || !pipewire_output_->IsActive()) {
         return false;
     }
-
-    // Create elements
-    GstElement* pipewiresrc = gst_element_factory_make("pipewiresrc", "source");
-    GstElement* videoconvert = gst_element_factory_make("videoconvert", "convert");
-    appsink_ = gst_element_factory_make("appsink", "sink");
-
-    if (!pipewiresrc || !videoconvert || !appsink_) {
-        std::cerr << "❌ Failed to create pipeline elements" << std::endl;
-        return false;
-    }
-
-    // Configure appsink
-    g_object_set(appsink_, "emit-signals", TRUE, nullptr);
-    g_signal_connect(appsink_, "new-sample", G_CALLBACK(OnNewSample), this);
-    g_signal_connect(appsink_, "eos", G_CALLBACK(OnEOS), this);
-
-    // Add elements to pipeline
-    gst_bin_add_many(GST_BIN(pipeline_), pipewiresrc, videoconvert, appsink_, nullptr);
-
-    // Link elements
-    if (!gst_element_link_many(pipewiresrc, videoconvert, appsink_, nullptr)) {
-        std::cerr << "❌ Failed to link pipeline elements" << std::endl;
-        return false;
-    }
-
-    std::cout << "✅ PipeWire pipeline created successfully" << std::endl;
-    return true;
+  //  std::cout << "📺 PipeWire: Sending frame " << frame.cols << "x" << frame.rows << " to stream" << std::endl;
+    return pipewire_output_->SendFrame(frame);
 }
 
-bool CameraManager::StartPipeWireCapture() {
-    if (!camera_permission_granted_) {
-        if (!RequestCameraPermission()) {
-            return false;
-        }
-    }
-
-    if (!pipeline_ && !CreatePipeWirePipeline()) {
-        return false;
-    }
-
-    std::cout << "🎬 Starting PipeWire camera capture..." << std::endl;
-
-    // Set pipeline to playing state
-    GstStateChangeReturn ret = gst_element_set_state(pipeline_, GST_STATE_PLAYING);
-    if (ret == GST_STATE_CHANGE_FAILURE) {
-        std::cerr << "❌ Failed to start pipeline" << std::endl;
-        return false;
-    }
-
-    state_.is_opened = true;
-    std::cout << "✅ PipeWire camera capture started" << std::endl;
-    return true;
+bool CameraManager::IsPipeWireOutputActive() const {
+    return pipewire_output_ && pipewire_output_->IsActive();
 }
 
-void CameraManager::StopPipeWireCapture() {
-    if (pipeline_) {
-        gst_element_set_state(pipeline_, GST_STATE_NULL);
-    }
-    state_.is_opened = false;
-    std::cout << "🛑 PipeWire camera capture stopped" << std::endl;
+const std::string& CameraManager::GetPipeWireStreamName() const {
+    static const std::string empty_string;
+    return pipewire_output_ ? pipewire_output_->GetStreamName() : empty_string;
 }
-
-void CameraManager::OnNewSample(GstAppSink* sink, gpointer user_data) {
-    CameraManager* self = static_cast<CameraManager*>(user_data);
-
-    // Get the sample
-    GstSample* sample = gst_app_sink_pull_sample(sink);
-    if (!sample) {
-        return;
-    }
-
-    // Get buffer and caps
-    GstBuffer* buffer = gst_sample_get_buffer(sample);
-    GstCaps* caps = gst_sample_get_caps(sample);
-
-    if (!buffer || !caps) {
-        gst_sample_unref(sample);
-        return;
-    }
-
-    // Get video info
-    GstVideoInfo info;
-    gst_video_info_from_caps(&info, caps);
-
-    // Map buffer
-    GstMapInfo map_info;
-    if (!gst_buffer_map(buffer, &map_info, GST_MAP_READ)) {
-        gst_sample_unref(sample);
-        return;
-    }
-
-    // Convert to OpenCV Mat
-    {
-        std::lock_guard<std::mutex> lock(self->frame_mutex_);
-        self->current_frame_ = cv::Mat(info.height, info.width, CV_8UC3,
-                                      map_info.data, info.stride[0]);
-        // Make a copy since the buffer will be unmapped
-        self->current_frame_.copyTo(self->current_frame_);
-    }
-
-    // Unmap and unref
-    gst_buffer_unmap(buffer, &map_info);
-    gst_sample_unref(sample);
-}
-
-void CameraManager::OnEOS(GstAppSink* sink, gpointer user_data) {
-    CameraManager* self = static_cast<CameraManager*>(user_data);
-    std::cout << "🎬 PipeWire stream ended" << std::endl;
-    self->state_.is_opened = false;
-}
-
-#endif // FLATPAK_BUILD
 
 } // namespace segmecam

@@ -1,0 +1,122 @@
+engines:
+  # Disable tools that aren't configured
+  eslint: false
+  trivy: true
+  pylint: false
+  
+  # Enable only Lizard for complexity analysis
+  lizard:
+    enabled: true
+
+  # Enable Cppcheck for C++ code analysis
+  cppcheck:
+    enabled: true
+    language: c++
+    options:
+      - --enable=all
+      - --inconclusive
+      - --std=c++11
+      - --language=c++
+      - --suppress=missingIncludeSystem
+
+  # Enable duplication detection
+  duplication:
+    minTokenMatch: 20
+    skipLexicalErrors: false
+    ignoreLiterals: false
+    ignoreIdentifiers: true
+    ignoreAnnotations: false
+    ignoreUsings: false
+
+  # Exclude specific files or directories from analysis
+  exclude:
+    - 'third_party/**'
+    - 'build/**'
+    - 'build-dir-final/**'
+    - 'bazel-**/**'
+    - 'dist/**'
+    - 'docs/**'
+    - '*.md'
+    - '*.txt'
+    - '*.yml'
+    - '*.yaml'
+    - '*.json'
+    - '*.xml'
+
+languages:
+  cpp: # C++ language configuration
+    file_extensions:
+      - .cpp
+      - .cxx
+      - .cc
+      - .h
+      - .hpp
+      - .hxx
+    ignore_file_extensions:
+      - .inl # Ignore inline files
+  python:
+    enabled: false
+
+# Rules configuration
+# You can customize rules for each tool here
+# For example, to set complexity threshold for Lizard:
+lizard:
+  complexity_threshold: 50  # Set complexity threshold to 50
+  length_threshold: 500     # Set length threshold to 500 lines
+  duplicate_code_threshold: 20 # Minimum tokens to consider as duplicate
+  ignore_files:
+    - 'third_party/**'
+    - 'build/**'
+    - 'build-dir-final/**'
+    - 'bazel-**/**'
+    - 'dist/**'
+    - 'docs/**'
+    - '*.md'
+    - '*.txt'
+    - '*.yml'
+    - '*.yaml'
+    - '*.json'
+    - '*.xml'
+
+  # Standard Trivy rules can be added here if needed
+trivy:
+  severity: ['CRITICAL', 'HIGH'] # Only report critical and high severity issues
+  ignore_unfixed: true           # Ignore unfixed vulnerabilities
+  ignore_file: .trivyignore      # Use a .trivyignore file to ignore specific vulnerabilities
+  vuln_type: ['os', 'library']    # Check for OS and library vulnerabilities
+  timeout: 300                   # Set a timeout for the scan in seconds
+  skip_files:
+    - 'third_party/**'
+    - 'build/**'
+    - 'build-dir-final/**'
+    - 'bazel-**/**'
+    - 'dist/**'
+    - 'docs/**'
+    - '*.md'
+    - '*.txt'
+    - '*.yml'
+    - '*.yaml'
+    - '*.json'
+    - '*.xml'
+
+    # Standard Semgrep rules can be added here if needed
+semgrep:
+  rules:
+    - 'p/ci'  # CI best practices
+    - 'p/security-audit'  # Security best practices
+    - 'p/owasp-top-ten'  # OWASP Top Ten vulnerabilities
+    - 'p/owasp-mobile-top-ten'  # OWASP Mobile Top Ten vulnerabilities
+    - 'p/cpp'  # C++ best practices
+  exclude:
+    - 'third_party/**'
+    - 'build/**'
+    - 'build-dir-final/**'
+    - 'bazel-**/**'
+    - 'dist/**'
+    - 'docs/**'
+    - '*.md'
+    - '*.txt'
+    - '*.yml'
+    - '*.yaml'
+    - '*.json'
+    - '*.xml'

@@ -4,9 +4,14 @@
 #include <memory>
 #include <opencv2/opencv.hpp>
 #include <SDL.h>
-#include <GL/gl.h>
+#include <epoxy/gl.h>  // Modern OpenGL function loader
 #include "application/manager_coordination.h"
-#include "app_state.h"
+#include "include/application/app_state.h"
+
+// Include module headers for struct definitions
+#include "include/ui/ui_manager_enhanced.h"
+#include "application/frame_processor.h"
+#include "application/mediapipe_processor.h"
 
 // Forward declarations
 namespace segmecam {
@@ -17,6 +22,8 @@ namespace segmecam {
 // MediaPipe includes for complete types
 #include "mediapipe/framework/calculator_graph.h"
 #include "mediapipe/framework/formats/image_frame.h"
+#include "mediapipe/framework/formats/landmark.pb.h"
+#include "mediapipe/framework/formats/rect.pb.h"
 #include "mediapipe/framework/output_stream_poller.h"
 
 namespace segmecam {
@@ -31,10 +38,11 @@ namespace segmecam {
 class ApplicationRun {
 public:
     /**
-     * Execute the main application loop
-     * @param managers Reference to manager coordination structure
-     * @param mediapipe_graph MediaPipe graph for processing
-     * @param mask_poller Output stream poller for segmentation masks
+     * Execute the main application event loop
+     * 
+     * @param managers Manager coordination structure
+     * @param mediapipe_graph MediaPipe calculator graph
+     * @param mask_poller Segmentation mask output poller
      * @param multi_face_landmarks_poller Optional face landmarks poller
      * @param face_rects_poller Optional face rects poller
      * @param window SDL window for rendering
@@ -47,6 +55,7 @@ public:
         std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
         std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
         std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+        std::unique_ptr<mediapipe::OutputStreamPoller>& blendshapes_poller,
         SDL_Window* window,
         AppState& app_state
     );
@@ -63,37 +72,12 @@ public:
 
 private:
     /**
-     * Helper function to convert MediaPipe ImageFrame to OpenCV Mat
+     * Verify that all required managers are available
+     * @param managers Manager coordination structure to verify
+     * @return true if all managers are available, false otherwise
      */
-    static void MatToImageFrame(const cv::Mat& mat_bgr, std::unique_ptr<mediapipe::ImageFrame>& frame);
-    
-    /**
-     * Process SDL events and handle ImGui integration
-     */
-    static bool ProcessEvents(bool& running);
-    
-    /**
-     * Update FPS tracking and performance metrics
-     */
-    static void UpdateFPSTracking(double& fps, uint64_t& fps_frames, uint32_t& fps_last_ms);
-    
-    /**
-     * Render video feed as fullscreen background
-     */
-    static void RenderVideoBackground(const cv::Mat& display_rgb, int window_width, int window_height);
-    
-    /**
-     * Create and manage OpenGL texture from video frame
-     */
-    static GLuint CreateVideoTexture(const cv::Mat& display_rgb);
-    
-    /**
-     * Render comprehensive UI with all panels using UIManager Enhanced
-     */
-    static void RenderComprehensiveUI(ManagerCoordination::Managers& managers,
-                                     const AppState& app_state, 
-                                     UIManager& ui_manager,
-                                     bool& running);
+    static bool VerifyRequiredManagers(const ManagerCoordination::Managers& managers);
+
 };
 
 } // namespace segmecam

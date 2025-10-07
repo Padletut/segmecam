@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SegmeCam ⚡
+Comment=AI Webcam with Face Effects (Fast Launch)
+Exec=/home/padletut/segmecam/segmecam --face
+Icon=/home/padletut/segmecam/assets/SegmeCam.png
+Terminal=false
+Categories=AudioVideo;Video;Photography;
+Keywords=webcam;camera;AI;face;effects;video;streaming;
+StartupNotify=true

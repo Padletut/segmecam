@@ -2,7 +2,9 @@
 
 input_stream: "input_video"                # ImageFrame (CPU)
 output_stream: "segmentation_mask_cpu"      # ImageFrame (1ch)
+
 output_stream: "multi_face_landmarks"       # std::vector<NormalizedLandmarkList>
+output_stream: "face_blendshapes"           # ClassificationList
 
 node {
   calculator: "FlowLimiterCalculator"
@@ -50,4 +52,25 @@ node {
   input_side_packet: "NUM_FACES:num_faces"
   input_side_packet: "WITH_ATTENTION:with_attention"
   output_stream: "LANDMARKS:multi_face_landmarks"
+}
+
+# --- Image size for blendshapes ---
+node {
+  calculator: "ImagePropertiesCalculator"
+  input_stream: "IMAGE:input_video"
+  output_stream: "SIZE:image_size"
+}
+
+# --- Extract first face's landmarks for blendshapes using SplitNormalizedLandmarkListVectorCalculator ---
+node {
+  calculator: "SplitNormalizedLandmarkListVectorCalculator"
+  input_stream: "multi_face_landmarks"
+  output_stream: "single_face_landmarks"
+  options: {
+    [mediapipe.SplitVectorCalculatorOptions.ext] {
+      ranges { begin: 0 end: 1 }
+      element_only: true
+      combine_outputs: false
+    }
+  }
 }
