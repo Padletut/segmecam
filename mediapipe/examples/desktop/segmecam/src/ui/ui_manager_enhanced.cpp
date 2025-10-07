@@ -176,7 +176,7 @@ UIPanel* UIManager::FindPanel(const std::string& name) {
     return nullptr;
 }
 
-bool UIManager::ProcessEvents(bool& running) {
+bool UIManager::ProcessEvents(bool& running, ar_filters::ARFilterManager* ar_filter_mgr) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         ImGui_ImplSDL2_ProcessEvent(&event);
@@ -193,7 +193,7 @@ bool UIManager::ProcessEvents(bool& running) {
                 break;
                 
             case SDL_KEYDOWN:
-                if (HandleKeyEvent(event, running)) {
+                if (HandleKeyEvent(event, running, ar_filter_mgr)) {
                     return false;
                 }
                 break;
@@ -231,12 +231,116 @@ bool UIManager::HandleWindowEvent(const SDL_Event& event, bool& running) {
     return false;
 }
 
-bool UIManager::HandleKeyEvent(const SDL_Event& event, bool& running) {
+bool UIManager::HandleKeyEvent(const SDL_Event& event, bool& running, ar_filters::ARFilterManager* ar_filter_mgr) {
     if (event.key.keysym.sym == SDLK_ESCAPE) {
         std::cout << "🛑 ESC key pressed" << std::endl;
         running = false;
         return true;
     }
+    
+    // Filter quick selection keys (1-9)
+    if (ar_filter_mgr && event.key.keysym.sym >= SDLK_1 && event.key.keysym.sym <= SDLK_9) {
+        int filter_index = event.key.keysym.sym - SDLK_1;  // 0-based index
+        
+        // Get available filters
+        auto filters_result = ar_filter_mgr->GetAvailableFilters();
+        if (filters_result.ok()) {
+            auto& filters = filters_result.value();
+            
+            if (filter_index < static_cast<int>(filters.size())) {
+                std::string filter_id = filters[filter_index].id;
+                std::cout << "🎭 Loading filter " << (filter_index + 1) << ": " 
+                          << filters[filter_index].name << " (" << filter_id << ")" << std::endl;
+                
+                auto status = ar_filter_mgr->LoadFilter(filter_id);
+                if (status.ok()) {
+                    std::cout << "   ✅ Filter loaded successfully!" << std::endl;
+                } else {
+                    std::cout << "   ❌ Failed to load filter: " << status.message() << std::endl;
+                }
+            } else {
+                std::cout << "⚠️  Filter " << (filter_index + 1) << " not found (only " 
+                          << filters.size() << " filters available)" << std::endl;
+            }
+        }
+        return false;
+    }
+    
+    // Key '0' to unload current filter
+    if (ar_filter_mgr && event.key.keysym.sym == SDLK_0) {
+        std::cout << "🎭 Unloading current filter..." << std::endl;
+        auto status = ar_filter_mgr->UnloadCurrentFilter();
+        if (status.ok()) {
+            std::cout << "   ✅ Filter unloaded" << std::endl;
+        } else {
+            std::cout << "   ❌ Failed to unload: " << status.message() << std::endl;
+        }
+        return false;
+    }
+    
+    // Crown anchor adjustment keys (Finding #8)
+    // These modify the OpenGL renderer's crown offset multiplier
+    if (event.key.keysym.sym == SDLK_u) {
+        // U = Move crown UP
+        std::cout << "⬆️ Crown UP (U key)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->AdjustCrownOffset(+0.05f);  // Increase by 5%
+            float current = ar_filter_mgr->GetCrownOffset();
+            std::cout << "   Crown offset now: " << current << " (" << (current * 100.0f) << "%)" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
+    if (event.key.keysym.sym == SDLK_d) {
+        // D = Move crown DOWN
+        std::cout << "⬇️ Crown DOWN (D key)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->AdjustCrownOffset(-0.05f);  // Decrease by 5%
+            float current = ar_filter_mgr->GetCrownOffset();
+            std::cout << "   Crown offset now: " << current << " (" << (current * 100.0f) << "%)" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
+    if (event.key.keysym.sym == SDLK_w) {
+        // W = Move crown FORWARD (toward camera) - closer to face
+        std::cout << "➡️ Crown FORWARD (W key)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->AdjustCrownDepth(-0.2f);  // Negative = forward (closer)
+            float current = ar_filter_mgr->GetCrownDepth();
+            std::cout << "   Crown depth now: " << current << " (" << (current * 100.0f) << "% " << (current < 0 ? "backward" : "forward") << ")" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
+    if (event.key.keysym.sym == SDLK_s) {
+        // S = Move crown BACKWARD (away from camera) - to reach top/back of head
+        std::cout << "⬅️ Crown BACKWARD (S key)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->AdjustCrownDepth(+0.2f);  // Positive = backward (away)
+            float current = ar_filter_mgr->GetCrownDepth();
+            std::cout << "   Crown depth now: " << current << " (" << (current * 150.0f) << "% " << (current > 0 ? "forward" : "backward") << ")" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
+    if (event.key.keysym.sym == SDLK_r && (event.key.keysym.mod & KMOD_CTRL)) {
+        // Ctrl+R = RESET to default
+        std::cout << "🔄 Crown RESET (Ctrl+R)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->SetCrownOffset(0.4f);  // Default 40%
+            ar_filter_mgr->SetCrownDepth(0.0f);   // Reset depth too
+            std::cout << "   Crown offset reset to: 0.4 (40%), depth reset to 0.0" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
+    
     return false;
 }
 

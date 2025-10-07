@@ -508,12 +508,20 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
                 output_data.latest_lms.landmark().end()
             );
             
+            // **Phase 8 Day 4: Convert BGR to RGB and pass to MiDaS depth estimator**
+            cv::Mat frame_rgb;
+            cv::cvtColor(frame_bgr, frame_rgb, cv::COLOR_BGR2RGB);
+            
             params.managers.ar_filter_manager->Update(
                 landmarks_vec,
                 params.app_state.head_pose,  // Pass head pose from MediaPipe
                 frame_bgr.cols,
-                frame_bgr.rows
+                frame_bgr.rows,
+                frame_rgb  // Phase 8 Day 4: Pass RGB frame for MiDaS depth estimation
             );
+            
+            // **NEW: Update debug anchor visualization from UI toggle (Finding #8)**
+            params.managers.ar_filter_manager->SetDebugAnchorsEnabled(params.app_state.show_anchors);
             
             // Note: AR rendering will be done directly on GPU texture after upload
             // See below where we call RenderToTexture() after texture upload
@@ -586,8 +594,8 @@ bool FrameProcessor::ProcessFrameMediaPipeAndEffects(FrameProcessingParams& para
 }
 
 bool FrameProcessor::ProcessFrameUIAndRender(FrameProcessingParams& params, const cv::Mat& display_rgb) {
-    // Let UIManager handle events first
-    if (!params.ui_manager.ProcessEvents(params.running)) {
+    // Let UIManager handle events first (pass AR filter manager for keyboard controls)
+    if (!params.ui_manager.ProcessEvents(params.running, params.managers.ar_filter_manager.get())) {
         std::cout << "🛑 UIManager ProcessEvents returned false, exiting..." << std::endl;
         return false;
     }

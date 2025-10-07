@@ -236,7 +236,10 @@ absl::Status FilterAsset::ParseAttachments(const json& j,
     
     // Optional fields
     attachment.texture_path = att_json.value("texture", "");
+    attachment.opacity_map_path = att_json.value("opacity_map", "");
+    attachment.emissive_map_path = att_json.value("emissive", "");
     attachment.visible = att_json.value("visible", true);
+    attachment.flip_z = att_json.value("flip_z", false);
     attachment.opacity = att_json.value("opacity", 1.0f);
     
     // Parse vec3 fields

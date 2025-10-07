@@ -514,8 +514,11 @@ void DebugPanel::RenderARFilterControls() {
         ImGui::Text("  Models: %d, Triangles: %d", 
                     perf.models_rendered_per_frame,
                     perf.triangles_per_frame);
+        // Always show FPS line to avoid layout jitter; show placeholder until available
         if (perf.average_fps > 0.0f) {
             ImGui::Text("  Avg FPS: %.1f", perf.average_fps);
+        } else {
+            ImGui::TextDisabled("  Avg FPS: calculating...");
         }
         ImGui::Text("  Frames Rendered: %d", perf.frames_rendered);
         
@@ -534,6 +537,31 @@ void DebugPanel::RenderARFilterControls() {
     ImGui::TextDisabled("- Click 'Load Filter' to activate it");
     ImGui::TextDisabled("- Enable AR Filters to see rendering");
     ImGui::TextDisabled("- Filters require face detection");
+
+    // Tuning section for AR rendering parameters
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Text("⚙️ AR Tuning");
+    float z_scale = ar_filter_mgr_->GetAnchorZScale();
+    if (ImGui::SliderFloat("Landmark Z Scale", &z_scale, 0.0f, 1.0f, "%.2f")) {
+        ar_filter_mgr_->SetAnchorZScale(z_scale);
+    }
+    float z_bias = ar_filter_mgr_->GetAnchorZBias();
+    if (ImGui::SliderFloat("Z Bias (m)", &z_bias, -0.10f, 0.10f, "%.3fm")) {
+        ar_filter_mgr_->SetAnchorZBias(z_bias);
+    }
+    float z_face_lerp = ar_filter_mgr_->GetAnchorZFaceLerp();
+    if (ImGui::SliderFloat("Face Depth Lerp", &z_face_lerp, 0.0f, 1.0f, "%.2f")) {
+        ar_filter_mgr_->SetAnchorZFaceLerp(z_face_lerp);
+    }
+    bool scale_with_face = ar_filter_mgr_->GetScaleWithFaceWidth();
+    if (ImGui::Checkbox("Scale with Face Width", &scale_with_face)) {
+        ar_filter_mgr_->SetScaleWithFaceWidth(scale_with_face);
+    }
+    float face_normal_offset = ar_filter_mgr_->GetFaceNormalOffset();
+    if (ImGui::SliderFloat("Face-Normal Offset (m)", &face_normal_offset, -0.05f, 0.05f, "%.3fm")) {
+        ar_filter_mgr_->SetFaceNormalOffset(face_normal_offset);
+    }
 }
 
 } // namespace segmecam

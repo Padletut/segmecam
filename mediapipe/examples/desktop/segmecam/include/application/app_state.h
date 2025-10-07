@@ -147,7 +147,7 @@ struct AppState {
   bool show_facemask = false;
   bool show_wrinkle_segmentation = false;
   bool show_wrinkle_inpaint = false;
-  bool show_anchors = false;  // Phase 2 Step 3: Show 7 anchor points
+  bool show_anchors = false;  // Phase 2 Step 3: Show 7 anchor points (ENABLED for debugging)
   bool lm_roi_mode = false;
   bool lm_apply_rot = true;
   bool lm_flip_x = false;

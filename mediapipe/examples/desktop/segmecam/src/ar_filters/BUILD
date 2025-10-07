@@ -131,6 +131,7 @@ cc_library(
 
 # Phase 3 Step 8: OpenGL 3D Renderer (Option A - Isolated from MediaPipe)
 # This library uses epoxy/gl.h and must never include MediaPipe GL headers
+# **UPDATED for Option B**: Added face landmark and PnP dependencies
 cc_library(
     name = "opengl_renderer",
     srcs = ["opengl_renderer.cpp"],
@@ -139,13 +140,18 @@ cc_library(
     visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
     deps = [
         ":model_loader",
+        ":texture_manager",  # For texture loading and caching
+        ":midas_depth_estimator",  # Phase 8 Day 4: MiDaS depth estimation
         "//mediapipe/examples/desktop/segmecam:shader_program",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_calib3d",  # For solvePnP (head pose)
         "@glm//:glm",
         "@com_google_absl//absl/log",
     ],
     copts = [
         "-std=c++17",
         "-I/usr/include",  # For epoxy/gl.h
+        "-I/usr/include/opencv4",  # For OpenCV headers
     ],
     linkopts = [
         "-lepoxy",  # Modern OpenGL function loader
@@ -280,6 +286,7 @@ cc_binary(
 )
 
 # Phase 7: AR Filter Manager - Main coordinator for AR filter system
+# **UPDATED for Option B**: Now uses opengl_renderer instead of ar_renderer
 cc_library(
     name = "ar_filter_manager",
     srcs = ["ar_filter_manager.cpp"],
@@ -288,7 +295,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":filter_asset",
-        ":ar_renderer",
+        ":opengl_renderer",  # CHANGED: from :ar_renderer to :opengl_renderer
         ":transform_calculator",
         "//mediapipe/framework/formats:landmark_cc_proto",
         "//mediapipe/framework/port:opencv_core",
@@ -332,3 +339,25 @@ cc_binary(
         "-lopencv_imgproc",
     ],
 )
+
+# Phase 8 Day 4: MiDaS Depth Estimator - Monocular depth estimation using ONNX
+cc_library(
+    name = "midas_depth_estimator",
+    srcs = ["midas_depth_estimator.cpp"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/midas_depth_estimator.h"],
+    includes = ["../.."],
+    visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
+    deps = [
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+        "@com_google_absl//absl/log",
+    ],
+    copts = [
+        "-std=c++17",
+        "-I/usr/include/opencv4",
+    ],
+    linkopts = [
+        "-lonnxruntime",  # ONNX Runtime library
+    ],
+)
+

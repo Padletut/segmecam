@@ -81,13 +81,7 @@ int ApplicationRun::ExecuteMainLoop(
     // Main application loop
     while (params.running) {
         try {
-            // Process SDL events and UI
-            if (!managers.ui->ProcessEvents(params.running)) {
-                std::cout << "🛑 UI requested exit" << std::endl;
-                break;
-            }
-
-            // Process one complete frame
+            // Process one complete frame (includes UI event processing inside FrameProcessor)
             if (!FrameProcessor::ProcessFrame(params)) {
                 std::cout << "⚠️  Frame processing failed, continuing..." << std::endl;
             }

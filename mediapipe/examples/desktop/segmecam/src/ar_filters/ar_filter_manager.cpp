@@ -4,7 +4,7 @@
 
 #include "mediapipe/examples/desktop/segmecam/include/ar_filters/ar_filter_manager.h"
 #include "mediapipe/examples/desktop/segmecam/include/ar_filters/filter_asset.h"
-#include "mediapipe/examples/desktop/segmecam/include/ar_filters/ar_renderer.h"
+#include "mediapipe/examples/desktop/segmecam/include/ar_filters/opengl_renderer.h"  // CHANGED
 #include "mediapipe/examples/desktop/segmecam/include/ar_filters/transform_calculator.h"
 
 #include <filesystem>
@@ -34,25 +34,22 @@ absl::Status ARFilterManager::Initialize(const ARFilterManagerConfig& config) {
 
   config_ = config;
 
-  // Initialize ARRenderer with configuration
-  ARRenderer::ARConfig renderer_config;
-  renderer_config.render_width = 1920;
-  renderer_config.render_height = 1080;
-  renderer_config.use_multisampling = true;
-  renderer_config.msaa_samples = 4;
-  ar_renderer_ = std::make_unique<ARRenderer>(renderer_config);
+  // Initialize OpenGLRenderer (replaces ARRenderer)
+  opengl_renderer_ = std::make_unique<OpenGLRenderer>();
   
-  auto status = ar_renderer_->Initialize();
-  if (!status.ok()) {
-    LOG(ERROR) << "Failed to initialize ARRenderer: " << status;
-    return status;
+  if (!opengl_renderer_->Initialize()) {
+    LOG(ERROR) << "Failed to initialize OpenGLRenderer";
+    return absl::InternalError("OpenGLRenderer initialization failed");
   }
+  
+  // Set reasonable viewport (will be updated during rendering)
+  opengl_renderer_->UpdateProjectionMatrix(1920, 1080);
 
   // Scan filters directory
-  status = ScanFiltersDirectory();
-  if (!status.ok()) {
-    LOG(ERROR) << "Failed to scan filters directory: " << status;
-    return status;
+  auto scan_status = ScanFiltersDirectory();
+  if (!scan_status.ok()) {
+    LOG(ERROR) << "Failed to scan filters directory: " << scan_status;
+    return scan_status;
   }
 
   state_.initialized = true;
@@ -92,9 +89,9 @@ void ARFilterManager::Cleanup() {
   }
 
   // Cleanup renderer
-  if (ar_renderer_) {
-    ar_renderer_->Cleanup();
-    ar_renderer_.reset();
+  if (opengl_renderer_) {
+    opengl_renderer_->Cleanup();
+    opengl_renderer_.reset();
   }
 
   // Clear state
@@ -163,12 +160,16 @@ absl::StatusOr<FilterInfo> ARFilterManager::GetFilterInfo(const std::string& fil
 
 // Filter lifecycle management
 absl::Status ARFilterManager::LoadFilter(const std::string& filter_id) {
+  ABSL_LOG(INFO) << "[DEBUG] LoadFilter called: " << filter_id;
+  
   if (!state_.initialized) {
+    ABSL_LOG(ERROR) << "[DEBUG] LoadFilter failed: not initialized";
     return absl::FailedPreconditionError("ARFilterManager not initialized");
   }
 
   // Unload current filter if any
   if (HasActiveFilter()) {
+    ABSL_LOG(INFO) << "[DEBUG] Unloading current filter: " << state_.active_filter_id;
     auto status = UnloadCurrentFilter();
     if (!status.ok()) {
       return status;
@@ -176,8 +177,10 @@ absl::Status ARFilterManager::LoadFilter(const std::string& filter_id) {
   }
 
   // Load filter asset
+  ABSL_LOG(INFO) << "[DEBUG] Loading filter asset: " << filter_id;
   auto status = LoadFilterAsset(filter_id);
   if (!status.ok()) {
+    ABSL_LOG(ERROR) << "[DEBUG] LoadFilterAsset failed: " << status;
     return status;
   }
 
@@ -187,11 +190,81 @@ absl::Status ARFilterManager::LoadFilter(const std::string& filter_id) {
     return absl::InternalError("Filter asset not found after loading");
   }
 
-  // Load filter into ARRenderer
-  status = ar_renderer_->LoadFilter(*it->second);
-  if (!status.ok()) {
-    loaded_filter_assets_.erase(it);
-    return status;
+  // **NEW: Load filter into OpenGLRenderer**
+  const FilterAsset& asset = *it->second;
+  
+  ABSL_LOG(INFO) << "[DEBUG] Filter has " << asset.GetAttachments().size() << " attachments";
+  
+  // Load models and create instances
+  int attachment_index = 0;
+  for (const auto& attachment : asset.GetAttachments()) {
+    ABSL_LOG(INFO) << "[DEBUG] Processing attachment #" << attachment_index++;
+    ABSL_LOG(INFO) << "[DEBUG]   model_path (relative): " << attachment.model_path;
+    ABSL_LOG(INFO) << "[DEBUG]   anchor_name: " << attachment.anchor_name;
+    
+    // **CRITICAL FIX**: Use FilterAsset::GetAssetPath() to get full path
+    std::string model_path = asset.GetAssetPath(attachment.model_path);
+    ABSL_LOG(INFO) << "[DEBUG]   model_path (absolute): " << model_path;
+    
+    std::string model_id = opengl_renderer_->LoadModel(model_path);
+    
+    if (model_id.empty()) {
+      LOG(ERROR) << "Failed to load model: " << model_path;
+      continue;
+    }
+    
+    // **NEW: Override texture path from filter.json if specified**
+    if (!attachment.texture_path.empty()) {
+      std::string texture_path = asset.GetAssetPath(attachment.texture_path);
+      ABSL_LOG(INFO) << "[DEBUG] Overriding texture from filter.json: " << texture_path;
+      
+      // Override the material texture path in the loaded model
+      bool texture_override_success = opengl_renderer_->SetModelTexture(model_id, texture_path);
+      if (!texture_override_success) {
+        ABSL_LOG(WARNING) << "Failed to override texture: " << texture_path;
+      } else {
+        ABSL_LOG(INFO) << "Successfully overridden model texture: " << texture_path;
+      }
+    }
+    
+    // Override opacity map if specified
+    if (!attachment.opacity_map_path.empty()) {
+      std::string opacity_map_path = asset.GetAssetPath(attachment.opacity_map_path);
+      ABSL_LOG(INFO) << "[DEBUG] Overriding opacity map from filter.json: " << opacity_map_path;
+      opengl_renderer_->SetModelOpacityMap(model_id, opacity_map_path);
+    }
+    
+    // Override emissive map if specified
+    if (!attachment.emissive_map_path.empty()) {
+      std::string emissive_map_path = asset.GetAssetPath(attachment.emissive_map_path);
+      ABSL_LOG(INFO) << "[DEBUG] Overriding emissive map from filter.json: " << emissive_map_path;
+      opengl_renderer_->SetModelEmissiveMap(model_id, emissive_map_path);
+    }
+    
+    ABSL_LOG(INFO) << "[DEBUG] Model loaded, creating instance...";
+    
+    // Create instance (FilterAttachment already has glm::vec3 fields)
+    std::string instance_id = opengl_renderer_->CreateInstance(
+        model_id,
+        attachment.anchor_name,
+        attachment.offset,
+        attachment.rotation,
+        attachment.scale,
+        attachment.flip_z
+    );
+    
+    if (instance_id.empty()) {
+      LOG(ERROR) << "Failed to create instance for: " << model_path;
+      continue;
+    }
+    
+    ABSL_LOG(INFO) << "[DEBUG] Instance created: " << instance_id;
+    
+    // Store instance ID for later reference
+    filter_instance_ids_[filter_id] = instance_id;
+    
+    LOG(INFO) << "Loaded attachment: " << model_path 
+              << " at anchor: " << attachment.anchor_name;
   }
 
   // Update state
@@ -199,7 +272,8 @@ absl::Status ARFilterManager::LoadFilter(const std::string& filter_id) {
   state_.frame_count = 0;
   state_.performance_stats = FilterPerformanceStats{};
 
-  LOG(INFO) << "Filter loaded: " << filter_id;
+  LOG(INFO) << "Filter loaded: " << filter_id << " with " 
+            << asset.GetAttachments().size() << " attachments";
   return absl::OkStatus();
 }
 
@@ -212,11 +286,9 @@ absl::Status ARFilterManager::UnloadCurrentFilter() {
     return absl::FailedPreconditionError("No active filter to unload");
   }
 
-  // Unload from renderer
-  auto status = ar_renderer_->UnloadFilter(state_.active_filter_id);
-  if (!status.ok()) {
-    LOG(WARNING) << "Failed to unload filter from renderer: " << status;
-  }
+  // **NEW: Unload from OpenGLRenderer**
+  opengl_renderer_->ClearAllInstances();
+  filter_instance_ids_.clear();
 
   // Remove from loaded assets
   loaded_filter_assets_.erase(state_.active_filter_id);
@@ -245,35 +317,49 @@ std::string ARFilterManager::GetActiveFilterId() const {
 
 // Main update and render
 void ARFilterManager::Update(const std::vector<mediapipe::NormalizedLandmark>& face_landmarks,
-                              const HeadPose& head_pose,
-                              int frame_width, int frame_height) {
+                              const segmecam::HeadPose& head_pose,
+                              int frame_width, int frame_height,
+                              const cv::Mat& current_frame_rgb) {
+  ABSL_LOG(INFO) << "[DEBUG] ARFilterManager::Update() called, face_detected=" 
+                 << !face_landmarks.empty() << " landmarks=" << face_landmarks.size()
+                 << " has_frame=" << !current_frame_rgb.empty();
+  
   if (!state_.initialized || !HasActiveFilter()) {
+    ABSL_LOG(WARNING) << "[DEBUG] Update skipped: initialized=" << state_.initialized 
+                      << " has_filter=" << HasActiveFilter();
     return;
   }
 
-  // Convert protobuf landmarks to flat float vector [x0,y0,z0, x1,y1,z1, ...]
-  std::vector<float> landmarks_flat;
-  landmarks_flat.reserve(face_landmarks.size() * 3);
+  // **Convert MediaPipe normalized landmarks to proper coordinate space**
+  // MediaPipe outputs:
+  // - x, y: Normalized 0-1 (need to stay normalized for screen-space calculations)
+  // - z: Relative to face center, scaled by face width (already correct scale)
+  std::vector<cv::Point3f> landmarks_3d;
+  landmarks_3d.reserve(face_landmarks.size());
   for (const auto& landmark : face_landmarks) {
-    landmarks_flat.push_back(landmark.x());
-    landmarks_flat.push_back(landmark.y());
-    landmarks_flat.push_back(landmark.z());
+    // Keep x, y normalized (0-1) - OpenGLRenderer will convert to world space
+    // Keep z as-is (already scaled by face width as per MediaPipe spec)
+    landmarks_3d.emplace_back(landmark.x(), landmark.y(), landmark.z());
   }
   
-  // Update face landmarks in renderer
-  auto status = ar_renderer_->UpdateFaceLandmarks(landmarks_flat);
-  if (!status.ok()) {
-    LOG(WARNING) << "Failed to update face landmarks: " << status.message();
+  ABSL_LOG(INFO) << "[DEBUG] Converted " << landmarks_3d.size() << " landmarks (normalized coords preserved)";
+  
+  // **Phase 8 Day 4: Update face landmarks WITH frame for MiDaS depth**
+  if (!current_frame_rgb.empty()) {
+    opengl_renderer_->UpdateFaceLandmarksWithFrame(landmarks_3d, current_frame_rgb);
+  } else {
+    // Fallback to old method if no frame provided
+    opengl_renderer_->UpdateFaceLandmarks(landmarks_3d);
   }
   
-  // 🔧 UPDATE: Pass head pose rotation to renderer
-  // Convert OpenCV quaternion (w,x,y,z) to GLM quaternion (w,x,y,z)
-  ar_renderer_->SetHeadPoseRotation(
-      glm::quat(head_pose.rotation_quat[0],  // w
-                head_pose.rotation_quat[1],  // x
-                head_pose.rotation_quat[2],  // y
-                head_pose.rotation_quat[3])  // z
-  );
+  // Update viewport if changed
+  int current_width, current_height;
+  opengl_renderer_->GetViewportSize(&current_width, &current_height);
+  if (current_width != frame_width || current_height != frame_height) {
+    ABSL_LOG(INFO) << "🖼️ Updating viewport: " << current_width << "x" << current_height 
+                   << " → " << frame_width << "x" << frame_height;
+    opengl_renderer_->UpdateProjectionMatrix(frame_width, frame_height);
+  }
 
   // Apply behaviors if enabled
   if (config_.enable_behaviors) {
@@ -287,6 +373,12 @@ void ARFilterManager::Update(const std::vector<mediapipe::NormalizedLandmark>& f
 }
 
 cv::Mat ARFilterManager::Render(const cv::Mat& input_frame) {
+  // **DEPRECATED Phase 8 Day 3** - This causes 40ms freeze due to GPU readback
+  // Use RenderToTexture() instead for GPU-to-GPU rendering
+  ABSL_LOG(WARNING) << "ARFilterManager::Render() is deprecated - use RenderToTexture()";
+  return input_frame.clone();
+  
+  /* DEPRECATED IMPLEMENTATION - DO NOT USE
   if (!state_.initialized || !HasActiveFilter()) {
     return input_frame.clone();
   }
@@ -294,7 +386,7 @@ cv::Mat ARFilterManager::Render(const cv::Mat& input_frame) {
   auto start_time = std::chrono::steady_clock::now();
 
   // Render filter using ARRenderer
-  auto result_or = ar_renderer_->RenderToTexture(
+  auto result_or = opengl_renderer_->RenderToTexture(
       input_frame.data, input_frame.cols, input_frame.rows);
 
   auto end_time = std::chrono::steady_clock::now();
@@ -326,16 +418,16 @@ cv::Mat ARFilterManager::Render(const cv::Mat& input_frame) {
   ABSL_LOG(WARNING) << "GPU readback disabled temporarily - returning input frame";
   return input_frame.clone();
   
-  /* DISABLED - CAUSES UI FREEZE
+  // DISABLED - CAUSES UI FREEZE
   // Get the actual FBO dimensions (may differ from input frame size)
   int fbo_x = 0, fbo_y = 0, fbo_width = 0, fbo_height = 0;
-  ar_renderer_->GetViewport(&fbo_x, &fbo_y, &fbo_width, &fbo_height);
+  opengl_renderer_->GetViewport(&fbo_x, &fbo_y, &fbo_width, &fbo_height);
   
   ABSL_LOG(INFO) << "Reading FBO: " << fbo_width << "x" << fbo_height 
                  << " (input frame: " << input_frame.cols << "x" << input_frame.rows << ")";
   
   // Read the rendered FBO texture back to CPU as cv::Mat
-  auto readback_result = ar_renderer_->ReadFramebufferToMat(
+  auto readback_result = opengl_renderer_->ReadFramebufferToMat(
       "render_target", fbo_width, fbo_height);
   
   if (!readback_result.ok()) {
@@ -349,6 +441,7 @@ cv::Mat ARFilterManager::Render(const cv::Mat& input_frame) {
 }
 
 // Phase 8 Day 4: Direct GPU-to-GPU rendering (no CPU readback)
+// **UPDATED for OpenGLRenderer**: Use new rendering pipeline
 absl::Status ARFilterManager::RenderToTexture(unsigned int video_texture_id, int width, int height) {
   if (!state_.initialized) {
     return absl::FailedPreconditionError("ARFilterManager not initialized");
@@ -358,20 +451,30 @@ absl::Status ARFilterManager::RenderToTexture(unsigned int video_texture_id, int
     return absl::OkStatus();  // No active filter, nothing to render
   }
   
-  if (!ar_renderer_) {
-    return absl::InternalError("ARRenderer not available");
+  if (!opengl_renderer_) {
+    return absl::InternalError("OpenGLRenderer not available");
   }
   
   auto start_time = std::chrono::high_resolution_clock::now();
   
-  // Render AR filters directly onto the video texture (GPU-to-GPU, no CPU copy)
-  absl::Status render_status = ar_renderer_->RenderToTexture(video_texture_id, width, height);
+  ABSL_LOG(INFO) << "[DEBUG] ARFilterManager::RenderToTexture() called: " 
+                 << width << "x" << height << " video_tex=" << video_texture_id;
+  
+  // Update viewport to match render target
+  opengl_renderer_->UpdateProjectionMatrix(width, height);
+  
+  // **CRITICAL: Render to the video texture using dedicated method**
+  // This will create/bind FBO internally and render AR models onto the texture
+  bool render_success = opengl_renderer_->RenderToExternalTexture(video_texture_id, width, height);
+  
+  ABSL_LOG(INFO) << "[DEBUG] RenderToExternalTexture result: " << (render_success ? "SUCCESS" : "FAILED");
   
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
   
   // Update performance stats
   state_.performance_stats.render_time_ms = duration_us.count() / 1000.0f;
+  state_.performance_stats.models_rendered_per_frame = render_success ? 1 : 0;  // Boolean converted to count
   state_.frame_count++;
   
   // Calculate FPS every 30 frames
@@ -386,7 +489,7 @@ absl::Status ARFilterManager::RenderToTexture(unsigned int video_texture_id, int
     state_.last_update_time_us = current_time_us;
   }
   
-  return render_status;
+  return absl::OkStatus();
 }
 
 // Performance monitoring
@@ -413,6 +516,102 @@ bool ARFilterManager::AreBehaviorsEnabled() const {
 
 void ARFilterManager::SetSmoothingFactor(float factor) {
   config_.smoothing_factor = std::clamp(factor, 0.0f, 1.0f);
+}
+
+// Debug visualization
+void ARFilterManager::SetDebugAnchorsEnabled(bool enabled) {
+  if (opengl_renderer_) {
+    opengl_renderer_->SetDebugAnchorsEnabled(enabled);
+  }
+}
+
+void ARFilterManager::AdjustCrownOffset(float delta) {
+  if (opengl_renderer_) {
+    float current = opengl_renderer_->GetCrownOffsetMultiplier();
+    float new_value = std::max(0.0f, std::min(1.0f, current + delta));  // Clamp 0-1
+    opengl_renderer_->SetCrownOffsetMultiplier(new_value);
+  }
+}
+
+void ARFilterManager::SetCrownOffset(float multiplier) {
+  if (opengl_renderer_) {
+    opengl_renderer_->SetCrownOffsetMultiplier(multiplier);
+  }
+}
+
+float ARFilterManager::GetCrownOffset() const {
+  if (opengl_renderer_) {
+    return opengl_renderer_->GetCrownOffsetMultiplier();
+  }
+  return 0.4f;  // Default
+}
+
+void ARFilterManager::AdjustCrownDepth(float delta) {
+  if (opengl_renderer_) {
+    float current = opengl_renderer_->GetCrownDepthOffset();
+    // Increased range to -10.0 to +10.0 for much larger backward movement
+    float new_value = std::max(-10.0f, std::min(20.0f, current + delta));  // Clamp -10 to 10
+    opengl_renderer_->SetCrownDepthOffset(new_value);
+  }
+}
+
+void ARFilterManager::SetCrownDepth(float offset) {
+  if (opengl_renderer_) {
+    opengl_renderer_->SetCrownDepthOffset(offset);
+  }
+}
+
+float ARFilterManager::GetCrownDepth() const {
+  if (opengl_renderer_) {
+    return opengl_renderer_->GetCrownDepthOffset();
+  }
+  return 0.0f;  // Default
+}
+
+// Phase 8 Day 4: MiDaS depth calibration
+void ARFilterManager::RecalibrateMiDasDepth(float known_distance_meters) {
+  if (opengl_renderer_) {
+    opengl_renderer_->RecalibrateMiDasDepth(known_distance_meters);
+  } else {
+    ABSL_LOG(WARNING) << "[ARFilterManager] Cannot calibrate: renderer not initialized";
+  }
+}
+
+// Renderer tuning controls (exposed for UI)
+void ARFilterManager::SetAnchorZScale(float s) {
+  if (opengl_renderer_) opengl_renderer_->SetAnchorZScale(s);
+}
+float ARFilterManager::GetAnchorZScale() const {
+  if (opengl_renderer_) return opengl_renderer_->GetAnchorZScale();
+  return 0.25f;
+}
+void ARFilterManager::SetAnchorZBias(float meters) {
+  if (opengl_renderer_) opengl_renderer_->SetAnchorZBiasMeters(meters);
+}
+float ARFilterManager::GetAnchorZBias() const {
+  if (opengl_renderer_) return opengl_renderer_->GetAnchorZBiasMeters();
+  return 0.02f;
+}
+void ARFilterManager::SetAnchorZFaceLerp(float t) {
+  if (opengl_renderer_) opengl_renderer_->SetAnchorZFaceLerp(t);
+}
+float ARFilterManager::GetAnchorZFaceLerp() const {
+  if (opengl_renderer_) return opengl_renderer_->GetAnchorZFaceLerp();
+  return 0.6f;
+}
+void ARFilterManager::SetScaleWithFaceWidth(bool enabled) {
+  if (opengl_renderer_) opengl_renderer_->SetScaleWithFaceWidth(enabled);
+}
+bool ARFilterManager::GetScaleWithFaceWidth() const {
+  if (opengl_renderer_) return opengl_renderer_->GetScaleWithFaceWidth();
+  return true;
+}
+void ARFilterManager::SetFaceNormalOffset(float meters) {
+  if (opengl_renderer_) opengl_renderer_->SetFaceNormalOffset(meters);
+}
+float ARFilterManager::GetFaceNormalOffset() const {
+  if (opengl_renderer_) return opengl_renderer_->GetFaceNormalOffset();
+  return 0.0f;
 }
 
 // Configuration
@@ -682,8 +881,15 @@ void ARFilterManager::ApplyShakeBehavior(const FilterBehavior& behavior,
   state.intensity = blendshape_value;
 
   // Apply shake to target attachment via ARRenderer
-  if (ar_renderer_) {
-    ar_renderer_->SetModelInstanceOffset(behavior.target_attachment_id, shake_offset);
+  // TODO Phase 3: Port to OpenGLRenderer
+  /* TEMP DISABLED FOR PHASE 3
+  if (opengl_renderer_) {
+    opengl_renderer_->SetInstanceOffset(behavior.target_attachment_id, shake_offset);
+  }
+  */
+  // For now, apply directly to OpenGLRenderer instance
+  if (opengl_renderer_) {
+    opengl_renderer_->SetInstanceOffset(behavior.target_attachment_id, shake_offset);
   }
 }
 
@@ -713,8 +919,8 @@ void ARFilterManager::ApplyScaleBehavior(const FilterBehavior& behavior,
   state.intensity = blendshape_value;
 
   // Apply scale to target attachment via ARRenderer
-  if (ar_renderer_) {
-    ar_renderer_->SetModelInstanceScaleVec(behavior.target_attachment_id, scale_vec);
+  if (opengl_renderer_) {
+    opengl_renderer_->SetInstanceScale(behavior.target_attachment_id, scale_vec);
   }
 }
 
@@ -729,8 +935,8 @@ void ARFilterManager::ApplyHideBehavior(const FilterBehavior& behavior,
   state.intensity = blendshape_value;
 
   // Apply visibility to target attachment via ARRenderer
-  if (ar_renderer_) {
-    ar_renderer_->SetModelInstanceVisibility(behavior.target_attachment_id, !should_hide);
+  if (opengl_renderer_) {
+    opengl_renderer_->SetInstanceVisible(behavior.target_attachment_id, !should_hide);
   }
 }
 
@@ -749,8 +955,8 @@ void ARFilterManager::ApplyRotateBehavior(const FilterBehavior& behavior,
   state.intensity = blendshape_value;
 
   // Apply rotation to target attachment via ARRenderer
-  if (ar_renderer_) {
-    ar_renderer_->SetModelInstanceRotation(behavior.target_attachment_id, rotation);
+  if (opengl_renderer_) {
+    opengl_renderer_->SetInstanceRotation(behavior.target_attachment_id, rotation);
   }
 }
 
@@ -781,8 +987,8 @@ void ARFilterManager::ApplyFallOffBehavior(const FilterBehavior& behavior,
   state.intensity = blendshape_value;
 
   // Apply fall offset to target attachment via ARRenderer
-  if (ar_renderer_) {
-    ar_renderer_->SetModelInstanceOffset(behavior.target_attachment_id, state.shake_offset);
+  if (opengl_renderer_) {
+    opengl_renderer_->SetInstanceOffset(behavior.target_attachment_id, state.shake_offset);
   }
 }
 
@@ -803,8 +1009,8 @@ void ARFilterManager::ApplyColorChangeBehavior(const FilterBehavior& behavior,
   state.intensity = blendshape_value;
 
   // Apply color tint to target attachment via ARRenderer
-  if (ar_renderer_) {
-    ar_renderer_->SetModelInstanceColorTint(behavior.target_attachment_id, color);
+  if (opengl_renderer_) {
+    // TODO: Add color tint support // opengl_renderer_->SetInstanceColorTint(behavior.target_attachment_id, color);
   }
 }
 

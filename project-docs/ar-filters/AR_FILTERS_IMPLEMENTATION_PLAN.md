@@ -16,6 +16,11 @@ This document outlines the implementation plan for adding native augmented reali
 
 **Target**: Native C++/OpenGL implementation that maintains 30 FPS performance.
 
+Status update (Oct 7, 2025)
+
+- Option B renderer refactor integrated; OpenGLRenderer is now the active path
+- Phase 9 (UI integration) is complete: ARFilterPanel, thumbnails, persistence, and stable performance UI are shipped
+
 **Architecture Note**: AR filters are **completely independent** from beauty/background effects. They operate on the same video frames but use separate rendering passes. This ensures:
 
 - ✅ No coupling or dependencies between systems
@@ -956,6 +961,7 @@ private:
 **Implementation Highlights**:
 
 **Day 1 - FilterAsset Class**:
+
 - JSON parsing with nlohmann/json library
 - Four data structures: Metadata, Attachment, Material, Behavior
 - Validates required fields and asset file existence
@@ -963,6 +969,7 @@ private:
 - Enumerates available filters in directory structure
 
 **Day 2 - ARRenderer Integration**:
+
 - LoadFilter converts FilterAsset to ModelInstance objects
 - Loads 3D models via ModelLoader with proper transforms
 - Converts Euler angles to quaternions for OpenGL rendering
@@ -1085,6 +1092,7 @@ private:
 **Original Goal**: Create GLSL shaders for 3D model rendering with lighting
 
 **What We Actually Built**: Shaders were already implemented in Phase 3! Phase 8 Days 1-4 delivered:
+
 - ✅ ARFilterManager integration into main application
 - ✅ GPU-to-GPU direct texture rendering (eliminated 40ms freeze)
 - ✅ Advanced face tracking (eye distance + stable roll)
@@ -1114,6 +1122,7 @@ private:
 6. **GL State Management**: Proper save/restore prevents video corruption
 
 **See Phase 8 Documentation**:
+
 - [PHASE_8_DAY_4_COMPLETE.md](../../PHASE_8_DAY_4_COMPLETE.md) - GPU-to-GPU implementation
 - [PHASE_8_REALITY_CHECK.md](phase-8/PHASE_8_REALITY_CHECK.md) - Phase scope clarification
 - [PHASE_8_PLAN_UPDATED.md](phase-8/PHASE_8_PLAN_UPDATED.md) - Comprehensive summary

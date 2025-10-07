@@ -15,6 +15,7 @@ exports_files([
     "include/ar_filters/ar_renderer.h",
     "include/ar_filters/filter_asset.h",  # Phase 6
     "include/ar_filters/ar_filter_manager.h",  # Phase 7
+    "include/ar_filters/midas_depth_estimator.h",  # Phase 8 Day 4: MiDaS depth
 ])
 
 cc_library( # type: ignore

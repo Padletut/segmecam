@@ -28,7 +28,7 @@ struct HeadPose;  // From transform_calculator.h
 namespace ar_filters {
 
 class FilterAsset;
-class ARRenderer;
+class OpenGLRenderer;  // CHANGED: Using OpenGLRenderer instead of ARRenderer
 struct FilterBehavior;
 
 // Configuration for ARFilterManager
@@ -90,7 +90,8 @@ public:
   // Main update and render
   void Update(const std::vector<mediapipe::NormalizedLandmark>& face_landmarks,
               const HeadPose& head_pose,
-              int frame_width, int frame_height);
+              int frame_width, int frame_height,
+              const cv::Mat& current_frame_rgb = cv::Mat());  // Phase 8 Day 4: MiDaS depth
   cv::Mat Render(const cv::Mat& input_frame);  // DEPRECATED Phase 8 Day 3 - causes 40ms freeze
   
   // Phase 8 Day 4: Direct GPU-to-GPU rendering (no CPU readback)
@@ -100,6 +101,33 @@ public:
   void SetBehaviorsEnabled(bool enabled);
   bool AreBehaviorsEnabled() const;
   void SetSmoothingFactor(float factor);  // 0.0 = no smoothing, 1.0 = max smoothing
+
+  // **NEW: Debug visualization (Finding #8)**
+  void SetDebugAnchorsEnabled(bool enabled);
+  
+  // **NEW: Crown anchor adjustment (Finding #8)**
+  void AdjustCrownOffset(float delta);      // Adjust crown Y-offset by delta
+  void SetCrownOffset(float multiplier);     // Set absolute Y-offset multiplier
+  float GetCrownOffset() const;              // Get current Y-offset multiplier
+  
+  void AdjustCrownDepth(float delta);        // Adjust crown Z-offset (depth) by delta
+  void SetCrownDepth(float offset);          // Set absolute Z-offset
+  float GetCrownDepth() const;               // Get current Z-offset
+  
+  // **NEW: Phase 8 Day 4 - MiDaS depth calibration**
+  void RecalibrateMiDasDepth(float known_distance_meters);
+
+  // Renderer tuning controls (exposed for UI)
+  void SetAnchorZScale(float s);
+  float GetAnchorZScale() const;
+  void SetAnchorZBias(float meters);
+  float GetAnchorZBias() const;
+  void SetAnchorZFaceLerp(float t);
+  float GetAnchorZFaceLerp() const;
+  void SetScaleWithFaceWidth(bool enabled);
+  bool GetScaleWithFaceWidth() const;
+  void SetFaceNormalOffset(float meters);
+  float GetFaceNormalOffset() const;
 
   // Performance monitoring
   FilterPerformanceStats GetPerformanceStats() const;
@@ -155,8 +183,11 @@ private:
   ManagerState state_;
   
   // Component managers (created in Initialize)
-  std::unique_ptr<ARRenderer> ar_renderer_;
+  std::unique_ptr<OpenGLRenderer> opengl_renderer_;  // CHANGED: Using OpenGLRenderer
   std::map<std::string, std::unique_ptr<FilterAsset>> loaded_filter_assets_;
+  
+  // NEW: Model instance tracking for OpenGLRenderer
+  std::map<std::string, std::string> filter_instance_ids_;  // filter_id -> OpenGL instance_id
   
   // Blendshape state for behaviors (updated each frame)
   std::map<std::string, float> blendshape_values_;
