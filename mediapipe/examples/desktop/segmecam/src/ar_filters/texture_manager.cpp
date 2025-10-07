@@ -220,6 +220,8 @@ absl::StatusOr<TextureManager::Texture> TextureManager::CreateTextureFromMat(
     if (generate_mipmaps_) {
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      // Bias towards higher resolution mipmaps for sharper close-up textures
+      glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, -0.5f);
     } else {
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -233,7 +235,16 @@ absl::StatusOr<TextureManager::Texture> TextureManager::CreateTextureFromMat(
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
   
-  // Upload texture data
+  // Enable anisotropic filtering for much better quality at angles
+  GLfloat max_anisotropy;
+  glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &max_anisotropy);
+  if (max_anisotropy > 1.0f) {
+    // Use maximum anisotropic filtering (typically 16x)
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, max_anisotropy);
+    std::cout << "Anisotropic filtering enabled: " << max_anisotropy << "x" << std::endl;
+  }
+  
+  // Upload texture data with high quality settings
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   glTexImage2D(GL_TEXTURE_2D, 0, gl_format.internal_format, 
                image.cols, image.rows, 0, 

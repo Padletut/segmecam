@@ -188,9 +188,10 @@ void ARFilterPanel::RenderPerformanceStats() {
   } else {
     ImGui::SameLine();
     ImGui::TextColored(ImVec4(1, 0, 0, 1), "(Poor)");
-    float fps_impact = (perf.render_time_ms / 16.67f) * 100.0f;
-    ImGui::Text("FPS Impact: %.1f%%", fps_impact);
   }
+
+  float fps_impact = (perf.render_time_ms / 16.67f) * 100.0f;
+  ImGui::Text("FPS Impact: %.1f%%", fps_impact);
   
   ImGui::Text("Models: %d, Triangles: %d", 
               perf.models_rendered_per_frame,
@@ -239,7 +240,7 @@ void ARFilterPanel::RenderControls() {
   }
   
   // Keyboard shortcuts hint
-  ImGui::TextDisabled("Shortcuts: Ctrl+A (toggle), ESC (clear)");
+  ImGui::TextDisabled("Shortcuts: Ctrl+A (toggle), C (calibrate depth at 1m), ESC (clear)");
   
   // Handle keyboard shortcuts
   if (ImGui::IsWindowFocused() || ImGui::IsWindowHovered()) {
@@ -249,6 +250,12 @@ void ARFilterPanel::RenderControls() {
     
     if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A)) {
       state_.ar_filters_enabled = !state_.ar_filters_enabled;
+    }
+    
+    // Phase 8 Day 4: MiDaS depth calibration
+    if (ImGui::IsKeyPressed(ImGuiKey_C)) {
+      ar_mgr_.RecalibrateMiDasDepth(1.0f);  // Calibrate at 1.0m
+      ABSL_LOG(INFO) << "[UI] 📐 MiDaS depth calibration triggered! Stand at EXACTLY 1.0 meter from camera.";
     }
   }
 }

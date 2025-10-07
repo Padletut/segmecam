@@ -140,6 +140,8 @@ cc_library(
     visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
     deps = [
         ":model_loader",
+        ":texture_manager",  # For texture loading and caching
+        ":midas_depth_estimator",  # Phase 8 Day 4: MiDaS depth estimation
         "//mediapipe/examples/desktop/segmecam:shader_program",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_calib3d",  # For solvePnP (head pose)
@@ -337,3 +339,25 @@ cc_binary(
         "-lopencv_imgproc",
     ],
 )
+
+# Phase 8 Day 4: MiDaS Depth Estimator - Monocular depth estimation using ONNX
+cc_library(
+    name = "midas_depth_estimator",
+    srcs = ["midas_depth_estimator.cpp"],
+    hdrs = ["//mediapipe/examples/desktop/segmecam:include/ar_filters/midas_depth_estimator.h"],
+    includes = ["../.."],
+    visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
+    deps = [
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgproc",
+        "@com_google_absl//absl/log",
+    ],
+    copts = [
+        "-std=c++17",
+        "-I/usr/include/opencv4",
+    ],
+    linkopts = [
+        "-lonnxruntime",  # ONNX Runtime library
+    ],
+)
+

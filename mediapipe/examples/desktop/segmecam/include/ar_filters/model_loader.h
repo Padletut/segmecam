@@ -31,6 +31,8 @@ struct Material {
   float shininess;          // Ns - specular exponent
   float opacity;            // d or Tr - opacity (1.0 = opaque, 0.0 = transparent)
   std::string texture_path; // map_Kd - diffuse texture
+  std::string opacity_map_path;  // map_d - opacity/alpha map
+  std::string emissive_map_path; // map_Ke - emissive/glow map
   uint32_t texture_id;      // OpenGL texture ID (0 if not loaded) - uint32_t instead of GLuint
   
   Material() 

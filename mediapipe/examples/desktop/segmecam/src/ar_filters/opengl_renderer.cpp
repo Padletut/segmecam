@@ -8,6 +8,8 @@
 
 #include "include/ar_filters/opengl_renderer.h"
 #include "include/ar_filters/model_loader.h"
+#include "include/ar_filters/texture_manager.h"
+#include "include/ar_filters/midas_depth_estimator.h"  // Phase 8 Day 4: MiDaS depth
 #include "include/render/shader_program.h"
 
 // OpenGL and math libraries (isolated from MediaPipe)
@@ -39,7 +41,15 @@ OpenGLRenderer::OpenGLRenderer()
       head_pose_valid_(false),
       debug_anchors_enabled_(true),     // Enable debug by default
       crown_offset_multiplier_(0.4f),   // Default 40% above forehead
-      crown_depth_offset_(0.0f) {       // Default no depth offset (INITIALIZE THIS!)
+      crown_depth_offset_(0.0f),        // Default no depth offset (INITIALIZE THIS!)
+      supersample_fbo_(0),
+      supersample_texture_(0),
+      supersample_depth_(0),
+      supersample_width_(1920),
+      supersample_height_(1080),
+      use_supersampling_(true),         // Enable supersampling with 2D texture shader compositing
+      quad_vao_(0),
+      quad_vbo_(0) {
   // Initialize lighting to reasonable defaults
   light_direction_[0] = 0.0f;
   light_direction_[1] = 0.0f;
@@ -65,6 +75,19 @@ OpenGLRenderer::OpenGLRenderer()
   
   // Initialize canonical face model for PnP
   InitializeCanonicalModel();
+  
+  // Initialize texture manager (will be created in Initialize())
+  texture_manager_ = nullptr;
+
+  // Default: reduce landmark-derived Z influence so overlays sit closer to face
+  anchor_z_scale_ = 0.25f; // 25% of computed world face width contribution
+  anchor_z_bias_meters_ = -0.4f; // Pull models ~2cm towards camera by default
+  anchor_z_face_lerp_ = 0.6f; // 60% toward face depth to stabilize distance
+
+  // Face-relative scaling and offsets
+  scale_with_face_width_ = true;
+  face_width_baseline_m_ = 0.0f;
+  face_normal_offset_m_ = 0.0f;
 }
 
 OpenGLRenderer::~OpenGLRenderer() {
@@ -93,6 +116,35 @@ bool OpenGLRenderer::Initialize() {
 
   ABSL_LOG(INFO) << "Shaders loaded successfully";
 
+  // Load 2D texture shader for compositing
+  texture_shader_ = std::make_unique<render::ShaderProgram>();
+  const std::string texture_vertex_path = "mediapipe/examples/desktop/segmecam/shaders/texture_vertex.glsl";
+  const std::string texture_fragment_path = "mediapipe/examples/desktop/segmecam/shaders/texture_fragment.glsl";
+  
+  if (!texture_shader_->LoadFromFiles(texture_vertex_path, texture_fragment_path)) {
+    ABSL_LOG(ERROR) << "Failed to load texture shader from: " << texture_vertex_path << " and " << texture_fragment_path;
+    return false;
+  }
+  
+  ABSL_LOG(INFO) << "2D texture shader loaded successfully";
+
+  // Initialize texture manager
+  texture_manager_ = std::make_unique<TextureManager>();
+  texture_manager_->SetDefaultFiltering(true, false);  // Linear filtering, NO mipmaps for max quality
+  ABSL_LOG(INFO) << "TextureManager initialized (high quality mode)";  
+
+  // Initialize MiDaS depth estimator (Phase 8 Day 4)
+  depth_estimator_ = std::make_unique<MidasDepthEstimator>();
+  if (depth_estimator_->Initialize()) {
+    ABSL_LOG(INFO) << "✅ MiDaS depth estimator initialized successfully";
+    midas_calibration_depth_ = 1.0f;   // Default: 1.0 meter calibration distance
+    midas_calibration_inverse_ = 0.5f;  // Will be calibrated on first frame
+    midas_calibrated_ = false;
+  } else {
+    ABSL_LOG(WARNING) << "⚠️  MiDaS depth estimator not available, falling back to face size estimation";
+    depth_estimator_ = nullptr;
+  }
+
   // Setup default projection matrix
   UpdateProjectionMatrix(viewport_width_, viewport_height_);
 
@@ -102,6 +154,14 @@ bool OpenGLRenderer::Initialize() {
   if (error != GL_NO_ERROR) {
     ABSL_LOG(ERROR) << "OpenGL error after shader activation: " << error;
     return false;
+  }
+
+  // Initialize fullscreen quad for compositing
+  InitializeFullscreenQuad();
+
+  // Initialize supersampling framebuffer
+  if (use_supersampling_) {
+    EnableSupersampling(true, supersample_width_, supersample_height_);
   }
 
   initialized_ = true;
@@ -117,23 +177,21 @@ void OpenGLRenderer::UpdateProjectionMatrix(int width, int height) {
 
   viewport_width_ = width;
   viewport_height_ = height;
+  
+  ABSL_LOG(INFO) << "📐 Viewport updated to: " << viewport_width_ << "x" << viewport_height_;
 
-  // Create perspective projection matrix
+  // Perspective projection (matches 3D world position math based on depth and FOV)
   float aspect = static_cast<float>(width) / static_cast<float>(height);
   glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
-  
-  // Create view matrix (camera looking down -Z axis)
-  glm::mat4 view = glm::lookAt(
-      glm::vec3(camera_position_[0], camera_position_[1], camera_position_[2]),
-      glm::vec3(0.0f, 0.0f, -1.0f),  // Look at
-      glm::vec3(0.0f, 1.0f, 0.0f)    // Up vector
-  );
+
+  // Identity view (camera at origin looking down -Z). Our world positions are computed in this space.
+  glm::mat4 view = glm::mat4(1.0f);
 
   // Copy to internal storage
   std::memcpy(projection_matrix_, glm::value_ptr(projection), 16 * sizeof(float));
   std::memcpy(view_matrix_, glm::value_ptr(view), 16 * sizeof(float));
 
-  ABSL_LOG(INFO) << "Projection matrix updated for " << width << "x" << height;
+  ABSL_LOG(INFO) << "Projection matrix updated for " << width << "x" << height << " (perspective, identity view)";
 }
 
 void OpenGLRenderer::SetupGLState() {
@@ -148,7 +206,19 @@ void OpenGLRenderer::SetupGLState() {
   // Enable face culling (back-face culling)
   glEnable(GL_CULL_FACE);
   glCullFace(GL_BACK);
-  glFrontFace(GL_CCW);
+  glFrontFace(GL_CCW);  // Default to counter-clockwise winding (standard for most 3D models)
+  
+  // Enable multisampling for smoother edges (anti-aliasing)
+  glEnable(GL_MULTISAMPLE);
+  
+  // Enable line smoothing for better edge quality
+  glEnable(GL_LINE_SMOOTH);
+  glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+  
+  // Enable polygon smoothing hint
+  glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST);
+  
+  ABSL_LOG(INFO) << "OpenGL state configured with anti-aliasing";
 }
 
 void OpenGLRenderer::RestoreGLState() {
@@ -246,6 +316,30 @@ void OpenGLRenderer::RenderSingleModel(const RenderCommand& command) {
   shader_->SetFloat("uMaterialShininess", command.material.shininess);
   shader_->SetFloat("uMaterialOpacity", command.material.opacity);
 
+  // Handle texture loading and binding
+  bool has_texture = false;
+  if (!command.material.texture_path.empty() && texture_manager_) {
+    // Try to load texture if not already loaded
+    auto texture_result = texture_manager_->LoadTexture(command.material.texture_path);
+    if (texture_result.ok()) {
+      const auto& texture = texture_result.value();
+      if (texture.IsValid()) {
+        // Bind texture to texture unit 0
+        texture_manager_->BindTexture(texture, 0);
+        has_texture = true;
+        ABSL_LOG(INFO) << "Bound texture: " << command.material.texture_path 
+                       << " (" << texture.width << "x" << texture.height << ")";
+      }
+    } else {
+      ABSL_LOG(WARNING) << "Failed to load texture: " << command.material.texture_path 
+                        << " - " << texture_result.status().message();
+    }
+  }
+  
+  // Set texture uniforms
+  shader_->SetBool("uHasTexture", has_texture);
+  shader_->SetInt("uTexture", 0);  // Texture unit 0
+
   // Render each mesh
   for (const auto& mesh : model->meshes) {
     if (mesh.vao == 0) {
@@ -296,11 +390,153 @@ void OpenGLRenderer::Cleanup() {
 
   ABSL_LOG(INFO) << "Cleaning up OpenGL 3D Renderer...";
   
+  // Clean up fullscreen quad
+  if (quad_vao_ != 0) {
+    glDeleteVertexArrays(1, &quad_vao_);
+    quad_vao_ = 0;
+  }
+  if (quad_vbo_ != 0) {
+    glDeleteBuffers(1, &quad_vbo_);
+    quad_vbo_ = 0;
+  }
+  
+  // Clean up supersampling framebuffer if it exists
+  if (supersample_fbo_ != 0) {
+    glDeleteFramebuffers(1, &supersample_fbo_);
+    supersample_fbo_ = 0;
+  }
+  if (supersample_texture_ != 0) {
+    glDeleteTextures(1, &supersample_texture_);
+    supersample_texture_ = 0;
+  }
+  if (supersample_depth_ != 0) {
+    glDeleteRenderbuffers(1, &supersample_depth_);
+    supersample_depth_ = 0;
+  }
+  
   shader_.reset();
+  texture_shader_.reset();
   loaded_models_.clear();
   instances_.clear();
   
   initialized_ = false;
+}
+
+void OpenGLRenderer::EnableSupersampling(bool enable, int width, int height) {
+  use_supersampling_ = enable;
+  supersample_width_ = width;
+  supersample_height_ = height;
+
+  // Clean up existing framebuffer if it exists
+  if (supersample_fbo_ != 0) {
+    glDeleteFramebuffers(1, &supersample_fbo_);
+    supersample_fbo_ = 0;
+  }
+  if (supersample_texture_ != 0) {
+    glDeleteTextures(1, &supersample_texture_);
+    supersample_texture_ = 0;
+  }
+  if (supersample_depth_ != 0) {
+    glDeleteRenderbuffers(1, &supersample_depth_);
+    supersample_depth_ = 0;
+  }
+
+  if (!enable) {
+    ABSL_LOG(INFO) << "🔍 Supersampling disabled";
+    return;
+  }
+
+  // Create framebuffer
+  glGenFramebuffers(1, &supersample_fbo_);
+  glBindFramebuffer(GL_FRAMEBUFFER, supersample_fbo_);
+
+  // Create color texture
+  glGenTextures(1, &supersample_texture_);
+  glBindTexture(GL_TEXTURE_2D, supersample_texture_);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, supersample_texture_, 0);
+
+  // Create depth renderbuffer
+  glGenRenderbuffers(1, &supersample_depth_);
+  glBindRenderbuffer(GL_RENDERBUFFER, supersample_depth_);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, supersample_depth_);
+
+  // Check framebuffer completeness
+  GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+  if (status != GL_FRAMEBUFFER_COMPLETE) {
+    ABSL_LOG(ERROR) << "❌ Supersampling framebuffer incomplete: 0x" << std::hex << status;
+    glDeleteFramebuffers(1, &supersample_fbo_);
+    glDeleteTextures(1, &supersample_texture_);
+    glDeleteRenderbuffers(1, &supersample_depth_);
+    supersample_fbo_ = supersample_texture_ = supersample_depth_ = 0;
+    use_supersampling_ = false;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return;
+  }
+
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  ABSL_LOG(INFO) << "✨ Supersampling enabled: " << width << "x" << height << " → viewport resolution";
+}
+
+void OpenGLRenderer::InitializeFullscreenQuad() {
+  // Fullscreen quad vertices: position (x, y) and texture coords (u, v)
+  float quad_vertices[] = {
+    // positions   // texcoords
+    -1.0f,  1.0f,  0.0f, 1.0f,  // top-left
+    -1.0f, -1.0f,  0.0f, 0.0f,  // bottom-left
+     1.0f, -1.0f,  1.0f, 0.0f,  // bottom-right
+    
+    -1.0f,  1.0f,  0.0f, 1.0f,  // top-left
+     1.0f, -1.0f,  1.0f, 0.0f,  // bottom-right
+     1.0f,  1.0f,  1.0f, 1.0f   // top-right
+  };
+
+  glGenVertexArrays(1, &quad_vao_);
+  glGenBuffers(1, &quad_vbo_);
+  
+  glBindVertexArray(quad_vao_);
+  glBindBuffer(GL_ARRAY_BUFFER, quad_vbo_);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(quad_vertices), quad_vertices, GL_STATIC_DRAW);
+  
+  // Position attribute
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+  
+  // Texture coord attribute
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+  
+  glBindVertexArray(0);
+  
+  ABSL_LOG(INFO) << "Fullscreen quad initialized for compositing";
+}
+
+void OpenGLRenderer::RenderFullscreenQuad() {
+  if (quad_vao_ == 0) {
+    ABSL_LOG(ERROR) << "Fullscreen quad not initialized";
+    return;
+  }
+  
+  if (!texture_shader_) {
+    ABSL_LOG(ERROR) << "Texture shader not initialized";
+    return;
+  }
+  
+  // Use the 2D texture shader
+  texture_shader_->Use();
+  
+  // Set texture uniform (texture is already bound to GL_TEXTURE0)
+  texture_shader_->SetInt("uTexture", 0);
+  
+  // Render the quad
+  glBindVertexArray(quad_vao_);
+  glDrawArrays(GL_TRIANGLES, 0, 6);
+  glBindVertexArray(0);
 }
 
 // ============================================================================
@@ -361,9 +597,28 @@ bool OpenGLRenderer::RenderToExternalTexture(unsigned int texture_id, int width,
     ABSL_LOG(INFO) << "[DEBUG] Created temporary FBO: " << temp_fbo;
   }
   
-  // Bind video texture to FBO
-  glBindFramebuffer(GL_FRAMEBUFFER, temp_fbo);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture_id, 0);
+  // Determine target FBO and viewport size based on supersampling
+  GLuint target_fbo = temp_fbo;
+  int render_width = width;
+  int render_height = height;
+  
+  if (use_supersampling_ && supersample_fbo_ != 0) {
+    // Render to high-res supersampling FBO first
+    target_fbo = supersample_fbo_;
+    render_width = supersample_width_;
+    render_height = supersample_height_;
+    ABSL_LOG(INFO) << "🔍 Supersampling: rendering at " << render_width << "x" << render_height 
+                   << " → " << width << "x" << height;
+  }
+  
+  // Bind target framebuffer
+  glBindFramebuffer(GL_FRAMEBUFFER, target_fbo);
+  
+  // For supersampling FBO, attachment is already configured
+  // For temp_fbo, attach the video texture
+  if (!use_supersampling_ || supersample_fbo_ == 0) {
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture_id, 0);
+  }
   
   // Check FBO status
   GLenum fbo_status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
@@ -373,13 +628,52 @@ bool OpenGLRenderer::RenderToExternalTexture(unsigned int texture_id, int width,
     return false;
   }
   
-  ABSL_LOG(INFO) << "[DEBUG] FBO setup complete, rendering " << instances_.size() << " instances to texture " << texture_id;
+  ABSL_LOG(INFO) << "[DEBUG] FBO setup complete, rendering " << instances_.size() << " instances";
   
-  // Set viewport
-  glViewport(0, 0, width, height);
+  // Set viewport to render resolution
+  glViewport(0, 0, render_width, render_height);
   
-  // DON'T clear - we want to render AR filters ON TOP of existing video
-  // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);  // COMMENTED OUT!
+  // If supersampling, temporarily update projection matrix for high-res viewport
+  float saved_projection[16];
+  int saved_viewport_width = viewport_width_;
+  int saved_viewport_height = viewport_height_;
+  
+  if (use_supersampling_ && supersample_fbo_ != 0) {
+    std::memcpy(saved_projection, projection_matrix_, 16 * sizeof(float));
+    ABSL_LOG(INFO) << "💾 Saved projection matrix for viewport " << viewport_width_ << "x" << viewport_height_;
+    
+    // Manually update projection matrix WITHOUT changing viewport_width_/height_
+    // This prevents aspect ratio calculations from using the wrong resolution
+    float aspect = static_cast<float>(render_width) / static_cast<float>(render_height);
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+    std::memcpy(projection_matrix_, glm::value_ptr(projection), 16 * sizeof(float));
+    
+    // Temporarily set viewport dimensions for any calculations during rendering
+    viewport_width_ = render_width;
+    viewport_height_ = render_height;
+    
+    ABSL_LOG(INFO) << "🔄 Updated projection matrix to supersampling resolution: " << render_width << "x" << render_height;
+    
+    // STRATEGY: Render AR filters at high-res with transparent background
+    // Then downsample and composite onto original camera video
+    // This avoids upscaling the camera feed which would introduce blur
+    
+    // Bind supersample FBO for rendering
+    glBindFramebuffer(GL_FRAMEBUFFER, supersample_fbo_);
+    
+    // Clear to transparent black (alpha = 0) - AR filters will be rendered on transparent background
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    
+    // Restore normal clear color for future operations
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    
+    ABSL_LOG(INFO) << "🎨 Rendering AR at " << render_width << "x" << render_height 
+                   << " on transparent background";
+  }
+  
+  // DON'T clear when not supersampling - we want to render AR filters ON TOP of existing video
+  // (When supersampling, we already cleared to transparent above)
   
   // Enable blending for transparency
   glEnable(GL_BLEND);
@@ -391,6 +685,46 @@ bool OpenGLRenderer::RenderToExternalTexture(unsigned int texture_id, int width,
   
   // Render all model instances
   int rendered_count = RenderInstances();
+  
+  // Restore original projection matrix and viewport if supersampling
+  if (use_supersampling_ && supersample_fbo_ != 0) {
+    std::memcpy(projection_matrix_, saved_projection, 16 * sizeof(float));
+    viewport_width_ = saved_viewport_width;
+    viewport_height_ = saved_viewport_height;
+    ABSL_LOG(INFO) << "🔄 Restored projection matrix to " << viewport_width_ << "x" << viewport_height_;
+  }
+  
+  // If supersampling, composite high-res AR onto original camera video
+  if (use_supersampling_ && supersample_fbo_ != 0) {
+    // Bind temp_fbo with video texture for rendering
+    glBindFramebuffer(GL_FRAMEBUFFER, temp_fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture_id, 0);
+    
+    // Set viewport to final output resolution
+    glViewport(0, 0, width, height);
+    
+    // Disable depth test for 2D composite
+    glDisable(GL_DEPTH_TEST);
+    
+    // Enable blending with premultiplied alpha
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    
+    // Bind the high-res AR texture from supersample FBO
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, supersample_texture_);
+    
+    // Render fullscreen quad with the AR texture
+    // This will blend the downsampled AR onto the camera video
+    RenderFullscreenQuad();
+    
+    // Restore GL state
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_DEPTH_TEST);
+    
+    ABSL_LOG(INFO) << "✨ Composited high-res AR " << render_width << "x" << render_height 
+                   << " → " << width << "x" << height;
+  }
   
   // Unbind FBO
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -442,12 +776,67 @@ std::string OpenGLRenderer::LoadModel(const std::string& path) {
   return path;  // Return path as model ID
 }
 
+bool OpenGLRenderer::SetModelTexture(const std::string& model_id, const std::string& texture_path) {
+  // Check if model exists
+  auto model_it = loaded_models_.find(model_id);
+  if (model_it == loaded_models_.end()) {
+    ABSL_LOG(ERROR) << "Model not found: " << model_id;
+    return false;
+  }
+  
+  Model* model = model_it->second.get();
+  
+  // Override texture path for all materials in the model
+  for (auto& material_pair : model->materials) {
+    Material& material = material_pair.second;
+    material.texture_path = texture_path;
+    material.texture_id = 0;  // Reset texture ID to force reload
+    ABSL_LOG(INFO) << "Overridden texture for material '" << material_pair.first 
+                   << "' to: " << texture_path;
+  }
+  
+  return true;
+}
+
+bool OpenGLRenderer::SetModelOpacityMap(const std::string& model_id, const std::string& opacity_map_path) {
+  auto model_it = loaded_models_.find(model_id);
+  if (model_it == loaded_models_.end()) {
+    ABSL_LOG(ERROR) << "Model not found: " << model_id;
+    return false;
+  }
+  
+  Model* model = model_it->second.get();
+  for (auto& material_pair : model->materials) {
+    material_pair.second.opacity_map_path = opacity_map_path;
+    ABSL_LOG(INFO) << "Overridden opacity map for material '" << material_pair.first 
+                   << "' to: " << opacity_map_path;
+  }
+  return true;
+}
+
+bool OpenGLRenderer::SetModelEmissiveMap(const std::string& model_id, const std::string& emissive_map_path) {
+  auto model_it = loaded_models_.find(model_id);
+  if (model_it == loaded_models_.end()) {
+    ABSL_LOG(ERROR) << "Model not found: " << model_id;
+    return false;
+  }
+  
+  Model* model = model_it->second.get();
+  for (auto& material_pair : model->materials) {
+    material_pair.second.emissive_map_path = emissive_map_path;
+    ABSL_LOG(INFO) << "Overridden emissive map for material '" << material_pair.first 
+                   << "' to: " << emissive_map_path;
+  }
+  return true;
+}
+
 std::string OpenGLRenderer::CreateInstance(
     const std::string& model_id,
     const std::string& anchor,
     const glm::vec3& offset,
     const glm::vec3& rotation,
-    const glm::vec3& scale
+    const glm::vec3& scale,
+    bool flip_z
 ) {
   // Check if model exists
   auto model_it = loaded_models_.find(model_id);
@@ -467,6 +856,7 @@ std::string OpenGLRenderer::CreateInstance(
   instance.offset = offset;
   instance.rotation_euler = rotation;
   instance.scale = scale;
+  instance.flip_z = flip_z;
   instance.visible = true;
   instance.model_ptr = model_it->second.get();
   instance.transform_dirty = true;
@@ -541,6 +931,54 @@ void OpenGLRenderer::UpdateFaceLandmarks(const std::vector<cv::Point3f>& landmar
   }
 }
 
+// Phase 8 Day 4: Update face landmarks WITH current frame for MiDaS depth
+void OpenGLRenderer::UpdateFaceLandmarksWithFrame(const std::vector<cv::Point3f>& landmarks,
+                                                   const cv::Mat& frame_rgb) {
+  // Update landmarks first
+  UpdateFaceLandmarks(landmarks);
+  
+  // Store current frame for MiDaS depth estimation
+  if (!frame_rgb.empty()) {
+    current_frame_rgb_ = frame_rgb.clone();
+    ABSL_LOG(INFO) << "[MIDAS] Frame stored for depth estimation: " 
+                   << frame_rgb.cols << "x" << frame_rgb.rows;
+  }
+}
+
+void OpenGLRenderer::RecalibrateMiDasDepth(float known_distance_meters) {
+  if (!depth_estimator_ || !depth_estimator_->IsLoaded()) {
+    ABSL_LOG(WARNING) << "[MIDAS CALIBRATION] Depth estimator not available";
+    return;
+  }
+  
+  if (current_frame_rgb_.empty() || face_landmarks_.empty()) {
+    ABSL_LOG(WARNING) << "[MIDAS CALIBRATION] No frame or landmarks available";
+    return;
+  }
+  
+  // Get nose tip position for depth sampling
+  cv::Point3f nose_tip = face_landmarks_[1];  // Nose tip landmark
+  
+  // Estimate inverse depth at current position
+  float inverse_depth = depth_estimator_->EstimateFaceDepth(
+      current_frame_rgb_, 
+      nose_tip.x,  // Normalized 0-1
+      nose_tip.y,  // Normalized 0-1
+      15  // Sample radius in pixels
+  );
+  
+  if (inverse_depth > 0.0f) {
+    midas_calibration_inverse_ = inverse_depth;
+    midas_calibration_depth_ = known_distance_meters;
+    midas_calibrated_ = true;
+    
+    ABSL_LOG(INFO) << "[MIDAS CALIBRATION] ✅ Calibrated at " << known_distance_meters << "m "
+                   << "(inverse=" << inverse_depth << ")";
+  } else {
+    ABSL_LOG(ERROR) << "[MIDAS CALIBRATION] ❌ Failed to estimate depth";
+  }
+}
+
 cv::Point3f OpenGLRenderer::GetAnchorPosition(const std::string& anchor_name) const {
   if (face_landmarks_.empty()) {
     return cv::Point3f(0.0f, 0.0f, 0.0f);
@@ -589,6 +1027,16 @@ cv::Point3f OpenGLRenderer::GetAnchorPosition(const std::string& anchor_name) co
   else if (anchor_name == "right_ear") {
     // Average of 454, 356, 389
     return (face_landmarks_[454] + face_landmarks_[356] + face_landmarks_[389]) / 3.0f;
+  }
+  else if (anchor_name == "left_temple") {
+    // Temple point near left ear for glasses attachment
+    // MATCHES TransformCalculator: landmarks 139, 127, 162
+    return (face_landmarks_[139] + face_landmarks_[127] + face_landmarks_[162]) / 3.0f;
+  }
+  else if (anchor_name == "right_temple") {
+    // Temple point near right ear for glasses attachment
+    // MATCHES TransformCalculator: landmarks 368, 356, 389
+    return (face_landmarks_[368] + face_landmarks_[356] + face_landmarks_[389]) / 3.0f;
   }
   else if (anchor_name == "chin") {
     // Landmark 152
@@ -675,8 +1123,13 @@ HeadPose OpenGLRenderer::CalculateHeadPose(int image_width, int image_height) {
     return pose;
   }
   
-  // Update camera intrinsics
-  float focal_length = static_cast<float>(image_width);  // Simple approximation
+  // Update camera intrinsics with better focal length estimation
+  // Typical webcam horizontal FOV is ~60-70 degrees
+  // Formula: focal_length = (image_width / 2) / tan(horizontal_fov / 2)
+  const float horizontal_fov_degrees = 63.0f;  // Typical webcam FOV (matching FaceGeometry)
+  const float horizontal_fov_radians = horizontal_fov_degrees * M_PI / 180.0f;
+  float focal_length = (static_cast<float>(image_width) / 2.0f) / std::tan(horizontal_fov_radians / 2.0f);
+  
   cv::Point2f center(image_width / 2.0f, image_height / 2.0f);
   camera_matrix_.at<double>(0, 0) = focal_length;
   camera_matrix_.at<double>(1, 1) = focal_length;
@@ -740,10 +1193,11 @@ HeadPose OpenGLRenderer::CalculateHeadPose(int image_width, int image_height) {
   }
   
   static int pnp_count = 0;
-  if (pnp_count < 3 || pnp_count % 30 == 0) {
-    ABSL_LOG(INFO) << "[DEBUG] PnP SUCCESS - tvec: [" << translation_vec.at<double>(0) 
+  if (pnp_count < 10 || pnp_count % 30 == 0) {
+    ABSL_LOG(INFO) << "[PNP SUCCESS] tvec: [" << translation_vec.at<double>(0) 
                    << ", " << translation_vec.at<double>(1)
-                   << ", " << translation_vec.at<double>(2) << "]";
+                   << ", " << translation_vec.at<double>(2) << "]"
+                   << " (depth=" << (translation_vec.at<double>(2) / 1000.0) << "m)";
   }
   pnp_count++;
   
@@ -791,24 +1245,140 @@ glm::mat4 OpenGLRenderer::CalculateInstanceTransform(const ModelInstance& instan
   // Get anchor position in normalized coordinates [0-1]
   cv::Point3f anchor = GetAnchorPosition(instance.anchor_name);
   
-  // **DYNAMIC DEPTH ESTIMATION from face size**
-  // PnP depth is unreliable (constant), so estimate from face height in screen space
-  // Larger face = closer, smaller face = farther (inverse relationship)
+  // **MIDAS DEPTH ESTIMATION - Neural depth estimation with PnP rotation**
+  // Phase 8 Day 4: Use MiDaS trained model for accurate monocular depth
+  // Falls back to face size heuristic if MiDaS not available
   
   float depth;
   glm::vec3 face_offset;
   
-  // Calculate face height from landmarks (forehead to chin)
-  if (!face_landmarks_.empty() && face_landmarks_.size() > 152) {
-    cv::Point3f forehead = face_landmarks_[10];   // Forehead landmark
-    cv::Point3f chin = face_landmarks_[152];      // Chin landmark
-    float face_height_screen = std::abs(chin.y - forehead.y);  // Normalized 0-1
+  if (depth_estimator_ && depth_estimator_->IsLoaded() && !face_landmarks_.empty() && !current_frame_rgb_.empty()) {
+    // **USE MIDAS NEURAL DEPTH ESTIMATION!**
+    cv::Point3f nose_tip = face_landmarks_[1];  // Nose tip landmark
+    
+    // Estimate depth from MiDaS
+    float midas_inverse_depth = depth_estimator_->EstimateFaceDepth(
+        current_frame_rgb_, 
+        nose_tip.x,  // Normalized 0-1
+        nose_tip.y,  // Normalized 0-1
+        15  // Sample radius in pixels
+    );
+    
+    if (midas_inverse_depth > 0.0f) {
+      // Convert inverse depth to metric depth
+      // First frame: auto-calibrate assuming 1.0m distance
+      if (!midas_calibrated_) {
+        midas_calibration_inverse_ = midas_inverse_depth;
+        midas_calibration_depth_ = 1.0f;  // Assume 1.0m on first frame
+        midas_calibrated_ = true;
+        ABSL_LOG(INFO) << "[MIDAS] Auto-calibrated: inverse=" << midas_calibration_inverse_ 
+                       << " at depth=1.0m";
+      }
+      
+      // Convert to metric depth using calibration
+      depth = depth_estimator_->InverseDepthToMeters(
+          midas_inverse_depth,
+          midas_calibration_depth_,
+          midas_calibration_inverse_
+      );
+      
+      // Clamp to reasonable range
+      depth = std::clamp(depth, 0.3f, 3.0f);
+      
+      face_offset = glm::vec3(0.0f, 0.0f, 0.0f);
+      
+      // Log MiDaS depth periodically
+      static int midas_log_count = 0;
+      if (midas_log_count < 10 || midas_log_count % 30 == 0) {
+        auto perf = depth_estimator_->GetPerformanceStats();
+        ABSL_LOG(INFO) << "[MIDAS DEPTH] inverse=" << midas_inverse_depth 
+                       << ", metric=" << depth << "m"
+                       << ", inference=" << perf.average_inference_time_ms << "ms"
+                       << ", provider=" << (perf.using_cuda ? "CUDA" : "CPU");
+      }
+      midas_log_count++;
+    } else {
+      // MiDaS failed, fall back to face width
+      ABSL_LOG(WARNING) << "[MIDAS] Depth estimation failed, using face width fallback";
+      depth = 1.0f;
+      face_offset = glm::vec3(0.0f, 0.0f, 0.0f);
+    }
+    
+  } else if (depth_estimator_ && depth_estimator_->IsLoaded() && current_frame_rgb_.empty()) {
+    // MiDaS available but no frame yet - fallback to face width
+    if (face_landmarks_.size() > 263) {
+      cv::Point3f left_eye = face_landmarks_[33];
+      cv::Point3f right_eye = face_landmarks_[263];
+      float face_width_screen = std::abs(right_eye.x - left_eye.x);
+      
+      const float reference_face_width = 0.10f;
+      const float reference_depth = 1.0f;
+      
+      if (face_width_screen > 0.01f) {
+        depth = (reference_face_width / face_width_screen) * reference_depth;
+        depth = std::clamp(depth, 0.3f, 3.0f);
+      } else {
+        depth = 1.0f;
+      }
+    } else {
+      depth = 1.0f;
+    }
+    
+    face_offset = glm::vec3(0.0f, 0.0f, 0.0f);
+    
+    static int no_frame_count = 0;
+    if (no_frame_count < 5) {
+      ABSL_LOG(WARNING) << "[MIDAS] No frame available yet, using face width fallback";
+    }
+    no_frame_count++;
+    
+  } else if (!face_landmarks_.empty() && face_landmarks_.size() > 263) {
+    // Fallback: Face width estimation (original hybrid method)
+    cv::Point3f left_eye = face_landmarks_[33];
+    cv::Point3f right_eye = face_landmarks_[263];
+    float face_width_screen = std::abs(right_eye.x - left_eye.x);  // Normalized 0-1
+    
+    // Use PnP depth as baseline, but scale it by face size
+    float pnp_depth = 0.891f;  // PnP baseline (will be constant)
+    if (head_pose.confidence > 0.5f && head_pose_valid_) {
+      pnp_depth = head_pose.translation.z / 1000.0f;  // mm to meters
+    }
+    
+    // Scale depth inversely with face width
+    // Reference: eye distance of ~0.10 (10% of screen) = 1.0m depth
+    const float reference_face_width = 0.10f;  // Eye distance at 1.0m
+    const float reference_depth = 1.0f;
+    
+    if (face_width_screen > 0.01f) {
+      // Depth is inversely proportional to apparent face size
+      depth = (reference_face_width / face_width_screen) * reference_depth;
+      depth = std::clamp(depth, 0.3f, 3.0f);
+    } else {
+      depth = pnp_depth;  // Fallback to raw PnP
+    }
+    
+    face_offset = glm::vec3(0.0f, 0.0f, 0.0f);
+    
+    static int depth_count = 0;
+    if (depth_count < 10 || depth_count % 30 == 0) {
+      ABSL_LOG(INFO) << "[HYBRID DEPTH] face_width=" << face_width_screen 
+                     << ", pnp_baseline=" << pnp_depth << "m"
+                     << ", scaled_depth=" << depth << "m";
+    }
+    depth_count++;
+  } else if (!face_landmarks_.empty() && face_landmarks_.size() > 152) {
+    // Fallback to face height if eye landmarks not available
+    cv::Point3f forehead = face_landmarks_[10];
+    cv::Point3f chin = face_landmarks_[152];
+    float face_height_screen = std::abs(chin.y - forehead.y);
     
     // Estimate depth from face size (inverse relationship)
-    // Reference: at 1.0m distance, face height ≈ 0.20 (20% of screen)
-    // At 0.5m (closer), face height ≈ 0.40 (40% of screen)
-    // At 2.0m (farther), face height ≈ 0.10 (10% of screen)
-    const float reference_face_height = 0.20f;  // Face height at 1.0m distance
+    // CALIBRATION NOTE: reference_face_height depends on your camera FOV and typical distance
+    // Adjust this value to match your setup:
+    // - If filters appear TOO CLOSE: increase reference_face_height (e.g., 0.25 or 0.30)
+    // - If filters appear TOO FAR: decrease reference_face_height (e.g., 0.15 or 0.18)
+    // Based on user logs: face_height ≈ 0.27 at normal sitting distance
+    const float reference_face_height = 0.27f;  // Face height at 1.0m distance (calibrated from logs)
     const float reference_depth = 1.0f;          // Reference distance (1 meter)
     
     if (face_height_screen > 0.01f) {  // Avoid division by zero
@@ -818,47 +1388,100 @@ glm::mat4 OpenGLRenderer::CalculateInstanceTransform(const ModelInstance& instan
       depth = 1.0f;  // Fallback if face too small/not detected
     }
     
-    face_offset = glm::vec3(0.0f, 0.0f, 0.0f);  // No offset in fallback mode
+    face_offset = glm::vec3(0.0f, 0.0f, 0.0f);
     
-    static int fallback_count = 0;
-    if (fallback_count < 5 || fallback_count % 30 == 0) {
-      ABSL_LOG(INFO) << "[DYNAMIC DEPTH] face_height=" << face_height_screen 
-                     << " estimated_depth=" << depth << "m";
+    static int depth_count = 0;
+    if (depth_count < 10 || depth_count % 30 == 0) {
+      ABSL_LOG(INFO) << "[FACE HEIGHT DEPTH] face_height=" << face_height_screen 
+                     << " depth=" << depth << "m (PnP rotation only, depth from face size)";
     }
-    fallback_count++;
+    depth_count++;
   } else {
     // No landmarks available - use fixed depth
     depth = 1.0f;
     face_offset = glm::vec3(0.0f, 0.0f, 0.0f);
+    ABSL_LOG(WARNING) << "[FIXED DEPTH] No landmarks - using 1.0m default";
   }
   
-  // Calculate world position from normalized screen coordinates
-  // Must account for perspective projection with 45° FOV
+  // Calculate world position from normalized screen coordinates using perspective math
   const float fov_degrees = 45.0f;
   const float tan_half_fov = std::tan(glm::radians(fov_degrees / 2.0f));
   const float aspect = static_cast<float>(viewport_width_) / static_cast<float>(viewport_height_);
-  
-  // DEBUG: Log anchor calculation with higher frequency for up/down testing
-  static int debug_log_count = 0;
-  if (debug_log_count < 20 || debug_log_count % 10 == 0) {  // Much more frequent logging
-    float world_y_before_offset = (0.5f - anchor.y) * 2.0f * depth * tan_half_fov;
-    ABSL_LOG(INFO) << "[ANCHOR " << instance.anchor_name << "] "
-                   << "landmark_y=" << anchor.y 
-                   << " world_y=" << world_y_before_offset
-                   << " face_offset_y=" << face_offset.y
-                   << " depth=" << depth
-                   << " use_pnp=false (dynamic depth)";
+
+  // Calculate face center in normalized space
+  cv::Point3f face_center(0.5f, 0.5f, 0.0f);
+  if (!face_landmarks_.empty() && face_landmarks_.size() > 263) {
+    cv::Point3f left_eye = face_landmarks_[33];
+    cv::Point3f right_eye = face_landmarks_[263];
+    face_center.x = (left_eye.x + right_eye.x) / 2.0f;
+    face_center.y = (left_eye.y + right_eye.y) / 2.0f;
+    face_center.z = (left_eye.z + right_eye.z) / 2.0f;
   }
-  debug_log_count++;
-  
-  // Apply 2x scale multiplier for more responsive tracking
-  const float scale_multiplier = 2.0f;
-  
-  glm::vec3 world_position = glm::vec3(
-      (anchor.x - 0.5f) * 2.0f * depth * tan_half_fov * aspect * scale_multiplier,  // X with FOV correction + scale
-      (anchor.y - 0.5f) * 2.0f * depth * tan_half_fov * scale_multiplier,            // Y same direction as screen + scale
-      depth                                                                           // Z = estimated depth
+
+  // Face center in world (meters) at current depth
+  glm::vec3 face_center_world = glm::vec3(
+      (face_center.x - 0.5f) * 2.0f * depth * tan_half_fov * aspect,
+      (face_center.y - 0.5f) * 2.0f * depth * tan_half_fov,
+      -depth
   );
+
+  // Anchor offset from face center in normalized space → world space
+  // For Z, scale by world face width at current depth to avoid exploding with distance
+  float face_width_screen = 0.0f;
+  if (!face_landmarks_.empty() && face_landmarks_.size() > 263) {
+    cv::Point3f left_eye = face_landmarks_[33];
+    cv::Point3f right_eye = face_landmarks_[263];
+    face_width_screen = std::abs(right_eye.x - left_eye.x);
+  }
+  float world_face_width_for_z = face_width_screen * 2.0f * depth * tan_half_fov * aspect;  // meters
+  float z_offset_world = (anchor.z - face_center.z) * world_face_width_for_z * anchor_z_scale_;
+
+  // Depth-based Z lock: fade out landmark-derived Z as user moves farther from camera.
+  // Rationale: landmark Z can get noisy with distance. Blending to 0 keeps overlays on the face plane,
+  // preventing perspective inversions that make them look larger when moving away.
+  {
+    const float z_lock_near_m = 0.45f;  // start fading beyond ~45 cm
+    const float z_lock_far_m  = 1.20f;  // fully locked by ~1.2 m
+    float t = (depth - z_lock_near_m) / (z_lock_far_m - z_lock_near_m);
+    float keep = 1.0f - std::clamp(t, 0.0f, 1.0f); // 1 near, 0 far
+    z_offset_world *= keep;
+  }
+
+  glm::vec3 anchor_offset_world = glm::vec3(
+      (anchor.x - face_center.x) * 2.0f * depth * tan_half_fov * aspect,
+      (anchor.y - face_center.y) * 2.0f * depth * tan_half_fov,
+      z_offset_world
+  );
+
+  // Final world position = face center + offset
+  glm::vec3 world_position = face_center_world + anchor_offset_world;
+
+  // For non-crown anchors, keep Z close to the face depth to avoid distance growth with camera motion.
+  if (instance.anchor_name != "head_crown") {
+    // Blend between computed anchor Z and the face plane depth (face_center_world.z == -depth)
+    float z_face = face_center_world.z; // equals -depth
+    world_position.z = (1.0f - anchor_z_face_lerp_) * world_position.z + anchor_z_face_lerp_ * z_face;
+    // Then apply the signed bias (user may set negative to push into face plane or positive toward camera)
+    world_position.z = world_position.z + anchor_z_bias_meters_;
+  }
+
+  const float reference_depth_for_scaling = 1.0f;
+  float actual_face_width = face_width_screen * 2.0f * reference_depth_for_scaling * tan_half_fov * aspect;
+  
+  // DEBUG: Log face center, anchor offset, and final world position
+  static int anchor_depth_log = 0;
+  static float prev_logged_depth = 0.0f;
+  float depth_change = std::abs(depth - prev_logged_depth);
+  
+  if (anchor_depth_log < 20 || anchor_depth_log % 30 == 0 || depth_change > 0.05f) {
+    ABSL_LOG(INFO) << "[FACE→WORLD] face_center_2d=[" << face_center.x << "," << face_center.y << "] "
+                   << "face_center_world=[" << face_center_world.x << "," << face_center_world.y << "," << face_center_world.z << "] "
+                   << "anchor_offset_world=[" << anchor_offset_world.x << "," << anchor_offset_world.y << "," << anchor_offset_world.z << "] "
+                   << "world_pos=[" << world_position.x << "," << world_position.y << "," << world_position.z << "]m "
+                   << "depth=" << depth << "m";
+    prev_logged_depth = depth;
+  }
+  anchor_depth_log++;
   
   // Apply crown offset - ONLY DEPTH (Z) in world space
   // Vertical (Y) is handled in normalized space in GetAnchorPosition
@@ -894,6 +1517,11 @@ glm::mat4 OpenGLRenderer::CalculateInstanceTransform(const ModelInstance& instan
   }
   
   // Add face offset ONLY if PnP is valid
+  static int face_offset_log = 0;
+  if (face_offset_log < 30 || face_offset_log % 10 == 0) {
+    ABSL_LOG(INFO) << "[FACE OFFSET] face_offset=[" << face_offset.x << "," << face_offset.y << "," << face_offset.z << "]";
+  }
+  face_offset_log++;
   world_position += face_offset;
   
   // DEBUG: Log final world position frequently
@@ -903,12 +1531,6 @@ glm::mat4 OpenGLRenderer::CalculateInstanceTransform(const ModelInstance& instan
                    << " final=[" << world_position.x << ", " << world_position.y << ", " << world_position.z << "]";
   }
   position_log_count++;
-  
-  // DEBUG: Log final position
-  if (debug_log_count < 5 || debug_log_count % 60 == 0) {
-    ABSL_LOG(INFO) << "[ANCHOR DEBUG] Final world_position=[" 
-                   << world_position.x << "," << world_position.y << "," << world_position.z << "]";
-  }
   
   // Apply instance offset (NOT rotated - just raw offset)
   // DEBUG: Log before and after instance offset
@@ -928,10 +1550,22 @@ glm::mat4 OpenGLRenderer::CalculateInstanceTransform(const ModelInstance& instan
   // Build model matrix
   glm::mat4 model = glm::mat4(1.0f);
   
-  // 1. Translate to final world position
-  model = glm::translate(model, world_position);
+  // CRITICAL FIX: Matrix transformation order for proper face attachment
+  // 
+  // The problem: MediaPipe landmarks give us 2D screen coordinates that change when
+  // you rotate your head. When you roll right, your nose_bridge moves left on screen.
+  // But in 3D world space, the nose should stay attached to your face!
+  //
+  // Solution: We need to work in FACE-LOCAL space, not world space directly.
+  // 1. Convert screen anchor to world position (accounts for perspective)
+  // 2. Calculate head rotation from landmarks
+  // 3. The position is already in world space at the face location
+  // 4. Apply rotation to orient the model with the head
+  //
+  // The key: world_position is derived from screen coords, which already moves
+  // to follow the face. We just need to rotate the MODEL, not the position.
   
-  // 2. Calculate head rotation from landmarks (more reliable than PnP for tilt)
+  // Calculate head rotation FIRST (before building matrix)
   glm::quat head_rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);  // Identity by default
   
   if (!face_landmarks_.empty() && face_landmarks_.size() > 454) {
@@ -945,7 +1579,7 @@ glm::mat4 OpenGLRenderer::CalculateInstanceTransform(const ModelInstance& instan
     // Calculate ROLL (tilt left/right) from eye line angle
     float eye_delta_y = right_eye.y - left_eye.y;  // Y difference between eyes
     float eye_delta_x = right_eye.x - left_eye.x;  // X difference between eyes
-    float roll_angle = std::atan2(eye_delta_y, eye_delta_x) * 0.5f;  // Radians * 0.5 = half sensitivity
+    float roll_angle = std::atan2(eye_delta_y, eye_delta_x) * 0.5f;  // Radians * 0.5 = half sensitivity (INVERTED)
     
     // Calculate PITCH (tilt forward/backward) from face vertical alignment
     // When looking down: nose moves down relative to forehead
@@ -979,21 +1613,91 @@ glm::mat4 OpenGLRenderer::CalculateInstanceTransform(const ModelInstance& instan
     rotation_log_count++;
   }
   
-  // Apply head rotation to model
+  // SIMPLIFIED APPROACH: Use anchor position directly, only rotate the model
+  // The anchor position from MediaPipe tracks the face feature on screen.
+  // We convert it to pixel space, then just rotate the MODEL to match head tilt.
+  
+  // Build the model matrix:
+  // 1. Translate to anchor's pixel position
+  model = glm::translate(model, world_position);
+  
+  // DEBUG: Log transform components
+  static int transform_log = 0;
+  if (transform_log < 30 || transform_log % 10 == 0) {
+    ABSL_LOG(INFO) << "[TRANSFORM] " << instance.anchor_name 
+                   << " world_pos=[" << world_position.x << "," << world_position.y << "," << world_position.z << "] "
+                   << " head_rot=[" << glm::degrees(glm::eulerAngles(head_rotation).x) << "," 
+                   << glm::degrees(glm::eulerAngles(head_rotation).y) << "," 
+                   << glm::degrees(glm::eulerAngles(head_rotation).z) << "]°";
+  }
+  transform_log++;
+  
+  // 2. Apply head rotation (to orient the model with the head)
   model = model * glm::mat4_cast(head_rotation);
-  
-  // 3. Add 180° rotation around X-axis to flip models right-side up
-  // The head tracking gives us the head orientation, but we need to flip
-  // the model so it appears correctly oriented (not upside down)
-  model = glm::rotate(model, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-  
-  // 4. Apply instance rotation (Euler angles from filter.json)
+
+  // 3. Apply instance rotation (filter-specific orientation)
   model = glm::rotate(model, glm::radians(instance.rotation_euler.x), glm::vec3(1,0,0));  // Pitch
   model = glm::rotate(model, glm::radians(instance.rotation_euler.y), glm::vec3(0,1,0));  // Yaw
   model = glm::rotate(model, glm::radians(instance.rotation_euler.z), glm::vec3(0,0,1));  // Roll
+
   
-  // 5. Apply scale
-  model = glm::scale(model, instance.scale);
+  // 4. Apply scale
+  
+  glm::vec3 final_scale = instance.scale;
+  if (instance.flip_z) {
+    final_scale.z = -final_scale.z;
+  }
+
+  // Keep model size proportional to face width across depth changes
+  if (scale_with_face_width_) {
+    // face_width_screen was computed earlier (normalized [0..1] width)
+    if (face_width_screen > 0.0f) {
+      const float tan_half_fov_local = std::tan(glm::radians(fov_degrees / 2.0f));
+      float face_width_m_now = face_width_screen * 2.0f * depth * tan_half_fov_local * aspect;
+      if (!(face_width_baseline_m_ > 0.0f) || !std::isfinite(face_width_baseline_m_)) {
+        face_width_baseline_m_ = face_width_m_now;
+      }
+      if (face_width_baseline_m_ > 0.0f && std::isfinite(face_width_m_now)) {
+        float scale_ratio = face_width_m_now / face_width_baseline_m_;
+        if (!std::isfinite(scale_ratio)) scale_ratio = 1.0f;
+        // Clamp to a safe range to avoid popping
+        scale_ratio = std::max(0.5f, std::min(2.0f, scale_ratio));
+        final_scale *= scale_ratio;
+      }
+    }
+  }
+
+  // Safety: guard against legacy JSONs that include large negative Z offsets (meters)
+  if (std::abs(instance.offset.z) > 0.2f) { // > 20 cm is suspicious for face overlays
+    static int once = 0;
+    if (once < 3) {
+      ABSL_LOG(WARNING) << "[AR] Large instance.offset.z detected (" << instance.offset.z
+                        << ") — clamping to ±0.2m to avoid distance blow-up.";
+      once++;
+    }
+    // Clamp but don't mutate instance; apply as translation mitigation
+    float clampedZ = std::max(std::min(instance.offset.z, 0.2f), -0.2f);
+    // Adjust model translation instead of modifying world_position pre-rotation
+    model = glm::translate(model, glm::vec3(0.0f, 0.0f, clampedZ - instance.offset.z));
+  }
+  
+  static int scale_log_count = 0;
+  if (scale_log_count < 10 || scale_log_count % 30 == 0) {
+    ABSL_LOG(INFO) << "[FACE-SPACE SCALE] depth=" << depth << "m, "
+                   << "face_width_screen=" << face_width_screen << ", "
+                   << "actual_face_width=" << actual_face_width << "m, "
+                   << "scale_with_face_width=" << (scale_with_face_width_ ? 1 : 0) << ", "
+                   << "baseline_face_width_m=" << face_width_baseline_m_ << ", "
+                   << "final_scale=[" << final_scale.x << "," << final_scale.y << "," << final_scale.z << "]";
+  }
+  scale_log_count++;
+  
+  model = glm::scale(model, final_scale);
+  
+  // Optional: small offset along approximate face normal (camera-view -Z)
+  if (std::abs(face_normal_offset_m_) > 1e-5f) {
+    model = glm::translate(model, glm::vec3(0.0f, 0.0f, -face_normal_offset_m_));
+  }
   
   return model;
 }
@@ -1028,34 +1732,106 @@ void OpenGLRenderer::RenderModelInstance(const ModelInstance& instance, const He
   shader_->SetMat4("uModel", glm::value_ptr(model_matrix));
   shader_->SetMat3("uNormalMatrix", glm::value_ptr(normal_matrix));
   
-  // Use default material (can be enhanced later)
-  Material default_material;
-  default_material.ambient[0] = 0.3f;
-  default_material.ambient[1] = 0.3f;
-  default_material.ambient[2] = 0.3f;
-  default_material.diffuse[0] = 0.8f;
-  default_material.diffuse[1] = 0.8f;
-  default_material.diffuse[2] = 0.8f;
-  default_material.specular[0] = 0.5f;
-  default_material.specular[1] = 0.5f;
-  default_material.specular[2] = 0.5f;
-  default_material.shininess = 32.0f;
-  default_material.opacity = 1.0f;
+  // Get the actual material from the model instead of using default
+  Material material_to_use;
+  if (!model->materials.empty()) {
+    // Use the first material (most models have one material)
+    material_to_use = model->materials.begin()->second;
+    ABSL_LOG(INFO) << "[DEBUG] Using model material: " << model->materials.begin()->first;
+  } else {
+    // Fallback to default material
+    material_to_use.ambient[0] = 0.3f;
+    material_to_use.ambient[1] = 0.3f;
+    material_to_use.ambient[2] = 0.3f;
+    material_to_use.diffuse[0] = 0.8f;
+    material_to_use.diffuse[1] = 0.8f;
+    material_to_use.diffuse[2] = 0.8f;
+    material_to_use.specular[0] = 0.5f;
+    material_to_use.specular[1] = 0.5f;
+    material_to_use.specular[2] = 0.5f;
+    material_to_use.shininess = 32.0f;
+    material_to_use.opacity = 1.0f;
+    ABSL_LOG(INFO) << "[DEBUG] Using default material (no materials in model)";
+  }
   
+  // Set material uniforms
   shader_->SetVec3("uMaterialAmbient", 
-                   default_material.ambient[0],
-                   default_material.ambient[1], 
-                   default_material.ambient[2]);
+                   material_to_use.ambient[0],
+                   material_to_use.ambient[1], 
+                   material_to_use.ambient[2]);
   shader_->SetVec3("uMaterialDiffuse",
-                   default_material.diffuse[0],
-                   default_material.diffuse[1],
-                   default_material.diffuse[2]);
+                   material_to_use.diffuse[0],
+                   material_to_use.diffuse[1],
+                   material_to_use.diffuse[2]);
   shader_->SetVec3("uMaterialSpecular",
-                   default_material.specular[0],
-                   default_material.specular[1],
-                   default_material.specular[2]);
-  shader_->SetFloat("uMaterialShininess", default_material.shininess);
-  shader_->SetFloat("uMaterialOpacity", default_material.opacity);
+                   material_to_use.specular[0],
+                   material_to_use.specular[1],
+                   material_to_use.specular[2]);
+  shader_->SetFloat("uMaterialShininess", material_to_use.shininess);
+  shader_->SetFloat("uMaterialOpacity", material_to_use.opacity);
+
+  // **NEW: Handle texture loading and binding**
+  bool has_texture = false;
+  bool has_opacity_map = false;
+  bool has_emissive_map = false;
+  
+  if (!material_to_use.texture_path.empty() && texture_manager_) {
+    // Try to load texture if not already loaded
+    auto texture_result = texture_manager_->LoadTexture(material_to_use.texture_path);
+    if (texture_result.ok()) {
+      const auto& texture = texture_result.value();
+      if (texture.IsValid()) {
+        // Bind texture to texture unit 0
+        texture_manager_->BindTexture(texture, 0);
+        has_texture = true;
+        ABSL_LOG(INFO) << "Bound texture: " << material_to_use.texture_path 
+                       << " (" << texture.width << "x" << texture.height << ")";
+      }
+    } else {
+      ABSL_LOG(WARNING) << "Failed to load texture: " << material_to_use.texture_path 
+                        << " - " << texture_result.status().message();
+    }
+  }
+  
+  // Load and bind opacity map if available
+  if (!material_to_use.opacity_map_path.empty() && texture_manager_) {
+    auto opacity_result = texture_manager_->LoadTexture(material_to_use.opacity_map_path);
+    if (opacity_result.ok()) {
+      const auto& opacity_map = opacity_result.value();
+      if (opacity_map.IsValid()) {
+        texture_manager_->BindTexture(opacity_map, 1);  // Texture unit 1
+        has_opacity_map = true;
+        ABSL_LOG(INFO) << "Bound opacity map: " << material_to_use.opacity_map_path;
+      }
+    }
+  }
+  
+  // Load and bind emissive map if available
+  if (!material_to_use.emissive_map_path.empty() && texture_manager_) {
+    auto emissive_result = texture_manager_->LoadTexture(material_to_use.emissive_map_path);
+    if (emissive_result.ok()) {
+      const auto& emissive_map = emissive_result.value();
+      if (emissive_map.IsValid()) {
+        texture_manager_->BindTexture(emissive_map, 2);  // Texture unit 2
+        has_emissive_map = true;
+        ABSL_LOG(INFO) << "Bound emissive map: " << material_to_use.emissive_map_path;
+      }
+    }
+  }
+  
+  // Set texture uniforms
+  shader_->SetBool("uHasTexture", has_texture);
+  shader_->SetInt("uTexture", 0);  // Texture unit 0
+  shader_->SetBool("uHasOpacityMap", has_opacity_map);
+  shader_->SetInt("uOpacityMap", 1);  // Texture unit 1
+  shader_->SetBool("uHasEmissiveMap", has_emissive_map);
+  shader_->SetInt("uEmissiveMap", 2);  // Texture unit 2
+  
+  // Handle face winding for flipped models
+  // When Z-scale is negative (flip_z), triangle winding order is inverted
+  if (instance.flip_z) {
+    glFrontFace(GL_CW);  // Switch to clockwise for flipped geometry
+  }
   
   // Render each mesh
   for (const auto& mesh : model->meshes) {
@@ -1066,6 +1842,11 @@ void OpenGLRenderer::RenderModelInstance(const ModelInstance& instance, const He
     glBindVertexArray(mesh.vao);
     glDrawElements(GL_TRIANGLES, mesh.index_count, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
+  }
+  
+  // Restore face winding if it was changed
+  if (instance.flip_z) {
+    glFrontFace(GL_CCW);  // Restore to default counter-clockwise
   }
 }
 
@@ -1127,7 +1908,7 @@ int OpenGLRenderer::RenderInstances() {
   shader_->SetMat4("uProjection", glm::value_ptr(projection));
   shader_->SetMat4("uView", glm::value_ptr(view));
   shader_->SetVec3("uCameraPos", camera_position_[0], camera_position_[1], camera_position_[2]);
-  shader_->SetVec3("uLightDirection", light_direction_[0], light_direction_[1], light_direction_[2]);
+  shader_->SetVec3("uLightDir", light_direction_[0], light_direction_[1], light_direction_[2]);  // ← FIX: Match shader uniform name
   shader_->SetVec3("uLightColor", light_color_[0], light_color_[1], light_color_[2]);
   shader_->SetVec3("uAmbientColor", ambient_color_[0], ambient_color_[1], ambient_color_[2]);
   

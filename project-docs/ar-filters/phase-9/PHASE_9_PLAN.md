@@ -1,12 +1,29 @@
 # Phase 9: UI Integration for AR Filters
 
-## Status: ⏳ PLANNING (Not Started)
+## Status: ✅ COMPLETE
 
 ## Duration: October 7-8, 2025 (Estimated)
 
 ## Estimated Time: 12 hours (1.5-2 days)
 
 ---
+
+## Completion summary
+
+- Implemented ARFilterPanel (new ImGui panel) with enable toggle, grid selection, and action controls
+- Filter discovery from assets/filters with metadata parsing and validation
+- Thumbnail generation and caching shipped (128x128 RGBA); see THUMBNAIL_GENERATION_COMPLETE.md
+- Interactive thumbnail grid with “None” option, active highlighting, tooltips, and keyboard shortcuts (Esc, Ctrl+A)
+- Performance stats integrated (render time, budget impact), stable “Avg FPS” line preserved across UI
+- ConfigManager persistence for ar_filters: enabled, active_filter_id, preview_only; restores on startup and profile switch
+- UI Manager registration and ApplicationRun wiring completed; panel renders between camera and performance sections
+- Verified on Linux: builds cleanly, maintains 30 FPS with typical filters
+
+How to use
+- Open AR Filters panel in the UI
+- Toggle “Enable AR Filters” and pick a filter thumbnail; click “None” to clear
+- Optional: click “Generate Thumbnails” if placeholders are shown (first run)
+- Selection persists; use “Preview Only” to exclude from virtual camera if desired
 
 ## Overview
 
@@ -496,14 +513,15 @@ private:
    - Place between camera controls and performance panels
 
 3. **ApplicationRun Integration**:
-   ```cpp
+
+```cpp
    // In ApplicationRun::Initialize()
    auto ar_panel = std::make_unique<ARFilterPanel>(
        app_state_, 
        *ar_filter_manager_
    );
    ui_manager_->RegisterARFilterPanel(std::move(ar_panel));
-   ```
+```
 
 ---
 
@@ -553,9 +571,8 @@ private:
 
 ### Interaction Flow
 
-```
+```text
 User Action                    System Response
-─────────────────────────────  ─────────────────────────────────
 1. Open AR Filters panel       → Display available filters
 2. Click filter button         → Load filter, render on face
 3. Face detected               → Filter appears aligned

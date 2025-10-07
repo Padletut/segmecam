@@ -4,6 +4,11 @@
 **Branch**: `feature/option-b-renderer-refactor`  
 **Objective**: Replace ARRenderer with OpenGLRenderer for true 3D rendering
 
+Status note (Oct 7, 2025)
+
+- Renderer refactor is effectively integrated for Phase 9 usage; app builds and runs with OpenGLRenderer in the AR pipeline
+- Remaining cleanup (removing deprecated ARRenderer targets/tests) will be tracked as a separate maintenance task
+
 ---
 
 ## ✅ Phase 1: Preparation & Branch Setup (COMPLETE)
@@ -20,24 +25,29 @@
 ## ✅ Phase 2: Port ARRenderer Features to OpenGLRenderer (COMPLETE)
 
 ### Step 2.1: FBO Rendering
+
 - ✅ Add `RenderToFBO()` method to OpenGLRenderer
 - ✅ Test FBO rendering capability
 
 ### Step 2.2: Model Instance Management
+
 - ✅ Add `ModelInstance` struct
 - ✅ Add `LoadModel()`, `CreateInstance()`, `RemoveInstance()` methods
 - ✅ Test instance management
 
 ### Step 2.3: Face Landmark Integration
+
 - ✅ Add `UpdateFaceLandmarks()` method
 - ✅ Implement 9 anchor points (nose_bridge, forehead, left_ear, right_ear, chin, left_eye, right_eye, mouth, center)
 - ✅ Test anchor positioning
 
 ### Step 2.4: Transform Caching & Smoothing
+
 - ✅ Add transform smoothing (element-wise interpolation)
 - ✅ Test jitter reduction
 
 ### Step 2.5: Head Pose Tracking (PnP)
+
 - ✅ Implement `InitializeCanonicalModel()` with 6 key landmarks
 - ✅ Implement `CalculateHeadPose()` using cv::solvePnP
 - ✅ Convert rotation vector to Euler angles (pitch, yaw, roll)
@@ -48,6 +58,7 @@
 **Status**: ✅ COMPILATION SUCCESSFUL - READY FOR PHASE 3
 
 **Changes Made**:
+
 - Added 600+ lines of new code to OpenGLRenderer
 - Implemented FBO rendering for compositing
 - Added model instance management system
@@ -57,6 +68,7 @@
 - Fixed compilation issues with OpenCV calib3d and ModelLoader API
 
 **Build Output**:
+
 ```
 INFO: Build completed successfully, 6 total actions
 Target //mediapipe/examples/desktop/segmecam/src/ar_filters:opengl_renderer up-to-date
@@ -69,7 +81,8 @@ Target //mediapipe/examples/desktop/segmecam/src/ar_filters:opengl_renderer up-t
 **Time Taken**: ~1.5 hours  
 **Status**: ✅ COMPILATION SUCCESSFUL - READY FOR TESTING
 
-### Changes Made:
+### Changes Made
+
 1. ✅ Updated ARFilterManager header to use OpenGLRenderer
 2. ✅ Replaced `#include ar_renderer.h` with `#include opengl_renderer.h`
 3. ✅ Updated Initialize() to create OpenGLRenderer instead of ARRenderer
@@ -81,13 +94,15 @@ Target //mediapipe/examples/desktop/segmecam/src/ar_filters:opengl_renderer up-t
 9. ✅ Deprecated old Render() method (CPU readback causes freeze)
 10. ✅ Updated BUILD file dependencies: `:ar_renderer` → `:opengl_renderer`
 
-### Build Output:
+### Build Output
+
 ```
 INFO: Build completed successfully, 8 total actions
 Target //mediapipe/examples/desktop/segmecam/src/ar_filters:ar_filter_manager up-to-date
 ```
 
-### API Mappings (ARRenderer → OpenGLRenderer):
+### API Mappings (ARRenderer → OpenGLRenderer)
+
 - `LoadFilter(asset)` → Load models + CreateInstance for each attachment
 - `UpdateFaceLandmarks(flat_vec)` → `UpdateFaceLandmarks(cv::Point3f vec)`
 - `SetHeadPoseRotation()` → Handled internally by PnP algorithm
@@ -97,7 +112,8 @@ Target //mediapipe/examples/desktop/segmecam/src/ar_filters:ar_filter_manager up
 - `SetModelInstanceVisibility()` → `SetInstanceVisible()`
 - `SetModelInstanceRotation()` → `SetInstanceRotation()`
 
-### Notes:
+### Notes
+
 - Color tint behavior temporarily disabled (not yet in OpenGLRenderer)
 - Behavior system now uses OpenGLRenderer instance methods
 - Head pose tracking is automatic (PnP algorithm in renderer)
@@ -108,6 +124,7 @@ Target //mediapipe/examples/desktop/segmecam/src/ar_filters:ar_filter_manager up
 ## ⏳ Phase 4: Build Full Application (NEXT)
 
 **Next Steps**:
+
 1. Build the complete segmecam binary
 2. Test with existing filters
 3. Verify head pose tracking works
@@ -119,6 +136,7 @@ Target //mediapipe/examples/desktop/segmecam/src/ar_filters:ar_filter_manager up
 ## 📊 Performance Baseline (Pre-Refactor)
 
 **To be measured**: Run app with existing ARRenderer and record:
+
 - [ ] FPS with Cat Ears filter
 - [ ] Render time per frame
 - [ ] Memory usage

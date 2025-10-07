@@ -42,6 +42,8 @@ struct FilterAttachment {
   std::string anchor_name;    // Face anchor: "nose_bridge", "left_ear", etc.
   std::string model_path;     // Path to .obj file (relative to filter dir)
   std::string texture_path;   // Path to texture image (relative)
+  std::string opacity_map_path;   // Path to opacity/alpha map (relative)
+  std::string emissive_map_path;  // Path to emissive/glow map (relative)
   
   // Transform parameters
   glm::vec3 scale{1.0f, 1.0f, 1.0f};
@@ -50,6 +52,7 @@ struct FilterAttachment {
   
   // Rendering properties
   bool visible = true;
+  bool flip_z = false;        // Flip Z-axis to fix inside-out models
   float opacity = 1.0f;
 };
 

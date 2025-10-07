@@ -1,0 +1,8 @@
+newmtl visor_mat
+Ka 0.000 0.000 0.000
+Kd 0.100 0.120 0.140
+Ks 0.000 0.000 0.000
+d 1.0
+illum 2
+map_Kd visor_albedo.png
+map_Ka visor_emissive.png

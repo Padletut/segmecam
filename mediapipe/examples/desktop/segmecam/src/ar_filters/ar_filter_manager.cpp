@@ -213,6 +213,34 @@ absl::Status ARFilterManager::LoadFilter(const std::string& filter_id) {
       continue;
     }
     
+    // **NEW: Override texture path from filter.json if specified**
+    if (!attachment.texture_path.empty()) {
+      std::string texture_path = asset.GetAssetPath(attachment.texture_path);
+      ABSL_LOG(INFO) << "[DEBUG] Overriding texture from filter.json: " << texture_path;
+      
+      // Override the material texture path in the loaded model
+      bool texture_override_success = opengl_renderer_->SetModelTexture(model_id, texture_path);
+      if (!texture_override_success) {
+        ABSL_LOG(WARNING) << "Failed to override texture: " << texture_path;
+      } else {
+        ABSL_LOG(INFO) << "Successfully overridden model texture: " << texture_path;
+      }
+    }
+    
+    // Override opacity map if specified
+    if (!attachment.opacity_map_path.empty()) {
+      std::string opacity_map_path = asset.GetAssetPath(attachment.opacity_map_path);
+      ABSL_LOG(INFO) << "[DEBUG] Overriding opacity map from filter.json: " << opacity_map_path;
+      opengl_renderer_->SetModelOpacityMap(model_id, opacity_map_path);
+    }
+    
+    // Override emissive map if specified
+    if (!attachment.emissive_map_path.empty()) {
+      std::string emissive_map_path = asset.GetAssetPath(attachment.emissive_map_path);
+      ABSL_LOG(INFO) << "[DEBUG] Overriding emissive map from filter.json: " << emissive_map_path;
+      opengl_renderer_->SetModelEmissiveMap(model_id, emissive_map_path);
+    }
+    
     ABSL_LOG(INFO) << "[DEBUG] Model loaded, creating instance...";
     
     // Create instance (FilterAttachment already has glm::vec3 fields)
@@ -221,7 +249,8 @@ absl::Status ARFilterManager::LoadFilter(const std::string& filter_id) {
         attachment.anchor_name,
         attachment.offset,
         attachment.rotation,
-        attachment.scale
+        attachment.scale,
+        attachment.flip_z
     );
     
     if (instance_id.empty()) {
@@ -289,9 +318,11 @@ std::string ARFilterManager::GetActiveFilterId() const {
 // Main update and render
 void ARFilterManager::Update(const std::vector<mediapipe::NormalizedLandmark>& face_landmarks,
                               const segmecam::HeadPose& head_pose,
-                              int frame_width, int frame_height) {
+                              int frame_width, int frame_height,
+                              const cv::Mat& current_frame_rgb) {
   ABSL_LOG(INFO) << "[DEBUG] ARFilterManager::Update() called, face_detected=" 
-                 << !face_landmarks.empty() << " landmarks=" << face_landmarks.size();
+                 << !face_landmarks.empty() << " landmarks=" << face_landmarks.size()
+                 << " has_frame=" << !current_frame_rgb.empty();
   
   if (!state_.initialized || !HasActiveFilter()) {
     ABSL_LOG(WARNING) << "[DEBUG] Update skipped: initialized=" << state_.initialized 
@@ -299,22 +330,34 @@ void ARFilterManager::Update(const std::vector<mediapipe::NormalizedLandmark>& f
     return;
   }
 
-  // **NEW: Convert protobuf landmarks to cv::Point3f for OpenGLRenderer**
+  // **Convert MediaPipe normalized landmarks to proper coordinate space**
+  // MediaPipe outputs:
+  // - x, y: Normalized 0-1 (need to stay normalized for screen-space calculations)
+  // - z: Relative to face center, scaled by face width (already correct scale)
   std::vector<cv::Point3f> landmarks_3d;
   landmarks_3d.reserve(face_landmarks.size());
   for (const auto& landmark : face_landmarks) {
+    // Keep x, y normalized (0-1) - OpenGLRenderer will convert to world space
+    // Keep z as-is (already scaled by face width as per MediaPipe spec)
     landmarks_3d.emplace_back(landmark.x(), landmark.y(), landmark.z());
   }
   
-  ABSL_LOG(INFO) << "[DEBUG] Converted " << landmarks_3d.size() << " landmarks to cv::Point3f";
+  ABSL_LOG(INFO) << "[DEBUG] Converted " << landmarks_3d.size() << " landmarks (normalized coords preserved)";
   
-  // Update face landmarks in renderer
-  opengl_renderer_->UpdateFaceLandmarks(landmarks_3d);
+  // **Phase 8 Day 4: Update face landmarks WITH frame for MiDaS depth**
+  if (!current_frame_rgb.empty()) {
+    opengl_renderer_->UpdateFaceLandmarksWithFrame(landmarks_3d, current_frame_rgb);
+  } else {
+    // Fallback to old method if no frame provided
+    opengl_renderer_->UpdateFaceLandmarks(landmarks_3d);
+  }
   
   // Update viewport if changed
   int current_width, current_height;
   opengl_renderer_->GetViewportSize(&current_width, &current_height);
   if (current_width != frame_width || current_height != frame_height) {
+    ABSL_LOG(INFO) << "🖼️ Updating viewport: " << current_width << "x" << current_height 
+                   << " → " << frame_width << "x" << frame_height;
     opengl_renderer_->UpdateProjectionMatrix(frame_width, frame_height);
   }
 
@@ -523,6 +566,52 @@ float ARFilterManager::GetCrownDepth() const {
     return opengl_renderer_->GetCrownDepthOffset();
   }
   return 0.0f;  // Default
+}
+
+// Phase 8 Day 4: MiDaS depth calibration
+void ARFilterManager::RecalibrateMiDasDepth(float known_distance_meters) {
+  if (opengl_renderer_) {
+    opengl_renderer_->RecalibrateMiDasDepth(known_distance_meters);
+  } else {
+    ABSL_LOG(WARNING) << "[ARFilterManager] Cannot calibrate: renderer not initialized";
+  }
+}
+
+// Renderer tuning controls (exposed for UI)
+void ARFilterManager::SetAnchorZScale(float s) {
+  if (opengl_renderer_) opengl_renderer_->SetAnchorZScale(s);
+}
+float ARFilterManager::GetAnchorZScale() const {
+  if (opengl_renderer_) return opengl_renderer_->GetAnchorZScale();
+  return 0.25f;
+}
+void ARFilterManager::SetAnchorZBias(float meters) {
+  if (opengl_renderer_) opengl_renderer_->SetAnchorZBiasMeters(meters);
+}
+float ARFilterManager::GetAnchorZBias() const {
+  if (opengl_renderer_) return opengl_renderer_->GetAnchorZBiasMeters();
+  return 0.02f;
+}
+void ARFilterManager::SetAnchorZFaceLerp(float t) {
+  if (opengl_renderer_) opengl_renderer_->SetAnchorZFaceLerp(t);
+}
+float ARFilterManager::GetAnchorZFaceLerp() const {
+  if (opengl_renderer_) return opengl_renderer_->GetAnchorZFaceLerp();
+  return 0.6f;
+}
+void ARFilterManager::SetScaleWithFaceWidth(bool enabled) {
+  if (opengl_renderer_) opengl_renderer_->SetScaleWithFaceWidth(enabled);
+}
+bool ARFilterManager::GetScaleWithFaceWidth() const {
+  if (opengl_renderer_) return opengl_renderer_->GetScaleWithFaceWidth();
+  return true;
+}
+void ARFilterManager::SetFaceNormalOffset(float meters) {
+  if (opengl_renderer_) opengl_renderer_->SetFaceNormalOffset(meters);
+}
+float ARFilterManager::GetFaceNormalOffset() const {
+  if (opengl_renderer_) return opengl_renderer_->GetFaceNormalOffset();
+  return 0.0f;
 }
 
 // Configuration

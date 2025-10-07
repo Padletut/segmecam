@@ -15,6 +15,7 @@
 
 // Include Material for complete type definition
 #include "ar_filters/model_loader.h"
+#include "ar_filters/midas_depth_estimator.h"  // Phase 8 Day 4: MiDaS depth estimation
 
 // For OpenCV types (face landmarks)
 #include <opencv2/core.hpp>
@@ -27,6 +28,7 @@
 namespace segmecam {
 namespace ar_filters {
   struct Model;  // Already defined in model_loader.h but forward declare for clarity
+  class TextureManager;  // For texture loading and caching
 }
 namespace render {
   class ShaderProgram;
@@ -45,6 +47,7 @@ struct ModelInstance {
   glm::vec3 rotation_euler;          // Rotation in degrees (pitch, yaw, roll)
   glm::vec3 scale;                   // Scale factor
   bool visible;                      // Visibility flag
+  bool flip_z;                       // Flip Z-axis to fix inside-out models
   
   // Cached rendering data (managed internally)
   const Model* model_ptr;            // Pointer to loaded model (non-owning)
@@ -56,6 +59,7 @@ struct ModelInstance {
         rotation_euler(0.0f),
         scale(1.0f),
         visible(true),
+        flip_z(false),
         model_ptr(nullptr),
         cached_transform(1.0f),
         transform_dirty(true) {}
@@ -142,6 +146,16 @@ class OpenGLRenderer {
   // Returns model ID on success, empty string on failure
   std::string LoadModel(const std::string& path);
   
+  // Override the texture path for a loaded model
+  // Returns true on success, false on failure
+  bool SetModelTexture(const std::string& model_id, const std::string& texture_path);
+  
+  // Override the opacity map path for a loaded model
+  bool SetModelOpacityMap(const std::string& model_id, const std::string& opacity_map_path);
+  
+  // Override the emissive map path for a loaded model
+  bool SetModelEmissiveMap(const std::string& model_id, const std::string& emissive_map_path);
+  
   // Create a new model instance attached to a face anchor
   // Returns instance ID on success, empty string on failure
   std::string CreateInstance(
@@ -149,7 +163,8 @@ class OpenGLRenderer {
       const std::string& anchor,
       const glm::vec3& offset = glm::vec3(0.0f),
       const glm::vec3& rotation = glm::vec3(0.0f),
-      const glm::vec3& scale = glm::vec3(1.0f)
+      const glm::vec3& scale = glm::vec3(1.0f),
+      bool flip_z = false
   );
   
   // Update instance properties
@@ -163,10 +178,28 @@ class OpenGLRenderer {
   
   // Clear all instances
   void ClearAllInstances();
+  
+  // **NEW: Supersampling control**
+  // Enable high-resolution rendering (always render at fixed resolution regardless of camera)
+  void EnableSupersampling(bool enable, int width = 1920, int height = 1080);
+  bool IsSupersampling() const { return use_supersampling_; }
+  
+  // **NEW: Fullscreen quad rendering for compositing**
+  void InitializeFullscreenQuad();
+  void RenderFullscreenQuad();
 
   // **NEW: Face Landmark Integration (Phase 2 Step 2.3)**
   // Update face landmarks for anchor point calculation
   void UpdateFaceLandmarks(const std::vector<cv::Point3f>& landmarks);
+  
+  // **NEW: Phase 8 Day 4 - Update face landmarks WITH current frame for MiDaS depth**
+  void UpdateFaceLandmarksWithFrame(const std::vector<cv::Point3f>& landmarks, 
+                                     const cv::Mat& frame_rgb);
+  
+  // **NEW: Phase 8 Day 4 - MiDaS depth calibration**
+  // Recalibrate MiDaS depth estimation at a known distance (in meters)
+  // Call this when you're at a specific distance from the camera (e.g., exactly 1.0m)
+  void RecalibrateMiDasDepth(float known_distance_meters);
   
   // Get anchor position from face landmarks
   cv::Point3f GetAnchorPosition(const std::string& anchor_name) const;
@@ -203,6 +236,29 @@ class OpenGLRenderer {
   // Adjust crown anchor depth offset (forward/backward, default 0.0)
   void SetCrownDepthOffset(float offset);
   float GetCrownDepthOffset() const { return crown_depth_offset_; }
+
+  // Global scale for anchor-derived Z offset (reduces how far models sit off the face)
+  // 1.0 = full landmark Z influence, 0.0 = glued to face plane. Default tuned lower for overlays.
+  void SetAnchorZScale(float s) { anchor_z_scale_ = s; }
+  float GetAnchorZScale() const { return anchor_z_scale_; }
+
+  // A small constant bias (meters) towards the camera to reduce perceived gap from the face
+  // Applied to non-crown anchors; positive values move models closer to the camera (less negative Z)
+  void SetAnchorZBiasMeters(float m) { anchor_z_bias_meters_ = m; }
+  float GetAnchorZBiasMeters() const { return anchor_z_bias_meters_; }
+
+  // Keep model size proportional to face width across depth changes
+  void SetScaleWithFaceWidth(bool enabled) { scale_with_face_width_ = enabled; }
+  bool GetScaleWithFaceWidth() const { return scale_with_face_width_; }
+
+  // Optional offset along face normal (meters). Positive moves toward camera along the face's normal.
+  void SetFaceNormalOffset(float m) { face_normal_offset_m_ = m; }
+  float GetFaceNormalOffset() const { return face_normal_offset_m_; }
+
+  // Blend factor that pulls model Z toward the face plane to keep a stable face-relative distance.
+  // Range [0..1]: 0 = no pull (original), 1 = glued to face depth. Default is moderate pull.
+  void SetAnchorZFaceLerp(float t) { anchor_z_face_lerp_ = std::max(0.0f, std::min(1.0f, t)); }
+  float GetAnchorZFaceLerp() const { return anchor_z_face_lerp_; }
   
   // Render debug markers for anchor points
   void RenderDebugAnchors(const HeadPose& head_pose);
@@ -216,7 +272,9 @@ class OpenGLRenderer {
   int viewport_height_;
 
   // OpenGL resources (stored as opaque pointers to avoid header pollution)
-  std::unique_ptr<render::ShaderProgram> shader_;
+  std::unique_ptr<render::ShaderProgram> shader_;          // 3D model shader
+  std::unique_ptr<render::ShaderProgram> texture_shader_;  // 2D texture shader for compositing
+  std::unique_ptr<TextureManager> texture_manager_;        // Texture loading and caching
   
   // Lighting parameters
   float light_direction_[3];
@@ -239,6 +297,13 @@ class OpenGLRenderer {
   float face_scale_factor_;                                      // Calculated from eye distance
   cv::Mat camera_matrix_;                                        // Camera intrinsics
   cv::Mat dist_coeffs_;                                          // Distortion coefficients
+  cv::Mat current_frame_rgb_;                                    // Current RGB frame for MiDaS (Phase 8 Day 4)
+  
+  // **NEW: MiDaS depth estimation (Phase 8 Day 4)**
+  std::unique_ptr<MidasDepthEstimator> depth_estimator_;         // MiDaS neural depth estimator
+  float midas_calibration_depth_;                                 // Calibration: known depth in meters (default 1.0m)
+  float midas_calibration_inverse_;                               // Calibration: inverse depth at known distance
+  bool midas_calibrated_;                                         // Calibration status
   
   // **NEW: Transform smoothing**
   std::map<std::string, TransformCache> transform_caches_;       // Per-instance smoothing
@@ -249,6 +314,24 @@ class OpenGLRenderer {
   bool debug_anchors_enabled_;                                   // Show anchor debug markers
   float crown_offset_multiplier_;                                 // Crown anchor Y-offset (default 0.4)
   float crown_depth_offset_;                                      // Crown anchor Z-offset (default 0.0)
+  float anchor_z_scale_;                                          // Scales anchor Z offset globally (default 0.25)
+  float anchor_z_bias_meters_;                                    // Constant Z bias towards camera (default 0.02m)
+  bool  scale_with_face_width_;                                   // Maintain size relative to face width
+  float face_width_baseline_m_;                                   // Baseline face width measured in meters
+  float face_normal_offset_m_;                                    // Offset along face normal (meters)
+  float anchor_z_face_lerp_;                                      // Lerp toward face depth (default 0.5)
+  
+  // **NEW: High-resolution rendering (supersampling)**
+  uint32_t supersample_fbo_;                                     // Framebuffer for high-res rendering
+  uint32_t supersample_texture_;                                 // Color texture (RGBA)
+  uint32_t supersample_depth_;                                   // Depth renderbuffer
+  int supersample_width_;                                        // Supersampling resolution width (default 1920)
+  int supersample_height_;                                       // Supersampling resolution height (default 1080)
+  bool use_supersampling_;                                       // Enable/disable supersampling
+  
+  // **NEW: Fullscreen quad for compositing**
+  uint32_t quad_vao_;                                            // Vertex Array Object for fullscreen quad
+  uint32_t quad_vbo_;                                            // Vertex Buffer Object for fullscreen quad
 
   // Internal helper: Render a single model
   void RenderSingleModel(const RenderCommand& command);
