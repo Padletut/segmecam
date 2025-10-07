@@ -1,12 +1,13 @@
 #include "include/ui/ui_manager_enhanced.h"
 #include "include/ui/ui_panels.h"
+#include "include/ui/ar_filter_panel.h"  // Phase 9
 #include "include/application/app_state.h"
 #include "include/camera/camera_manager.h"
 #include "src/config/config_manager.h"
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
 #include "backends/imgui_impl_opengl3.h"
-#include <GL/gl.h>
+#include <epoxy/gl.h>  // Modern OpenGL function loader
 #include <iostream>
 
 namespace segmecam {
@@ -55,15 +56,23 @@ bool UIManager::InitializeSDL() {
 }
 
 bool UIManager::InitializeOpenGL() {
+    // Get display bounds for fullscreen borderless window
+    SDL_DisplayMode display_mode;
+    if (SDL_GetCurrentDisplayMode(0, &display_mode) != 0) {
+        std::fprintf(stderr, "SDL_GetCurrentDisplayMode failed: %s\n", SDL_GetError());
+        return false;
+    }
+    
+    // Create borderless fullscreen window
     window_ = SDL_CreateWindow("SegmeCam", 
-                              SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
-                              1280, 720, 
-                              SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+                              0, 0,  // Position at top-left
+                              display_mode.w, display_mode.h,  // Full display size
+                              SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!window_) {
         std::fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
         return false;
     }
-    std::cout << "SDL window created" << std::endl;
+    std::cout << "SDL borderless fullscreen window created (" << display_mode.w << "x" << display_mode.h << ")" << std::endl;
     
     gl_context_ = SDL_GL_CreateContext(window_);
     if (!gl_context_) {
@@ -119,7 +128,11 @@ void UIManager::DrawInitialFrame() {
     std::cout << "Initial frame drawn" << std::endl;
 }
 
-void UIManager::InitializePanels(AppState& state, CameraManager& camera_mgr, EffectsManager& effects_mgr, ConfigManager* config_mgr) {
+void UIManager::InitializePanels(AppState& state, 
+                                  CameraManager& camera_mgr, 
+                                  EffectsManager& effects_mgr, 
+                                  ConfigManager* config_mgr,
+                                  ar_filters::ARFilterManager* ar_filter_mgr) {
     // Initialize panels with their dependencies
     auto camera_panel = std::make_unique<CameraPanel>(state, camera_mgr, effects_mgr);
     if (config_mgr) {
@@ -132,8 +145,19 @@ void UIManager::InitializePanels(AppState& state, CameraManager& camera_mgr, Eff
     RegisterPanel(std::make_unique<BackgroundPanel>(state));
     RegisterPanel(std::make_unique<BeautyPanel>(state, effects_mgr));
     
-    // Debug and Status panels
-    RegisterPanel(std::make_unique<DebugPanel>(state));
+    // AR Filter Panel (Phase 9)
+    if (ar_filter_mgr) {
+        auto ar_filter_panel = std::make_unique<ARFilterPanel>(state, *ar_filter_mgr);
+        ar_filter_panel->Initialize();
+        RegisterPanel(std::move(ar_filter_panel));
+    }
+    
+    // Debug and Status panels (Phase 8 Day 2: Pass ar_filter_mgr to DebugPanel)
+    auto debug_panel = std::make_unique<DebugPanel>(state);
+    if (ar_filter_mgr) {
+        debug_panel->SetARFilterManager(ar_filter_mgr);
+    }
+    RegisterPanel(std::move(debug_panel));
     RegisterPanel(std::make_unique<StatusPanel>(state));
 }
 
@@ -152,7 +176,7 @@ UIPanel* UIManager::FindPanel(const std::string& name) {
     return nullptr;
 }
 
-bool UIManager::ProcessEvents(bool& running) {
+bool UIManager::ProcessEvents(bool& running, ar_filters::ARFilterManager* ar_filter_mgr) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         ImGui_ImplSDL2_ProcessEvent(&event);
@@ -169,7 +193,7 @@ bool UIManager::ProcessEvents(bool& running) {
                 break;
                 
             case SDL_KEYDOWN:
-                if (HandleKeyEvent(event, running)) {
+                if (HandleKeyEvent(event, running, ar_filter_mgr)) {
                     return false;
                 }
                 break;
@@ -207,12 +231,116 @@ bool UIManager::HandleWindowEvent(const SDL_Event& event, bool& running) {
     return false;
 }
 
-bool UIManager::HandleKeyEvent(const SDL_Event& event, bool& running) {
+bool UIManager::HandleKeyEvent(const SDL_Event& event, bool& running, ar_filters::ARFilterManager* ar_filter_mgr) {
     if (event.key.keysym.sym == SDLK_ESCAPE) {
         std::cout << "🛑 ESC key pressed" << std::endl;
         running = false;
         return true;
     }
+    
+    // Filter quick selection keys (1-9)
+    if (ar_filter_mgr && event.key.keysym.sym >= SDLK_1 && event.key.keysym.sym <= SDLK_9) {
+        int filter_index = event.key.keysym.sym - SDLK_1;  // 0-based index
+        
+        // Get available filters
+        auto filters_result = ar_filter_mgr->GetAvailableFilters();
+        if (filters_result.ok()) {
+            auto& filters = filters_result.value();
+            
+            if (filter_index < static_cast<int>(filters.size())) {
+                std::string filter_id = filters[filter_index].id;
+                std::cout << "🎭 Loading filter " << (filter_index + 1) << ": " 
+                          << filters[filter_index].name << " (" << filter_id << ")" << std::endl;
+                
+                auto status = ar_filter_mgr->LoadFilter(filter_id);
+                if (status.ok()) {
+                    std::cout << "   ✅ Filter loaded successfully!" << std::endl;
+                } else {
+                    std::cout << "   ❌ Failed to load filter: " << status.message() << std::endl;
+                }
+            } else {
+                std::cout << "⚠️  Filter " << (filter_index + 1) << " not found (only " 
+                          << filters.size() << " filters available)" << std::endl;
+            }
+        }
+        return false;
+    }
+    
+    // Key '0' to unload current filter
+    if (ar_filter_mgr && event.key.keysym.sym == SDLK_0) {
+        std::cout << "🎭 Unloading current filter..." << std::endl;
+        auto status = ar_filter_mgr->UnloadCurrentFilter();
+        if (status.ok()) {
+            std::cout << "   ✅ Filter unloaded" << std::endl;
+        } else {
+            std::cout << "   ❌ Failed to unload: " << status.message() << std::endl;
+        }
+        return false;
+    }
+    
+    // Crown anchor adjustment keys (Finding #8)
+    // These modify the OpenGL renderer's crown offset multiplier
+    if (event.key.keysym.sym == SDLK_u) {
+        // U = Move crown UP
+        std::cout << "⬆️ Crown UP (U key)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->AdjustCrownOffset(+0.05f);  // Increase by 5%
+            float current = ar_filter_mgr->GetCrownOffset();
+            std::cout << "   Crown offset now: " << current << " (" << (current * 100.0f) << "%)" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
+    if (event.key.keysym.sym == SDLK_d) {
+        // D = Move crown DOWN
+        std::cout << "⬇️ Crown DOWN (D key)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->AdjustCrownOffset(-0.05f);  // Decrease by 5%
+            float current = ar_filter_mgr->GetCrownOffset();
+            std::cout << "   Crown offset now: " << current << " (" << (current * 100.0f) << "%)" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
+    if (event.key.keysym.sym == SDLK_w) {
+        // W = Move crown FORWARD (toward camera) - closer to face
+        std::cout << "➡️ Crown FORWARD (W key)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->AdjustCrownDepth(-0.2f);  // Negative = forward (closer)
+            float current = ar_filter_mgr->GetCrownDepth();
+            std::cout << "   Crown depth now: " << current << " (" << (current * 100.0f) << "% " << (current < 0 ? "backward" : "forward") << ")" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
+    if (event.key.keysym.sym == SDLK_s) {
+        // S = Move crown BACKWARD (away from camera) - to reach top/back of head
+        std::cout << "⬅️ Crown BACKWARD (S key)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->AdjustCrownDepth(+0.2f);  // Positive = backward (away)
+            float current = ar_filter_mgr->GetCrownDepth();
+            std::cout << "   Crown depth now: " << current << " (" << (current * 150.0f) << "% " << (current > 0 ? "forward" : "backward") << ")" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
+    if (event.key.keysym.sym == SDLK_r && (event.key.keysym.mod & KMOD_CTRL)) {
+        // Ctrl+R = RESET to default
+        std::cout << "🔄 Crown RESET (Ctrl+R)" << std::endl;
+        if (ar_filter_mgr) {
+            ar_filter_mgr->SetCrownOffset(0.4f);  // Default 40%
+            ar_filter_mgr->SetCrownDepth(0.0f);   // Reset depth too
+            std::cout << "   Crown offset reset to: 0.4 (40%), depth reset to 0.0" << std::endl;
+        } else {
+            std::cout << "   ⚠️ AR filter manager not available" << std::endl;
+        }
+        return false;
+    }
+    
     return false;
 }
 
@@ -235,8 +363,11 @@ void UIManager::EndFrame() {
     SDL_GL_GetDrawableSize(window_, &draw_w, &draw_h);
     glViewport(0, 0, draw_w, draw_h);
     
-    // Don't clear again - main loop already cleared with black background
-    // Render ImGui draw data on top of video background
+    // Clear with dark background (video shown in preview window instead)
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    
+    // Render ImGui draw data
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     SDL_GL_SwapWindow(window_);
 }
@@ -280,30 +411,46 @@ void UIManager::RenderVideoPreview() {
         return;
     }
     
-    // Set default position and size for video preview
-    ImGui::SetNextWindowPos(preview_window_pos_, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(preview_window_size_, ImGuiCond_FirstUseEver);
+    // Get window size for fullscreen display
+    int draw_w, draw_h;
+    GetDrawableSize(draw_w, draw_h);
     
-    if (ImGui::Begin("Camera Feed", &show_video_preview_, ImGuiWindowFlags_NoCollapse)) {
-        // Update position and size from user interaction
-        preview_window_pos_ = ImGui::GetWindowPos();
-        preview_window_size_ = ImGui::GetWindowSize();
-        
-        // Calculate aspect-preserving display size
-        ImVec2 content_size = ImGui::GetContentRegionAvail();
+    // Create fullscreen borderless window for video
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2((float)draw_w, (float)draw_h));
+    
+    ImGuiWindowFlags window_flags = 
+        ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoScrollWithMouse |
+        ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoBackground |
+        ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoNavFocus;
+    
+    if (ImGui::Begin("##VideoBackground", nullptr, window_flags)) {
+        // Calculate aspect-preserving display size to fill screen
         float aspect = (float)tex_w_ / tex_h_;
-        float display_w = content_size.x;
-        float display_h = display_w / aspect;
+        float screen_aspect = (float)draw_w / draw_h;
         
-        if (display_h > content_size.y) {
-            display_h = content_size.y;
+        float display_w, display_h;
+        if (screen_aspect > aspect) {
+            // Screen wider than video - scale to screen width
+            display_w = (float)draw_w;
+            display_h = display_w / aspect;
+        } else {
+            // Screen taller than video - scale to screen height
+            display_h = (float)draw_h;
             display_w = display_h * aspect;
         }
         
-        // Center the image
-        ImVec2 cursor_pos = ImGui::GetCursorPos();
-        ImVec2 center_offset((content_size.x - display_w) * 0.5f, (content_size.y - display_h) * 0.5f);
-        ImGui::SetCursorPos(ImVec2(cursor_pos.x + center_offset.x, cursor_pos.y + center_offset.y));
+        // Center the video
+        float offset_x = (draw_w - display_w) * 0.5f;
+        float offset_y = (draw_h - display_h) * 0.5f;
+        ImGui::SetCursorPos(ImVec2(offset_x, offset_y));
         
         ImGui::Image(reinterpret_cast<void*>(tex_), ImVec2(display_w, display_h));
     }
@@ -425,6 +572,54 @@ void UIManager::Shutdown() {
     
     initialized_ = false;
     std::cout << "UI Manager shutdown completed" << std::endl;
+}
+
+void UIManager::RenderVideoBackgroundInternal(GLuint video_texture, int video_width, int video_height, int window_width, int window_height) {
+    // Calculate aspect-preserving dimensions to fill window
+    float video_aspect = (float)video_width / (float)video_height;
+    float window_aspect = (float)window_width / (float)window_height;
+
+    float quad_w, quad_h, quad_x, quad_y;
+    if (window_aspect > video_aspect) {
+        // Window is wider - scale to height, center horizontally
+        quad_h = window_height;
+        quad_w = quad_h * video_aspect;
+        quad_x = (window_width - quad_w) * 0.5f;
+        quad_y = 0;
+    } else {
+        // Window is taller - scale to width, center vertically
+        quad_w = window_width;
+        quad_h = quad_w / video_aspect;
+        quad_x = 0;
+        quad_y = (window_height - quad_h) * 0.5f;
+    }
+
+    // Set up orthographic projection for fullscreen quad
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, window_width, window_height, 0, -1, 1);  // Y-flipped for texture coordinates
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    // Enable texturing and proper blending
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, video_texture);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // Set white color (full brightness)
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+
+    // Draw fullscreen textured quad
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0); glVertex2f(quad_x, quad_y);
+    glTexCoord2f(1, 0); glVertex2f(quad_x + quad_w, quad_y);
+    glTexCoord2f(1, 1); glVertex2f(quad_x + quad_w, quad_y + quad_h);
+    glTexCoord2f(0, 1); glVertex2f(quad_x, quad_y + quad_h);
+    glEnd();
+
+    glDisable(GL_BLEND);
+    glDisable(GL_TEXTURE_2D);
 }
 
 } // namespace segmecam

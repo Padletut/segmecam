@@ -7,6 +7,12 @@
 #include <cstdint>
 #include "include/camera/vcam.h"
 #include "effects/advanced_skin_effects.h"
+#include "include/ar_filters/blendshape_processor.h"
+#include "include/ar_filters/face_mesh_processor.h"
+#include "include/ar_filters/transform_calculator.h"
+#include "include/ar_filters/attachment_controller.h"
+#include "include/ar_filters/filter_test_demo.h"
+#include "include/ar_filters/filter_presets.h"
 
 namespace segmecam {
 
@@ -21,6 +27,38 @@ struct AppState {
   // OpenCL acceleration  
   bool use_opencl = true; // Enable by default if available
   bool opencl_available = false;
+  
+  // Blendshapes (facial expression data)
+  BlendshapeProcessor blendshapes_processor; // Processor for 52 expression coefficients
+  BlendshapeData blendshapes; // Current smoothed blendshape values (0.0-1.0)
+  bool blendshapes_available = false; // Whether blendshapes are being tracked
+  
+  // Face mesh (478-point 3D face model)
+  FaceMeshProcessor face_mesh_processor; // Processor for 478 3D landmarks
+  FaceMesh face_mesh; // Current face mesh with pose data
+  bool face_mesh_available = false; // Whether face mesh is being tracked
+  
+  // Transform calculator (head pose & AR anchor points)
+  TransformCalculator transform_calculator; // Phase 2: 3D transforms for AR objects
+  HeadPose head_pose; // Current smoothed head pose (position, rotation, scale)
+  std::vector<AnchorPoint> anchor_points; // 7 attachment points for AR filters
+  bool transform_data_available = false; // Whether transform data is available
+  
+  // Attachment controller (AR filter management) - Phase 2 Step 5
+  AttachmentController attachment_controller; // Manages filter-to-anchor bindings
+  bool ar_filters_enabled = true; // Global enable/disable for AR filters (AUTO-ENABLED for debugging)
+  
+  // Phase 3 Step 8: 3D OpenGL rendering for MODEL_3D filters
+  bool ar_render_3d_models = true;          // Use OpenGL 3D rendering (true) or 2D circles (false)
+  bool ar_3d_rendering_available = true;   // Set to true after RenderManager::Initialize3DRendering() succeeds
+  
+  // Filter test demo (Phase 2 Step 5.5) - Creates 7 test filters for validation
+  FilterTestDemo filter_test_demo;
+  bool show_filter_test = false; // UI toggle for test demo
+  
+  // Filter presets (Phase 2 Step 6) - Production filter examples
+  FilterPresetManager filter_preset_manager; // Manages glasses, hat, mask presets
+  bool show_filter_presets = false; // UI toggle for preset panel
   
   // Performance logging
   bool perf_log = false;
@@ -109,6 +147,7 @@ struct AppState {
   bool show_facemask = false;
   bool show_wrinkle_segmentation = false;
   bool show_wrinkle_inpaint = false;
+  bool show_anchors = false;  // Phase 2 Step 3: Show 7 anchor points (ENABLED for debugging)
   bool lm_roi_mode = false;
   bool lm_apply_rot = true;
   bool lm_flip_x = false;
@@ -142,6 +181,13 @@ struct AppState {
   // PipeWire output status
   bool pipewire_output_active = false;
   
+  // AR Filter settings (Phase 9)
+  struct ARFilterSettings {
+    std::string active_filter_id = "";  // Currently selected filter (e.g., "cat-ears-v1")
+    bool filters_enabled = true;         // Global AR filters toggle
+    int thumbnail_size = 128;            // Configurable thumbnail size
+  } ar_filters;
+  
   // Profile management
   int ui_profile_idx = -1;
   char profile_name_buf[128] = {0};
@@ -160,6 +206,7 @@ struct AppState {
   void LoadWrinkleSettings(const cv::FileNode& root);
   void LoadLipEffectSettings(const cv::FileNode& root);
   void LoadTeethSettings(const cv::FileNode& root);
+  void LoadARFilterSettings(const cv::FileNode& root);  // Phase 9
   
   // Shared background image loading function
   bool LoadBackgroundImageFromPath(const std::string& path);

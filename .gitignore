@@ -4,6 +4,9 @@
 bazel-*
 /.bazelignore
 
+# Licensed models
+assets/filters/sci-fi glasses visor model f 02 - black and blue
+
 # Compiled binaries
 *.o
 *.so
@@ -17,6 +20,7 @@ segmecam_gui_gpu
 
 # Runtime/runfiles directories
 runfiles/
+assets/filters/snap-lens
 
 
 # Keep only our SegmeCam code in MediaPipe examples  
@@ -149,3 +153,5 @@ profile_debug_panels_backup.cpp
 mediapipe/examples/desktop/segmecam/src/camera/pipewire_output.backup.cpp
 build-app.sh
 tools/bazel
+find-3d-lenses.sh
+models/midas_v21_small_256.onnx

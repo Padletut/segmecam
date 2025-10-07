@@ -45,6 +45,7 @@ public:
         std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
         std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
         std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+        std::unique_ptr<mediapipe::OutputStreamPoller>& blendshapes_poller,
         AppState& app_state,
         int frame_count,
         bool has_landmarks
@@ -112,6 +113,30 @@ public:
     static void ProcessFaceRects(
         MediaPipeOutputData& output_data,
         std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller
+    );
+
+    /**
+     * Process blendshapes from MediaPipe
+     * @param blendshapes_poller Poller for blendshapes output (52 expression coefficients)
+     * @param app_state Current application state
+     * @param frame_count Current frame count for debugging
+     */
+    static void ProcessBlendshapes(
+        std::unique_ptr<mediapipe::OutputStreamPoller>& blendshapes_poller,
+        AppState& app_state,
+        int frame_count
+    );
+
+    /**
+     * Process face mesh from MediaPipe
+     * @param output_data Structure containing latest landmarks
+     * @param app_state Current application state
+     * @param frame_count Current frame count for debugging
+     */
+    static void ProcessFaceMesh(
+        MediaPipeOutputData& output_data,
+        AppState& app_state,
+        int frame_count
     );
 };
 

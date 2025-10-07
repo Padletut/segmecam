@@ -67,6 +67,7 @@ private:
     void writeLandmarkSettings(cv::FileStorage& fs, const ConfigData& config) const;
     void writeBeautyEffectsSettings(cv::FileStorage& fs, const ConfigData& config) const;
     void writePerformanceSettings(cv::FileStorage& fs, const ConfigData& config) const;
+    void writeARFilterSettings(cv::FileStorage& fs, const ConfigData& config) const;  // Phase 9
     void readCameraSettings(const cv::FileNode& root, ConfigData& config) const;
     void readCameraControlsSettings(const cv::FileNode& root, ConfigData& config) const;
     void readDisplaySettings(const cv::FileNode& root, ConfigData& config) const;
@@ -74,6 +75,7 @@ private:
     void readLandmarkSettings(const cv::FileNode& root, ConfigData& config) const;
     void readBeautyEffectsSettings(const cv::FileNode& root, ConfigData& config) const;
     void readPerformanceSettings(const cv::FileNode& root, ConfigData& config) const;
+    void readARFilterSettings(const cv::FileNode& root, ConfigData& config) const;  // Phase 9
         
     // Helper functions for type-safe reading
     int ReadInt(const cv::FileNode& node, int defaultValue) const;
@@ -228,6 +230,13 @@ struct ConfigData {
     struct PerformanceConfig {
         bool use_opencl = true; // Enable by default if available
     } performance;
+    
+    // AR Filter settings (Phase 9)
+    struct ARFilterConfig {
+        std::string active_filter_id = "";  // Currently selected filter (e.g., "cat-ears-v1")
+        bool filters_enabled = true;         // Global AR filters toggle
+        int thumbnail_size = 128;            // Configurable thumbnail size
+    } ar_filters;
     
     // Debug settings
     struct DebugConfig {

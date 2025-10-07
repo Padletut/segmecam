@@ -44,6 +44,7 @@ node {
   calculator: "mediapipe.tasks.vision.face_landmarker.FaceLandmarkerGraph"
   input_stream: "IMAGE:input_image"
   output_stream: "NORM_LANDMARKS:multi_face_landmarks"
+  output_stream: "BLENDSHAPES:face_blendshapes"
   output_stream: "FACE_RECTS:face_rects"
   options: {
     [mediapipe.tasks.vision.face_landmarker.proto.FaceLandmarkerGraphOptions.ext]: {

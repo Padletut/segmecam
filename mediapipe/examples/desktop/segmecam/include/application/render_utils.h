@@ -4,7 +4,7 @@
 #include <memory>
 #include <opencv2/opencv.hpp>
 #include <SDL.h>
-#include <GL/gl.h>
+#include <epoxy/gl.h>  // Modern OpenGL function loader
 #include "application/manager_coordination.h"
 #include "include/application/app_state.h"
 
@@ -59,7 +59,8 @@ public:
                            const cv::Mat& display_rgb,
                            SDL_Window* window,
                            int frame_count,
-                           bool& running);
+                           bool& running,
+                           bool skip_texture_upload = false);
 };
 
 } // namespace segmecam

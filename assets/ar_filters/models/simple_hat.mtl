@@ -1,0 +1,16 @@
+# Material file for simple_hat.obj
+# Defines hat body and brim materials
+
+newmtl hat_body_material
+Ka 0.05 0.05 0.05
+Kd 0.1 0.1 0.1
+Ks 0.8 0.8 0.8
+Ns 80.0
+d 1.0
+
+newmtl brim_material
+Ka 0.05 0.05 0.05
+Kd 0.1 0.1 0.1
+Ks 0.7 0.7 0.7
+Ns 60.0
+d 1.0

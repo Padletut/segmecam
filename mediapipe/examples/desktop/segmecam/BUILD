@@ -1,5 +1,23 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library") # type: ignore
 
+# Export ar_filters headers for use by subdirectory BUILD files
+exports_files([
+    "include/ar_filters/blendshape_processor.h",
+    "include/ar_filters/face_mesh_processor.h",
+    "include/ar_filters/transform_calculator.h",
+    "include/ar_filters/model_loader.h",
+    "include/ar_filters/filter_object.h",
+    "include/ar_filters/attachment_controller.h",
+    "include/ar_filters/filter_test_demo.h",
+    "include/ar_filters/filter_presets.h",
+    "include/ar_filters/opengl_renderer.h",
+    "include/ar_filters/texture_manager.h",
+    "include/ar_filters/ar_renderer.h",
+    "include/ar_filters/filter_asset.h",  # Phase 6
+    "include/ar_filters/ar_filter_manager.h",  # Phase 7
+    "include/ar_filters/midas_depth_estimator.h",  # Phase 8 Day 4: MiDaS depth
+])
+
 cc_library( # type: ignore
     name = "compositing_utils",
     srcs = ["src/compositing_utils.cpp"],
@@ -80,6 +98,12 @@ cc_library( # type: ignore
     deps = [
         ":vcam",
         ":advanced_skin_effects",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:attachment_controller",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:blendshape_processor",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:face_mesh_processor",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:transform_calculator",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:filter_test_demo",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:filter_presets",
         "//mediapipe/framework/formats:classification_cc_proto",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
@@ -177,7 +201,12 @@ cc_library( # type: ignore
     includes = [".", "include"],
     deps = [
         ":app_state",
+        ":application_run",  # Phase 8: Needed for ApplicationRun types
         ":camera_manager",
+        ":effects_manager",  # Phase 8: EffectsManager included in cpp
+        ":ui_manager",  # Phase 8: UIManager included in cpp
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:opengl_renderer",  # Phase 8: OpenGLRenderer for AR rendering
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:ar_filter_manager",  # Phase 8: AR filter system
         "//mediapipe/examples/desktop/segmecam/src/config:config_manager",
     ],
 )
@@ -412,15 +441,38 @@ cc_library( # type: ignore
     ],
 )
 
+# Shader Program Library (Phase 3 Step 8 - 3D Rendering)
+cc_library( # pyright: ignore[reportUndefinedVariable]
+    name = "shader_program",
+    srcs = ["src/render/shader_program.cpp"],
+    hdrs = ["include/render/shader_program.h"],
+    includes = [".", "include"],
+    visibility = ["//mediapipe/examples/desktop/segmecam:__subpackages__"],
+    deps = [
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+    ],
+    copts = [
+        "-I/usr/include",
+    ],
+    linkopts = ["-lepoxy"],  # libepoxy provides modern OpenGL function loading
+)
+
 # Render Manager Library (Phase 3 Refactoring)
 cc_library( # pyright: ignore[reportUndefinedVariable]
     name = "render_manager",
     srcs = ["src/render/render_manager.cpp"],
     hdrs = ["include/render/render_manager.h"],
     includes = [".", "include"],
+    visibility = ["//visibility:public"],
     deps = [
+        ":shader_program",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:model_loader",
         "//mediapipe/framework/port:opencv_core",
         "//third_party/imgui:imgui",
+        "@glm//:glm",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
     ],
     copts = [
         "-I/usr/include/SDL2",
@@ -430,6 +482,29 @@ cc_library( # pyright: ignore[reportUndefinedVariable]
         "-lSDL2",
         "-lGL",
         "-ldl",
+    ],
+)
+
+# Phase 4 Step 2: FBOManager - Framebuffer Object Management for offscreen rendering
+cc_library(
+    name = "fbo_manager",
+    srcs = ["src/render/fbo_manager.cpp"],
+    hdrs = ["include/render/fbo_manager.h"],
+    includes = [".", "include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+    ],
+    copts = [
+        "-std=c++17",
+        "-I/usr/include",
+    ],
+    linkopts = [
+        "-lepoxy",
+        "-lGL",
     ],
 )
 
@@ -464,6 +539,7 @@ cc_library( # type: ignore
         "src/ui/pipewire_output_panel.cpp",
         "src/ui/camera_controls_panel.cpp",
         "src/ui/profile_debug_panels.cpp",
+        "src/ui/ar_filter_panel.cpp",  # Phase 9
     ],
     hdrs = [
         "include/ui/ui_panels.h",
@@ -472,6 +548,7 @@ cc_library( # type: ignore
         "include/ui/virtual_camera_panel.h",
         "include/ui/pipewire_output_panel.h",
         "include/ui/camera_controls_panel.h",
+        "include/ui/ar_filter_panel.h",  # Phase 9
     ],
     includes = [".", "include"],
     deps = [
@@ -484,8 +561,10 @@ cc_library( # type: ignore
         ":vcam",
         ":portal_utils",
         "//mediapipe/examples/desktop/segmecam/src/config:config_manager",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:ar_filter_manager",  # Phase 8 Day 2
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
+        "//mediapipe/framework/port:opencv_imgcodecs",  # Phase 9: Thumbnail loading
         "//mediapipe/framework/port:opencv_highgui",
         "//third_party/imgui:imgui",
     ],
@@ -724,10 +803,13 @@ cc_library( # type: ignore
     hdrs = ["include/effects/face_processor.h"],
     includes = [".", "include", "include/effects"],
     deps = [
+        ":app_state",
         ":face_regions",
         ":segmecam_face_effects",
         ":segmecam_composite",
         ":presets",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:face_mesh_processor",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:transform_calculator",
         "//mediapipe/framework/formats:landmark_cc_proto",
         "//mediapipe/framework/port:opencv_core",
         "//mediapipe/framework/port:opencv_imgproc",
@@ -782,6 +864,10 @@ cc_binary( # pyright: ignore[reportUndefinedVariable]
         ":render_manager",
         ":effects_manager",
         "//mediapipe/examples/desktop/segmecam/src/config:config_manager",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:blendshape_processor",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:attachment_controller",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:opengl_renderer",
+        "//mediapipe/examples/desktop/segmecam/src/ar_filters:ar_filter_manager",  # Phase 8: AR filter manager
         "//mediapipe/framework:calculator_graph",
         "//mediapipe/framework/port:file_helpers",
         "//mediapipe/framework/port:opencv_core",
@@ -818,5 +904,21 @@ cc_binary( # pyright: ignore[reportUndefinedVariable]
         "-lGLU",
         "-lSDL2",
         "-lopencv_photo",
+        "-lopencv_imgproc",
+        "-lopencv_core",
+    ],
+)
+
+# Test tool for Snapchat lens loading with Assimp
+cc_binary(
+    name = "test_snap_lens_load",
+    srcs = ["tools/test_snap_lens_load.cpp"],
+    deps = [
+        "@assimp//:assimp",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+    ],
+    copts = [
+        "-std=c++17",
     ],
 )

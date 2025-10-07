@@ -1,0 +1,16 @@
+# Material file for simple_glasses.obj
+# Defines lens and bridge materials
+
+newmtl lens_material
+Ka 0.1 0.1 0.1
+Kd 0.2 0.2 0.2
+Ks 0.9 0.9 0.9
+Ns 100.0
+d 0.6
+
+newmtl bridge_material
+Ka 0.05 0.05 0.05
+Kd 0.1 0.1 0.1
+Ks 0.5 0.5 0.5
+Ns 50.0
+d 1.0

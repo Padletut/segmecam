@@ -62,6 +62,7 @@ void ProfileManager::LoadProfileIntoState(const std::string& profile_name) {
     LoadLandmarkSettings(config);
     LoadBeautySettings(config);
     LoadPerformanceSettings(config);
+    LoadARFilterSettings(config);  // Phase 9
 
     std::cout << "Profile loaded successfully: " << profile_name << std::endl;
 }
@@ -220,6 +221,13 @@ void ProfileManager::LoadPerformanceSettings(const ConfigData& config) {
     // Debug settings (currently none)
 }
 
+void ProfileManager::LoadARFilterSettings(const ConfigData& config) {
+    // AR Filter settings (Phase 9)
+    state_.ar_filters.active_filter_id = config.ar_filters.active_filter_id;
+    state_.ar_filters.filters_enabled = config.ar_filters.filters_enabled;
+    state_.ar_filters.thumbnail_size = config.ar_filters.thumbnail_size;
+}
+
 bool ProfileManager::SaveStateToProfile(const std::string& profile_name) {
     if (!ValidateProfileSave(profile_name)) {
         return false;
@@ -232,6 +240,7 @@ bool ProfileManager::SaveStateToProfile(const std::string& profile_name) {
     SaveLandmarkSettings(config);
     SaveBeautySettings(config);
     SavePerformanceSettings(config);
+    SaveARFilterSettings(config);  // Phase 9
 
     return SaveProfileToManager(profile_name, config);
 }
@@ -358,6 +367,13 @@ void ProfileManager::SaveTeethSettings(ConfigData& config) {
 void ProfileManager::SavePerformanceSettings(ConfigData& config) {
     // Performance settings
     config.performance.use_opencl = state_.use_opencl;
+}
+
+void ProfileManager::SaveARFilterSettings(ConfigData& config) {
+    // AR Filter settings (Phase 9)
+    config.ar_filters.active_filter_id = state_.ar_filters.active_filter_id;
+    config.ar_filters.filters_enabled = state_.ar_filters.filters_enabled;
+    config.ar_filters.thumbnail_size = state_.ar_filters.thumbnail_size;
 }
 
 bool ProfileManager::SaveProfileToManager(const std::string& profile_name, const ConfigData& config) {

@@ -33,6 +33,11 @@ void AppState::SaveToProfile(cv::FileStorage& fs) const {
   fs << "fx_lipstick" << (int)fx_lipstick << "fx_lip_alpha" << fx_lip_alpha << "fx_lip_feather" << fx_lip_feather << "fx_lip_light" << fx_lip_light << "fx_lip_band" << fx_lip_band;
   fs << "fx_lip_color" << "[" << fx_lip_color[0] << fx_lip_color[1] << fx_lip_color[2] << "]";
   fs << "fx_teeth" << (int)fx_teeth << "fx_teeth_strength" << fx_teeth_strength << "fx_teeth_margin" << fx_teeth_margin;
+  
+  // AR Filter settings (Phase 9)
+  fs << "ar_filter_active_filter_id" << ar_filters.active_filter_id;
+  fs << "ar_filter_filters_enabled" << (int)ar_filters.filters_enabled;
+  fs << "ar_filter_thumbnail_size" << ar_filters.thumbnail_size;
 }
 
 void AppState::LoadFromProfile(const cv::FileNode& root) {
@@ -45,6 +50,7 @@ void AppState::LoadFromProfile(const cv::FileNode& root) {
   LoadWrinkleSettings(root);
   LoadLipEffectSettings(root);
   LoadTeethSettings(root);
+  LoadARFilterSettings(root);
 }
 
 void AppState::LoadDisplaySettings(const cv::FileNode& root) {
@@ -151,6 +157,15 @@ void AppState::LoadTeethSettings(const cv::FileNode& root) {
   fx_teeth = ReadInt(root["fx_teeth"], fx_teeth);
   fx_teeth_strength = ReadFloat(root["fx_teeth_strength"], fx_teeth_strength);
   fx_teeth_margin = ReadFloat(root["fx_teeth_margin"], fx_teeth_margin);
+}
+
+void AppState::LoadARFilterSettings(const cv::FileNode& root) {
+  // Load AR filter settings from ConfigManager YAML format
+  if (!root["ar_filter_active_filter_id"].empty()) {
+    ar_filters.active_filter_id = (std::string)root["ar_filter_active_filter_id"];
+  }
+  ar_filters.filters_enabled = ReadInt(root["ar_filter_filters_enabled"], ar_filters.filters_enabled);
+  ar_filters.thumbnail_size = ReadInt(root["ar_filter_thumbnail_size"], ar_filters.thumbnail_size);
 }
 
 int AppState::ReadInt(const cv::FileNode& n, int def) const {

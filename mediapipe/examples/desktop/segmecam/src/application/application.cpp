@@ -20,7 +20,7 @@
 
 // Include SDL for OpenGL context (needed for MediaPipe GPU)
 #include <SDL.h>
-#include <SDL_opengl.h>
+// Removed SDL_opengl.h - using epoxy/gl.h instead
 
 // Include ImGui for GUI
 #include "third_party/imgui/imgui.h"
@@ -31,7 +31,7 @@
 #include <opencv2/opencv.hpp>
 
 // Include OpenGL for texture management
-#include <GL/gl.h>
+#include <epoxy/gl.h>  // Modern OpenGL function loader
 
 #include <iostream>
 #include <chrono>
@@ -52,7 +52,7 @@ int SegmeCamApplication::Initialize(const ApplicationConfig& config) {
     
     // Create parameter structs to reduce method parameter count
     MediaPipeInitParams mediapipe_params = {
-        mediapipe_graph_, mask_poller_, multi_face_landmarks_poller_, face_rects_poller_
+        mediapipe_graph_, mask_poller_, multi_face_landmarks_poller_, face_rects_poller_, blendshapes_poller_
     };
     
     SDLInitParams sdl_params = {
@@ -69,7 +69,7 @@ int SegmeCamApplication::Run() {
     // Use the extracted run module for main application loop
     return ApplicationRun::ExecuteMainLoop(managers_, mediapipe_graph_, mask_poller_, 
                                           multi_face_landmarks_poller_, face_rects_poller_,
-                                          window_, app_state_);
+                                          blendshapes_poller_, window_, app_state_);
 }
 
 void SegmeCamApplication::Cleanup() {

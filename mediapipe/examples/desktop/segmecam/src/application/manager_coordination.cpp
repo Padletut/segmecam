@@ -6,8 +6,16 @@
 #include "include/ui/ui_manager_enhanced.h"
 #include "include/ui/ui_utils.h"
 #include "include/application/app_state.h"
+#include "include/ar_filters/opengl_renderer.h"
+#include "include/ar_filters/ar_filter_manager.h"  // Phase 8: Relative path (works with includes)
 #include <iostream>
 #include <cstring>
+
+// Managers special member functions (defined here where OpenGLRenderer is complete)
+ManagerCoordination::Managers::Managers() = default;
+ManagerCoordination::Managers::~Managers() = default;
+ManagerCoordination::Managers::Managers(Managers&&) = default;
+ManagerCoordination::Managers& ManagerCoordination::Managers::operator=(Managers&&) = default;
 
 // Helper function to reduce duplication in manager initialization
 template<typename T>
@@ -18,6 +26,31 @@ bool InitializeManagerHelper(std::unique_ptr<T>& manager_ptr, const std::string&
     } catch (const std::exception& e) {
         // Error logging is handled by the calling function
         return false;
+    }
+}
+
+// Helper function to initialize transform calculator with camera intrinsics (Phase 2)
+void InitializeTransformCalculator(segmecam::AppState& app_state, int width, int height) {
+    try {
+        // Create simple camera intrinsics matrix (assuming standard webcam FOV ~60 degrees)
+        // focal_length = image_width / (2 * tan(FOV/2))
+        // For 60 degree horizontal FOV: focal_length ≈ image_width * 0.866
+        float focal_length_x = width * 0.866f;
+        float focal_length_y = height * 0.866f;
+        float principal_point_x = width / 2.0f;
+        float principal_point_y = height / 2.0f;
+        
+        cv::Mat camera_matrix = cv::Mat::eye(3, 3, CV_64F);
+        camera_matrix.at<double>(0, 0) = focal_length_x;  // fx
+        camera_matrix.at<double>(1, 1) = focal_length_y;  // fy
+        camera_matrix.at<double>(0, 2) = principal_point_x;  // cx
+        camera_matrix.at<double>(1, 2) = principal_point_y;  // cy
+        
+        app_state.transform_calculator.Initialize(camera_matrix, width, height);
+        std::cout << "✅ TransformCalculator initialized with " << width << "x" << height << " resolution" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Failed to initialize TransformCalculator: " << e.what() << std::endl;
+        app_state.transform_data_available = false;
     }
 }
 
@@ -50,6 +83,18 @@ bool ManagerCoordination::SetupManagers(Managers& managers, segmecam::AppState& 
         return false;
     }
     
+    // Initialize OpenGL renderer (Phase 3 Step 8)
+    if (!InitializeOpenGLRenderer(managers, app_state)) {
+        std::cerr << "Error: Failed to initialize OpenGLRenderer" << std::endl;
+        return false;
+    }
+    
+    // Initialize AR Filter Manager (Phase 8)
+    if (!InitializeARFilterManager(managers, app_state)) {
+        std::cerr << "⚠️  Warning: Failed to initialize ARFilterManager (non-fatal)" << std::endl;
+        // Non-fatal - AR filters are optional feature
+    }
+    
     std::cout << "Essential managers initialized successfully" << std::endl;
     return true;
 }
@@ -58,6 +103,17 @@ void ManagerCoordination::ShutdownManagers(Managers& managers) {
     std::cout << "Shutting down managers..." << std::endl;
     
     // Shutdown in reverse order to handle dependencies
+    if (managers.opengl_renderer) {
+        managers.opengl_renderer.reset();
+    }
+    
+    // Phase 8: Cleanup AR filter manager
+    if (managers.ar_filter_manager) {
+        std::cout << "Cleaning up AR Filter Manager..." << std::endl;
+        managers.ar_filter_manager->Cleanup();
+        managers.ar_filter_manager.reset();
+    }
+    
     if (managers.ui) {
         managers.ui.reset();
     }
@@ -190,6 +246,9 @@ bool ManagerCoordination::InitializeCameraManager(Managers& managers, segmecam::
         
         // Apply camera controls from loaded profile
         ApplyCameraControlsFromProfile(managers, config_data);
+        
+        // Initialize transform calculator with camera intrinsics (Phase 2)
+        InitializeTransformCalculator(app_state, camera_config.default_width, camera_config.default_height);
         
         std::cout << "CameraManager initialized successfully" << std::endl;
         return true;
@@ -384,4 +443,81 @@ void ManagerCoordination::ApplyCameraControlsFromProfile(Managers& managers, con
     managers.camera->SetAutoFocus(config_data.camera_controls.auto_focus);
     managers.camera->SetAutoExposure(config_data.camera_controls.auto_exposure);
     managers.camera->SetWhiteBalance(config_data.camera_controls.auto_white_balance);
+}
+
+bool ManagerCoordination::InitializeOpenGLRenderer(Managers& managers, segmecam::AppState& app_state) {
+    try {
+        managers.opengl_renderer = std::make_unique<segmecam::ar_filters::OpenGLRenderer>();
+        
+        if (!managers.opengl_renderer->Initialize()) {
+            std::cerr << "❌ OpenGLRenderer failed to initialize" << std::endl;
+            managers.opengl_renderer.reset();
+            return false;
+        }
+        
+        // Set initial projection matrix (will be updated when window resizes)
+        managers.opengl_renderer->UpdateProjectionMatrix(1280, 720);
+        
+        std::cout << "✅ OpenGLRenderer initialized successfully" << std::endl;
+        app_state.ar_3d_rendering_available = true;
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Exception initializing OpenGLRenderer: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool ManagerCoordination::InitializeARFilterManager(Managers& managers, segmecam::AppState& app_state) {
+    try {
+        std::cout << "🎭 Initializing AR Filter Manager..." << std::endl;
+        
+        // Create ARFilterManager instance
+        managers.ar_filter_manager = std::make_unique<segmecam::ar_filters::ARFilterManager>();
+        
+        // Configure AR filter system
+        segmecam::ar_filters::ARFilterManagerConfig ar_config;
+        ar_config.filters_directory = "assets/filters";  // Default filters directory
+        ar_config.enable_behaviors = true;               // Enable interactive behaviors
+        ar_config.enable_smoothing = true;               // Enable transform smoothing
+        ar_config.smoothing_factor = 0.3f;               // Moderate smoothing (0.0=none, 1.0=max)
+        ar_config.target_fps = 30;                       // Target FPS for AR rendering
+        
+        // Initialize ARFilterManager
+        auto status = managers.ar_filter_manager->Initialize(ar_config);
+        if (!status.ok()) {
+            std::cerr << "⚠️  ARFilterManager initialization failed: " << status.message() << std::endl;
+            std::cerr << "    (AR filters will not be available, continuing without them)" << std::endl;
+            managers.ar_filter_manager.reset();
+            app_state.ar_filters_enabled = false;
+            return false;  // Non-fatal
+        }
+        
+        // Discover available filters
+        auto filters_result = managers.ar_filter_manager->GetAvailableFilters();
+        if (filters_result.ok()) {
+            std::cout << "✅ AR Filter Manager initialized successfully" << std::endl;
+            std::cout << "   📁 Discovered " << filters_result->size() << " AR filters" << std::endl;
+            
+            // List available filters
+            if (!filters_result->empty()) {
+                std::cout << "   Available filters:" << std::endl;
+                for (const auto& filter : *filters_result) {
+                    std::cout << "     - " << filter.name << " (" << filter.category << ")" << std::endl;
+                }
+            }
+            
+            // AR filters available but disabled by default (user can enable in UI)
+            app_state.ar_filters_enabled = false;
+            return true;
+        } else {
+            std::cerr << "⚠️  No AR filters found in '" << ar_config.filters_directory << "'" << std::endl;
+            std::cerr << "    (AR filters can be added later)" << std::endl;
+            app_state.ar_filters_enabled = false;
+            return true;  // Still successful initialization, just no filters yet
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Exception initializing ARFilterManager: " << e.what() << std::endl;
+        app_state.ar_filters_enabled = false;
+        return false;
+    }
 }

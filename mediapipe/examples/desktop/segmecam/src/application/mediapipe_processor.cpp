@@ -22,6 +22,7 @@ void MediaPipeProcessor::ProcessMediaPipeOutputs(
     std::unique_ptr<mediapipe::OutputStreamPoller>& mask_poller,
     std::unique_ptr<mediapipe::OutputStreamPoller>& multi_face_landmarks_poller,
     std::unique_ptr<mediapipe::OutputStreamPoller>& face_rects_poller,
+    std::unique_ptr<mediapipe::OutputStreamPoller>& blendshapes_poller,
     AppState& app_state,
     int frame_count,
     bool has_landmarks
@@ -32,6 +33,14 @@ void MediaPipeProcessor::ProcessMediaPipeOutputs(
     // Process face landmarks if available
     if (has_landmarks && multi_face_landmarks_poller) {
         ProcessFaceLandmarks(output_data, multi_face_landmarks_poller, face_rects_poller, frame_count);
+        
+        // Process face mesh from landmarks (Phase 1 & 2)
+        ProcessFaceMesh(output_data, app_state, frame_count);
+    }
+
+    // Process blendshapes if available
+    if (has_landmarks && blendshapes_poller) {
+        ProcessBlendshapes(blendshapes_poller, app_state, frame_count);
     }
 
 }
@@ -122,6 +131,116 @@ void MediaPipeProcessor::ProcessFaceRects(
     mediapipe::Packet rp;
     while (face_rects_poller->QueueSize() > 0 && face_rects_poller->Next(&rp)) {
         output_data.latest_rects = rp.Get<std::vector<mediapipe::NormalizedRect>>();
+    }
+}
+
+void MediaPipeProcessor::ProcessBlendshapes(
+    std::unique_ptr<mediapipe::OutputStreamPoller>& blendshapes_poller,
+    AppState& app_state,
+    int frame_count
+) {
+    mediapipe::Packet bp;
+    int queue_size = blendshapes_poller->QueueSize();
+    if (frame_count <= 5) {
+        std::cout << "🎭 Blendshapes queue size: " << queue_size << std::endl;
+    }
+
+    // Process all pending blendshape packets (use latest)
+    while (queue_size > 0 && blendshapes_poller->Next(&bp)) {
+        try {
+            // Get ClassificationList from MediaPipe
+            const auto& classifications = bp.Get<std::vector<mediapipe::ClassificationList>>();
+            
+            if (!classifications.empty() && classifications[0].classification_size() == 52) {
+                // Update blendshapes in app_state
+                app_state.blendshapes_processor.Update(classifications[0]);
+                app_state.blendshapes = app_state.blendshapes_processor.GetSmoothedBlendshapes();
+                app_state.blendshapes_available = true;
+                
+                if (frame_count <= 5) {
+                    std::cout << "✅ Got 52 blendshapes - smile intensity: " 
+                              << app_state.blendshapes_processor.GetSmileIntensity() << std::endl;
+                }
+            } else {
+                if (frame_count <= 5) {
+                    std::cout << "⚠️  Unexpected blendshape format" << std::endl;
+                }
+            }
+            queue_size = blendshapes_poller->QueueSize();
+        } catch (const std::exception& e) {
+            std::cerr << "❌ Error processing blendshapes packet: " << e.what() << std::endl;
+            app_state.blendshapes_available = false;
+            break;
+        }
+    }
+}
+
+void MediaPipeProcessor::ProcessFaceMesh(
+    MediaPipeOutputData& output_data,
+    AppState& app_state,
+    int frame_count
+) {
+    if (!output_data.have_lms || output_data.latest_lms.landmark_size() != 478) {
+        app_state.face_mesh_available = false;
+        return;
+    }
+    
+    try {
+        // Update face mesh processor with 478 landmarks
+        app_state.face_mesh_processor.Update(
+            output_data.latest_lms,
+            app_state.camera_width,
+            app_state.camera_height
+        );
+        
+        // Get processed face mesh data
+        app_state.face_mesh = app_state.face_mesh_processor.GetFaceMesh();
+        app_state.face_mesh_available = app_state.face_mesh_processor.IsAvailable();
+        
+        // Update transform calculator with face mesh data (Phase 2: Transform Calculation)
+        if (app_state.face_mesh_available) {
+            app_state.transform_calculator.Update(app_state.face_mesh);
+            app_state.head_pose = app_state.transform_calculator.GetHeadPose();
+            app_state.anchor_points = app_state.transform_calculator.GetAnchors();
+            app_state.transform_data_available = true;
+            
+            // Update AR filter transforms (Phase 2 Step 5: Filter Attachment)
+            if (app_state.ar_filters_enabled && app_state.attachment_controller.GetFilterCount() > 0) {
+                app_state.attachment_controller.UpdateFilterTransforms(
+                    app_state.anchor_points,
+                    app_state.head_pose
+                );
+            }
+        } else {
+            app_state.transform_data_available = false;
+        }
+        
+        if (frame_count <= 5 && app_state.face_mesh_available) {
+            std::cout << "🎯 Face mesh: " << output_data.latest_lms.landmark_size() << " points, "
+                      << "yaw=" << app_state.face_mesh_processor.GetYaw() << "°, "
+                      << "pitch=" << app_state.face_mesh_processor.GetPitch() << "°, "
+                      << "scale=" << app_state.face_mesh_processor.GetFaceScale() << std::endl;
+            
+            if (app_state.transform_data_available) {
+                std::cout << "🎯 Transform: "
+                          << "pos=[" << app_state.head_pose.position[0] << "," 
+                          << app_state.head_pose.position[1] << "," 
+                          << app_state.head_pose.position[2] << "], "
+                          << "anchors=" << app_state.anchor_points.size() << std::endl;
+                
+                // Debug AR filters (Phase 2 Step 5)
+                if (app_state.ar_filters_enabled && app_state.attachment_controller.GetFilterCount() > 0) {
+                    auto stats = app_state.attachment_controller.GetStatistics();
+                    std::cout << "🎭 AR Filters: "
+                              << "total=" << stats.total_filters << ", "
+                              << "visible=" << stats.visible_filters << ", "
+                              << "update_time=" << stats.average_update_time_ms << "ms" << std::endl;
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Error processing face mesh: " << e.what() << std::endl;
+        app_state.face_mesh_available = false;
     }
 }
 

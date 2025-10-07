@@ -2,6 +2,8 @@
 #include "include/effects/face_regions.h"
 #include "include/effects/segmecam_face_effects.h"
 #include "include/effects/advanced_skin_effects.h"
+#include "include/ar_filters/face_mesh_processor.h"
+#include "include/application/app_state.h"
 #include "mediapipe/tasks/cc/vision/face_landmarker/face_landmarks_connections.h"
 #include <iostream>
 #include <opencv2/core.hpp>
@@ -62,6 +64,325 @@ void FaceProcessor::DrawMesh(cv::Mat& frame_bgr, const mediapipe::NormalizedLand
         using Conn = mediapipe::tasks::vision::face_landmarker::FaceLandmarksConnections;
         DrawConnections(frame_bgr, landmarks, Conn::kFaceLandmarksTesselation, cv::Scalar(120, 120, 120));
     }
+}
+
+void FaceProcessor::DrawFaceMesh(cv::Mat& frame_bgr, const AppState& app_state, bool dense, bool show_pose, bool show_anchors) {
+    const FaceMesh& face_mesh = app_state.face_mesh;
+    
+    if (frame_bgr.empty() || face_mesh.confidence < 0.1f) {
+        return;
+    }
+    
+    // Draw all 478 landmarks as colored points
+    for (int i = 0; i < 478; ++i) {
+        cv::Point2f pt = face_mesh.landmarks_2d[i];
+        
+        // Skip invalid points
+        if (pt.x < 0 || pt.y < 0 || pt.x >= frame_bgr.cols || pt.y >= frame_bgr.rows) {
+            continue;
+        }
+        
+        // Color code by face region for better visualization
+        cv::Scalar color;
+        if (i >= 0 && i < 17) {
+            color = cv::Scalar(255, 200, 0);  // Face oval - yellow
+        } else if ((i >= 33 && i < 133) || (i >= 263 && i < 362)) {
+            color = cv::Scalar(80, 200, 255);  // Eyes - orange
+        } else if ((i >= 156 && i < 178) || (i >= 385 && i < 407)) {
+            color = cv::Scalar(180, 180, 255); // Eyebrows - pink
+        } else if (i >= 0 && i < 40) {
+            color = cv::Scalar(0, 128, 255);   // Lips - red
+        } else if (i >= 6 && i < 28) {
+            color = cv::Scalar(255, 255, 0);   // Nose - cyan
+        } else {
+            color = cv::Scalar(200, 200, 200); // Other - gray
+        }
+        
+        // Draw point
+        int radius = dense ? 1 : 2;
+        cv::circle(frame_bgr, pt, radius, color, -1, cv::LINE_AA);
+    }
+    
+    // Draw key attachment points with larger circles
+    auto drawKeyPoint = [&](int index, const cv::Scalar& color, const std::string& label = "") {
+        if (index >= 0 && index < 478) {
+            cv::Point2f pt = face_mesh.landmarks_2d[index];
+            cv::circle(frame_bgr, pt, 4, color, 2, cv::LINE_AA);
+            if (!label.empty() && !dense) {
+                cv::putText(frame_bgr, label, pt + cv::Point2f(8, 0), 
+                           cv::FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv::LINE_AA);
+            }
+        }
+    };
+    
+    using LM = FaceMeshLandmarks;
+    drawKeyPoint(LM::NOSE_TIP, cv::Scalar(0, 255, 0), "nose");
+    drawKeyPoint(LM::NOSE_BRIDGE, cv::Scalar(0, 255, 255), "bridge");
+    drawKeyPoint(LM::FOREHEAD_CENTER, cv::Scalar(255, 0, 255), "forehead");
+    drawKeyPoint(LM::LEFT_TEMPLE, cv::Scalar(255, 128, 0), "L temple");
+    drawKeyPoint(LM::RIGHT_TEMPLE, cv::Scalar(255, 128, 0), "R temple");
+    drawKeyPoint(LM::CHIN_CENTER, cv::Scalar(128, 255, 0), "chin");
+    
+    // Draw face pose axes if requested
+    if (show_pose) {
+        DrawFacePose(frame_bgr, face_mesh);
+    }
+    
+    // Draw anchor points if requested
+    if (show_anchors) {
+        DrawAnchorPoints(frame_bgr, app_state, !dense);
+    }
+    
+    // Draw info overlay
+    if (!dense) {
+        std::string info = cv::format("Face Mesh: 478 pts | Yaw: %.1f° | Pitch: %.1f° | Roll: %.1f° | Scale: %.3f",
+                                     face_mesh.euler_angles[1], face_mesh.euler_angles[0], 
+                                     face_mesh.euler_angles[2], face_mesh.scale);
+        cv::putText(frame_bgr, info, cv::Point(10, frame_bgr.rows - 50),
+                   cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1, cv::LINE_AA);
+        
+        // Draw face orientation status
+        std::string orientation;
+        if (std::abs(face_mesh.euler_angles[1]) < 20.0f) {
+            orientation = "Frontal";
+        } else if (face_mesh.euler_angles[1] < -30.0f) {
+            orientation = "Left Profile";
+        } else if (face_mesh.euler_angles[1] > 30.0f) {
+            orientation = "Right Profile";
+        } else {
+            orientation = "Turned";
+        }
+        
+        if (std::abs(face_mesh.euler_angles[0]) > 15.0f) {
+            orientation += face_mesh.euler_angles[0] < 0 ? " + Looking Up" : " + Looking Down";
+        }
+        
+        cv::putText(frame_bgr, "Orientation: " + orientation, cv::Point(10, frame_bgr.rows - 30),
+                   cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 255), 1, cv::LINE_AA);
+    }
+}
+
+void FaceProcessor::DrawFacePose(cv::Mat& frame_bgr, const FaceMesh& face_mesh) {
+    // Get nose tip as the origin point for pose axes
+    cv::Point2f origin = face_mesh.GetNoseTip2D();
+    
+    if (origin.x < 0 || origin.y < 0 || origin.x >= frame_bgr.cols || origin.y >= frame_bgr.rows) {
+        return;
+    }
+    
+    // Calculate axis length based on face scale
+    float axis_length = face_mesh.scale * std::sqrt(frame_bgr.cols * frame_bgr.cols + 
+                                                     frame_bgr.rows * frame_bgr.rows) * 0.1f;
+    axis_length = std::max(30.0f, std::min(axis_length, 100.0f)); // Clamp to reasonable range
+    
+    // Convert Euler angles to radians
+    float pitch_rad = face_mesh.euler_angles[0] * M_PI / 180.0f;
+    float yaw_rad = face_mesh.euler_angles[1] * M_PI / 180.0f;
+    float roll_rad = face_mesh.euler_angles[2] * M_PI / 180.0f;
+    
+    // Calculate rotation matrix from Euler angles (ZYX order: roll, pitch, yaw)
+    float cos_roll = std::cos(roll_rad);
+    float sin_roll = std::sin(roll_rad);
+    float cos_pitch = std::cos(pitch_rad);
+    float sin_pitch = std::sin(pitch_rad);
+    float cos_yaw = std::cos(yaw_rad);
+    float sin_yaw = std::sin(yaw_rad);
+    
+    // Define 3D axis directions
+    cv::Point3f x_axis(axis_length, 0, 0);  // Right (red)
+    cv::Point3f y_axis(0, -axis_length, 0); // Up (green)
+    cv::Point3f z_axis(0, 0, -axis_length); // Forward (blue)
+    
+    // Rotate axes by Euler angles
+    auto rotatePoint = [&](const cv::Point3f& pt) -> cv::Point2f {
+        // Apply roll, pitch, yaw rotations
+        float x = pt.x;
+        float y = pt.y;
+        float z = pt.z;
+        
+        // Roll (Z-axis rotation)
+        float x1 = x * cos_roll - y * sin_roll;
+        float y1 = x * sin_roll + y * cos_roll;
+        float z1 = z;
+        
+        // Pitch (X-axis rotation)
+        float y2 = y1 * cos_pitch - z1 * sin_pitch;
+        float z2 = y1 * sin_pitch + z1 * cos_pitch;
+        float x2 = x1;
+        
+        // Yaw (Y-axis rotation)
+        float x3 = x2 * cos_yaw + z2 * sin_yaw;
+        float z3 = -x2 * sin_yaw + z2 * cos_yaw;
+        
+        // Project to 2D (simple orthographic projection)
+        return cv::Point2f(origin.x + x3, origin.y + y2);
+    };
+    
+    cv::Point2f x_end = rotatePoint(x_axis);
+    cv::Point2f y_end = rotatePoint(y_axis);
+    cv::Point2f z_end = rotatePoint(z_axis);
+    
+    // Draw axes with thicker lines
+    cv::arrowedLine(frame_bgr, origin, x_end, cv::Scalar(0, 0, 255), 3, cv::LINE_AA, 0, 0.3); // Red = X (right)
+    cv::arrowedLine(frame_bgr, origin, y_end, cv::Scalar(0, 255, 0), 3, cv::LINE_AA, 0, 0.3); // Green = Y (up)
+    cv::arrowedLine(frame_bgr, origin, z_end, cv::Scalar(255, 0, 0), 3, cv::LINE_AA, 0, 0.3); // Blue = Z (forward)
+    
+    // Draw labels
+    cv::putText(frame_bgr, "X", x_end, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
+    cv::putText(frame_bgr, "Y", y_end, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
+    cv::putText(frame_bgr, "Z", z_end, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 0, 0), 2, cv::LINE_AA);
+}
+
+void FaceProcessor::DrawAnchorPoints(cv::Mat& frame_bgr, const AppState& app_state, bool show_labels) {
+    if (frame_bgr.empty() || !app_state.transform_data_available) {
+        return;
+    }
+    
+    // Access anchor points from AppState (calculated by TransformCalculator)
+    const std::vector<AnchorPoint>& anchors = app_state.anchor_points;
+    
+    if (anchors.empty()) {
+        return;
+    }
+    
+    // Define colors for each anchor point (bright, distinct colors)
+    const std::vector<cv::Scalar> anchor_colors = {
+        cv::Scalar(0, 255, 255),    // Nose Bridge - Cyan
+        cv::Scalar(255, 0, 255),    // Left Eye Center - Magenta
+        cv::Scalar(255, 255, 0),    // Right Eye Center - Yellow
+        cv::Scalar(0, 165, 255),    // Left Mouth Corner - Orange
+        cv::Scalar(255, 0, 127),    // Right Mouth Corner - Pink
+        cv::Scalar(0, 255, 0),      // Chin - Green
+        cv::Scalar(147, 20, 255)    // Forehead - Deep Pink
+    };
+    
+    // Draw each anchor point with stability-based visualization
+    for (size_t i = 0; i < anchors.size() && i < anchor_colors.size(); ++i) {
+        const AnchorPoint& anchor = anchors[i];
+        
+        // Skip if anchor is not visible
+        if (!anchor.is_visible) {
+            continue;
+        }
+        
+        cv::Point2f anchor_pos = anchor.position_2d;
+        
+        // Skip invalid points
+        if (anchor_pos.x < 0 || anchor_pos.y < 0 ||
+            anchor_pos.x >= frame_bgr.cols || anchor_pos.y >= frame_bgr.rows) {
+            continue;
+        }
+        
+        // Get color for this anchor
+        cv::Scalar color = anchor_colors[i];
+        
+        // Color-code by stability: green (stable), yellow (moderate), red (unstable)
+        cv::Scalar ring_color;
+        if (anchor.stability > 0.8f) {
+            ring_color = cv::Scalar(0, 255, 0);      // Green: very stable
+        } else if (anchor.stability > 0.5f) {
+            ring_color = cv::Scalar(0, 255, 255);    // Yellow: moderate stability
+        } else {
+            ring_color = cv::Scalar(0, 0, 255);      // Red: unstable
+        }
+        
+        // Draw anchor visualization with stability-based ring thickness
+        int outer_radius = 12;
+        int inner_radius = 6;
+        
+        // Ring thickness based on stability: 1-4 pixels
+        // Higher stability = thicker ring
+        int ring_thickness = 1 + (int)(anchor.stability * 3);
+        ring_thickness = std::clamp(ring_thickness, 1, 4);
+        
+        // Outer ring - color and thickness indicate stability
+        cv::circle(frame_bgr, anchor_pos, outer_radius, ring_color, ring_thickness, cv::LINE_AA);
+        
+        // Inner filled circle with anchor's base color
+        cv::circle(frame_bgr, anchor_pos, inner_radius, color, -1, cv::LINE_AA);
+        
+        // Center dot for precise position
+        cv::circle(frame_bgr, anchor_pos, 2, cv::Scalar(255, 255, 255), -1, cv::LINE_AA);
+        
+        // Draw label if requested
+        if (show_labels) {
+            // Create label with anchor name and stability percentage
+            std::string label = anchor.name;
+            label += cv::format(" %.0f%%", anchor.stability * 100);
+            
+            // Position label above and to the right of the anchor
+            cv::Point label_pos(anchor_pos.x + 15, anchor_pos.y - 5);
+            
+            // Draw text background for better readability
+            int baseline = 0;
+            cv::Size text_size = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, 0.4, 1, &baseline);
+            cv::rectangle(frame_bgr, 
+                         cv::Point(label_pos.x - 2, label_pos.y - text_size.height - 2),
+                         cv::Point(label_pos.x + text_size.width + 2, label_pos.y + baseline + 2),
+                         cv::Scalar(0, 0, 0), -1);
+            
+            // Draw label text with stability-based color
+            cv::putText(frame_bgr, label, label_pos, 
+                       cv::FONT_HERSHEY_SIMPLEX, 0.4, ring_color, 1, cv::LINE_AA);
+        }
+    }
+    
+    // Draw legend in bottom-left corner
+    int legend_y = frame_bgr.rows - 140;  // Increased height for stability info
+    int legend_x = 10;
+    
+    // Legend background
+    cv::rectangle(frame_bgr, 
+                 cv::Point(legend_x - 5, legend_y - 5),
+                 cv::Point(legend_x + 180, legend_y + 135),
+                 cv::Scalar(0, 0, 0), -1);
+    cv::rectangle(frame_bgr, 
+                 cv::Point(legend_x - 5, legend_y - 5),
+                 cv::Point(legend_x + 180, legend_y + 135),
+                 cv::Scalar(255, 255, 255), 1);
+    
+    // Legend title
+    cv::putText(frame_bgr, "Anchor Points", 
+               cv::Point(legend_x, legend_y), 
+               cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255), 1, cv::LINE_AA);
+    legend_y += 20;
+    
+    // Draw anchor count
+    cv::putText(frame_bgr, cv::format("Count: %zu", anchors.size()),
+               cv::Point(legend_x, legend_y), 
+               cv::FONT_HERSHEY_SIMPLEX, 0.35, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
+    legend_y += 18;
+    
+    // Draw stability guide with color coding
+    cv::putText(frame_bgr, "Stability Colors:", 
+               cv::Point(legend_x, legend_y), 
+               cv::FONT_HERSHEY_SIMPLEX, 0.35, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
+    legend_y += 15;
+    
+    // Green = Stable
+    cv::circle(frame_bgr, cv::Point(legend_x + 10, legend_y - 3), 4, cv::Scalar(0, 255, 0), -1, cv::LINE_AA);
+    cv::putText(frame_bgr, " Green: Stable (>80%)", 
+               cv::Point(legend_x + 20, legend_y), 
+               cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
+    legend_y += 15;
+    
+    // Yellow = Moderate
+    cv::circle(frame_bgr, cv::Point(legend_x + 10, legend_y - 3), 4, cv::Scalar(0, 255, 255), -1, cv::LINE_AA);
+    cv::putText(frame_bgr, " Yellow: Moderate", 
+               cv::Point(legend_x + 20, legend_y), 
+               cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
+    legend_y += 15;
+    
+    // Red = Unstable
+    cv::circle(frame_bgr, cv::Point(legend_x + 10, legend_y - 3), 4, cv::Scalar(0, 0, 255), -1, cv::LINE_AA);
+    cv::putText(frame_bgr, " Red: Unstable (<50%)", 
+               cv::Point(legend_x + 20, legend_y), 
+               cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
+    legend_y += 15;
+    
+    cv::putText(frame_bgr, "Ring thickness = stability", 
+               cv::Point(legend_x, legend_y), 
+               cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(200, 200, 200), 1, cv::LINE_AA);
 }
 
 template<size_t N>

@@ -335,6 +335,12 @@ void ConfigManager::writePerformanceSettings(cv::FileStorage& fs, const ConfigDa
     fs << "use_opencl" << (int)config.performance.use_opencl;
 }
 
+void ConfigManager::writeARFilterSettings(cv::FileStorage& fs, const ConfigData& config) const {
+    fs << "ar_filter_active_filter_id" << config.ar_filters.active_filter_id;
+    fs << "ar_filter_filters_enabled" << (int)config.ar_filters.filters_enabled;
+    fs << "ar_filter_thumbnail_size" << config.ar_filters.thumbnail_size;
+}
+
 bool ConfigManager::WriteConfigToStorage(cv::FileStorage& fs, const ConfigData& config) const {
     try {
         writeCameraSettings(fs, config);
@@ -344,6 +350,7 @@ bool ConfigManager::WriteConfigToStorage(cv::FileStorage& fs, const ConfigData& 
         writeLandmarkSettings(fs, config);
         writeBeautyEffectsSettings(fs, config);
         writePerformanceSettings(fs, config);
+        writeARFilterSettings(fs, config);
 
         return true;
     } catch (const cv::Exception& e) {
@@ -367,6 +374,7 @@ bool ConfigManager::ReadConfigFromStorage(cv::FileStorage& fs, ConfigData& confi
         readLandmarkSettings(root, config);
         readBeautyEffectsSettings(root, config);
         readPerformanceSettings(root, config);
+        readARFilterSettings(root, config);
 
         return true;
     } catch (const cv::Exception& e) {
@@ -478,6 +486,12 @@ void ConfigManager::readBeautyEffectsSettings(const cv::FileNode& root, ConfigDa
 
 void ConfigManager::readPerformanceSettings(const cv::FileNode& root, ConfigData& config) const {
     config.performance.use_opencl = ReadInt(root["use_opencl"], 1) != 0;
+}
+
+void ConfigManager::readARFilterSettings(const cv::FileNode& root, ConfigData& config) const {
+    config.ar_filters.active_filter_id = ReadString(root["ar_filter_active_filter_id"], "");
+    config.ar_filters.filters_enabled = ReadInt(root["ar_filter_filters_enabled"], 1) != 0;
+    config.ar_filters.thumbnail_size = ReadInt(root["ar_filter_thumbnail_size"], 128);
 }
 
 // Type-safe helper functions

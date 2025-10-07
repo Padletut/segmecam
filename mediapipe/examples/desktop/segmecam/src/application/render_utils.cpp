@@ -14,7 +14,7 @@
 #include <SDL.h>
 
 // Include OpenGL
-#include <GL/gl.h>
+#include <epoxy/gl.h>  // Modern OpenGL function loader
 
 #include <iostream>
 
@@ -109,38 +109,32 @@ void RenderUtils::RenderFrame(UIManager& ui_manager,
                              const cv::Mat& display_rgb,
                              SDL_Window* window,
                              int frame_count,
-                             bool& running) {
+                             bool& running,
+                             bool skip_texture_upload) {
     // Get window size for rendering
     int dw, dh;
     SDL_GL_GetDrawableSize(window, &dw, &dh);
     glViewport(0, 0, dw, dh);
 
-    // Clear screen with dark background
-    glClearColor(0.06f, 0.06f, 0.07f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    // Create OpenGL texture from processed frame for background display
-    GLuint video_texture = CreateVideoTexture(display_rgb);
-
-    // Render camera feed as fullscreen background
-    if (video_texture && !display_rgb.empty()) {
-        glBindTexture(GL_TEXTURE_2D, video_texture);
-        RenderVideoBackground(display_rgb, dw, dh);
+    // Upload video texture to UI manager for preview window
+    // Skip if AR filters already rendered directly to GPU texture
+    if (!skip_texture_upload && !display_rgb.empty()) {
+        ui_manager.UploadTexture(display_rgb);
     }
 
-    // Begin ImGui frame and render UI panels on top
+    // Begin ImGui frame
     ui_manager.BeginFrame();
+    
+    // Render UI panels (includes video preview window)
     ui_manager.RenderUI();
+    
+    // End frame
     ui_manager.EndFrame();
 
     if (frame_count <= 5) {
         std::cout << "✅ UI rendered successfully for frame " << frame_count << std::endl;
     }
 
-    // Clean up texture
-    if (video_texture) {
-        glDeleteTextures(1, &video_texture);
-    }
 }
 
 } // namespace segmecam
