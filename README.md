@@ -352,6 +352,20 @@ v4l2-ctl --list-devices
 
 ---
 
+## 🧙‍♂️ Developer Initiation Protocol
+
+If you’ve read this far and **still managed to break something**,  
+congratulations — you are now an **official SegmeCam developer**.  
+
+Welcome to the AR-13 program.  
+Remember the sacred rule:  
+
+> `fix: it works now. don't ask why. Do never touch!`
+
+May your build logs be green and your webcam never disappear again. 😤
+
+---
+
 ## 🙏 Credits
 
 SegmeCam builds on:

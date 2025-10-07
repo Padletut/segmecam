@@ -903,9 +903,12 @@ cc_binary( # pyright: ignore[reportUndefinedVariable]
         "-lGL",
         "-lGLU",
         "-lSDL2",
-        "-lopencv_photo",
-        "-lopencv_imgproc",
+        # OpenCV modules required by FrameProcessor/Effects
         "-lopencv_core",
+        "-lopencv_imgproc",
+        "-lopencv_photo",
+        "-lopencv_highgui",
+        "-lopencv_imgcodecs",
     ],
 )
 

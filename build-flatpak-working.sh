@@ -6,7 +6,8 @@ echo "🚀 Building SegmeCam Flatpak (build natively, copy to project root)..."
 # Build the native SegmeCam binary first
 echo "Building native SegmeCam binary..."
 export ALLOW_BAZEL=1
-bazel build -c opt --action_env=PKG_CONFIG_PATH --repo_env=PKG_CONFIG_PATH --cxxopt=-I/usr/include/opencv4 //mediapipe/examples/desktop/segmecam:segmecam
+export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+bazel build -c opt --action_env=PKG_CONFIG_PATH --repo_env=PKG_CONFIG_PATH --cxxopt=-I/usr/local/include/opencv4 //mediapipe/examples/desktop/segmecam:segmecam
 
 # Copy the binary to project root for easy access
 echo "Copying binary to project root..."
