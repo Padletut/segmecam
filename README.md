@@ -171,7 +171,7 @@ bazel version
 - [x] ✅ Teeth whitening via LAB masks
 - [x] ✅ Lip refinement / makeup overlay
 - [x] ✅ Wrinkle-aware skin smoothing
-- [ ] 🎭 Fun filters (masks, sunglasses, hats)
+- [x] ✅ 🎭 Fun filters (masks, sunglasses, hats)
 - [x] ✅ Profile system for saving favorite presets
 - [x] ✅ Virtual webcam integration (v4l2loopback)
 - [ ] 📦 Flatpak release on Flathub
